@@ -758,6 +758,15 @@ fn format_cb_pane_dead_status(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_dead_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_dead_time", ft)
 }
+fn format_cb_pane_agent(ft: &mut format_tree) -> Option<CString> {
+    pane_format_string(c"pane_agent", ft)
+}
+fn format_cb_pane_agent_state(ft: &mut format_tree) -> Option<CString> {
+    pane_format_string(c"pane_agent_state", ft)
+}
+fn format_cb_pane_state_emoji(ft: &mut format_tree) -> Option<CString> {
+    pane_format_string(c"pane_state_emoji", ft)
+}
 fn format_cb_pane_last_output_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_last_output_time", ft)
 }
@@ -1520,7 +1529,7 @@ pub(crate) fn window_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(super) static FORMAT_TABLE: [FormatTableEntry; 211] = [
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
     FormatTableEntry {
         key: c"active_window_index",
         callback: FormatCallback::String(format_cb_active_window_index),
@@ -1830,6 +1839,14 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 211] = [
         callback: FormatCallback::String(format_cb_pane_active),
     },
     FormatTableEntry {
+        key: c"pane_agent",
+        callback: FormatCallback::String(format_cb_pane_agent),
+    },
+    FormatTableEntry {
+        key: c"pane_agent_state",
+        callback: FormatCallback::String(format_cb_pane_agent_state),
+    },
+    FormatTableEntry {
         key: c"pane_at_bottom",
         callback: FormatCallback::String(format_cb_pane_at_bottom),
     },
@@ -2012,6 +2029,10 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 211] = [
     FormatTableEntry {
         key: c"pane_start_path",
         callback: FormatCallback::String(format_cb_start_path),
+    },
+    FormatTableEntry {
+        key: c"pane_state_emoji",
+        callback: FormatCallback::String(format_cb_pane_state_emoji),
     },
     FormatTableEntry {
         key: c"pane_synchronized",

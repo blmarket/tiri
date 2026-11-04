@@ -115,6 +115,14 @@ pub(super) fn finish_process(
         } else {
             None
         };
+        if wp.base.program_status.as_ref().is_some_and(|status| {
+            matches!(
+                status.state(),
+                tiri_vt::ProgramState::Working | tiri_vt::ProgramState::Blocked
+            )
+        }) {
+            wp.base.program_status = None;
+        }
         let pipe = std::mem::take(&mut wp.pipe_event);
         (
             wp.base.grid().sx,
@@ -129,6 +137,7 @@ pub(super) fn finish_process(
         drop(fd);
     }
     pipe.free();
+    crate::server_fn::server_status_window(&window_owner);
     let Some(exit_status) = exit_status else {
         drop(window_owner);
         return;

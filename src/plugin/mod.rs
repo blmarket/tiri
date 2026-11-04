@@ -11,7 +11,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-pub mod agent;
 mod defaults;
 pub mod git;
 mod host;
@@ -19,22 +18,13 @@ mod host;
 mod tests;
 
 use host::ServerHost;
-pub use tiri_agent::observability::v1::{PaneId, ServerObservability};
 
-/// An owned snapshot of the process and terminal state needed to classify a
-/// non-agent pane. It contains no pane owner or borrowed terminal descriptor.
-pub struct PaneActivity {
-    pub foreground: Option<i32>,
-    pub session_leader: Option<i32>,
-    pub command: Option<CString>,
-    pub alternate_on: bool,
-    pub exited: bool,
-}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct PaneId(pub u32);
 
-/// Read-only server observations available to providers.
-pub trait Host: ServerObservability {
+pub trait Host {
+    fn pane_ids(&self) -> io::Result<Vec<PaneId>>;
     fn pane_cwd(&self, pane: PaneId) -> Option<PathBuf>;
-    fn pane_activity(&self, pane: PaneId) -> Option<PaneActivity>;
 }
 
 /// A claimed name and its value before the first successful pane refresh.
@@ -265,7 +255,7 @@ pub(crate) fn each(pane: Option<PaneId>) -> Vec<(CString, CString)> {
 
 fn enabled_names(value: Option<&OsStr>) -> Vec<String> {
     let Some(value) = value else {
-        return vec!["agent".into(), "git".into()];
+        return vec!["git".into()];
     };
     let names: Vec<_> = value
         .as_bytes()
@@ -284,10 +274,7 @@ fn enabled_names(value: Option<&OsStr>) -> Vec<String> {
 /// Called in the server after fork and before configuration is loaded.
 pub(crate) fn init() {
     let enabled = enabled_names(std::env::var_os("TMUX_C2RS_PLUGINS").as_deref());
-    let builtins: [Box<dyn Plugin>; 2] = [
-        Box::new(agent::AgentPlugin::new()),
-        Box::new(git::GitPlugin::new()),
-    ];
+    let builtins: [Box<dyn Plugin>; 1] = [Box::new(git::GitPlugin::new())];
     for plugin in builtins {
         if enabled
             .iter()

@@ -4,7 +4,7 @@ use crate::options::{options_local_entry, options_set_string, options_to_cstring
 use std::collections::btree_map::Entry;
 use std::ffi::CStr;
 
-const WINDOW_STATUS_FORMAT: &CStr = c"#I:#{P/i:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default],#{?window_active,#[nounderscore],#[underscore]}#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
+const WINDOW_STATUS_FORMAT: &CStr = c"#I:#{P/i:#{pane_state_emoji},#{?window_active,#[nounderscore],#[underscore]}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
 
 pub(super) fn apply() {
     OptionsScope::GlobalWindow.with_local(|options| {

@@ -1,17 +1,16 @@
-//! The small adapter between plugin observations and pane ownership.
-use super::{Host, PaneActivity, PaneId};
+use super::{Host, PaneId};
 use crate::shared::pane::{window_pane, window_pane_tree};
-use crate::window_pane::{observability, WindowPane};
+use crate::window_pane::WindowPane;
 use std::cell::RefCell;
 use std::io;
+use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::rc::Rc;
-use tiri_agent::observability::v1::{PaneObservability, ServerObservability};
 
 #[derive(Clone, Copy)]
 pub(super) struct ServerHost;
 
-impl ServerObservability for ServerHost {
+impl Host for ServerHost {
     fn pane_ids(&self) -> io::Result<Vec<PaneId>> {
         Ok(window_pane_tree::snapshot()
             .into_iter()
@@ -19,18 +18,11 @@ impl ServerObservability for ServerHost {
             .collect())
     }
 
-    fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Rc<dyn PaneObservability>>> {
-        Ok(observability::resolve(id))
-    }
-}
-
-impl Host for ServerHost {
     fn pane_cwd(&self, pane: PaneId) -> Option<PathBuf> {
-        observability::cwd(pane)
-    }
-
-    fn pane_activity(&self, pane: PaneId) -> Option<PaneActivity> {
-        observability::activity(pane)
+        let pane = <Rc<RefCell<window_pane>>>::find_by_id(pane.0)?;
+        let path = pane.current_path()?;
+        let path = PathBuf::from(std::ffi::OsString::from_vec(path.into_bytes()));
+        path.is_absolute().then_some(path)
     }
 }
 

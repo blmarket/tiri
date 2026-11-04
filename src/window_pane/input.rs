@@ -1633,7 +1633,20 @@ impl VtHost for ScreenVtHost<'_, '_> {
     }
 
     fn set_program_status(&mut self, status: Option<ProgramStatus>) {
-        self.sctx.with_screen_mut(|s| s.program_status = status);
+        let changed = self.sctx.with_screen_mut(|screen| {
+            if screen.program_status == status {
+                return false;
+            }
+            screen.program_status = status;
+            true
+        });
+        if changed {
+            if let Some(pane) = self.ictx.wp.upgrade() {
+                if let Some(window) = pane.window_observer().upgrade() {
+                    server_status_window(&window);
+                }
+            }
+        }
     }
 
     fn exit_rename(&mut self, input_buf: &[u8], input_len: usize) {

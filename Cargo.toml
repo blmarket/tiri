@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "tiri-agent",
     "tiri-buffer",
     "tiri-cmdparse",
     "tiri-rt",
@@ -28,7 +27,6 @@ path = "src/main.rs"
 name = "tiri"
 
 [dependencies]
-tiri-agent = { path = "tiri-agent" }
 tiri-vt = { path = "tiri-vt" }
 futures-core = "0.3"
 tiri-cmdparse = { path = "tiri-cmdparse" }

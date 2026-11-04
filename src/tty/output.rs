@@ -1484,6 +1484,7 @@ mod xtermjs_wide_tests {
         let owner = queue_test_clients::with_queue();
         owner.update_flags(CLIENT_UTF8 as u64, 0);
         let caps = [
+            c"clear=\x1b[H\x1b[2J".to_owned(),
             c"cup=\x1b[%i%p1%d;%p2%dH".to_owned(),
             c"hpa=\x1b[%i%p1%dG".to_owned(),
             c"cuf1=\x1b[C".to_owned(),
@@ -1583,6 +1584,12 @@ mod xtermjs_wide_tests {
 
     #[test]
     fn draw_line_isolates_emojis_only_on_xtermjs() {
+        OptionsScope::GlobalServer.reset_default(
+            crate::options::options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"extended-keys"))
+                .unwrap(),
+        );
         let mut s = screen::default();
         screen_init(&mut s, 10, 1, 0);
         {

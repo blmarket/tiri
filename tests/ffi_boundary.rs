@@ -181,7 +181,6 @@ fn foreign_declarations_live_under_src_ffi() {
     let mut files = Vec::new();
     for crate_dir in [
         "",
-        "tiri-agent",
         "tiri-buffer",
         "tiri-cmdparse",
         "tiri-refbox",

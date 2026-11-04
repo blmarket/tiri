@@ -9,7 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
-const TIRI_STATUS: &str = "#I:#{P/i:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default],#{?window_active,#[nounderscore],#[underscore]}#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
+const TIRI_STATUS: &str = "#I:#{P/i:#{pane_state_emoji},#{?window_active,#[nounderscore],#[underscore]}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
 
 struct Server {
     root: PathBuf,
@@ -170,7 +170,7 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     server.await_format(
         &pane,
         "#{git_branch}:#{pane_agent_state}:#{pane_state_emoji}",
-        "main:none:💲",
+        "main:none:",
     );
     assert_eq!(
         server.format(&pane, "#{@git_branch}:#{@pane_agent_state}"),
@@ -187,12 +187,12 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     assert_eq!(server.run(&["show-options", "-gv", "prefix"]), "C-b");
     assert!(server
         .format(&pane, "#{E:window-status-format}")
-        .contains("💲#[default] project"));
+        .contains("#[default] project"));
     server.run(&["new-pane", "-d", "-t", &pane, "-c", repo.to_str().unwrap()]);
     server.await_format(
         &pane,
         "#{E:window-status-format}",
-        "0:#[nounderscore]💲#[default]💲#[default] project*",
+        "0:#[nounderscore]#[default] project*",
     );
     let inactive = server.run(&[
         "new-window",
@@ -216,7 +216,7 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     server.await_format(
         &inactive,
         "#{E:window-status-format}",
-        "1:#[underscore]💲#[default]💲#[default] project ",
+        "1:#[underscore]#[default] project ",
     );
     let all = server.run(&["display-message", "-a", "-t", &pane]);
     let plugin_fields: Vec<_> = all
@@ -227,7 +227,7 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
                 || line.starts_with("pane_state_emoji=")
         })
         .collect();
-    assert_eq!(plugin_fields.len(), 15, "{plugin_fields:?}");
+    assert_eq!(plugin_fields.len(), 12, "{plugin_fields:?}");
     assert!(plugin_fields.contains(&"git_branch=main"));
     fs::write(repo.join(".git/HEAD"), "ref: refs/heads/updated\n").unwrap();
     server.await_format(&pane, "#{git_branch}", "updated");
@@ -253,15 +253,15 @@ fn window_status_lists_pane_emojis_in_layout_order() {
         "#{pane_id}",
         "-c",
         repo.to_str().unwrap(),
-        "sleep 1000",
+        "printf '\\033]7501;state=working:app=demo\\007'; sleep 1000",
     ]);
     assert_eq!(server.format(&running, "#{pane_index}"), "0");
     assert_eq!(server.format(&shell, "#{pane_index}"), "1");
-    server.await_format(&running, "#{pane_state_emoji}", "🔧");
-    server.await_format(&shell, "#{pane_state_emoji}", "💲");
+    server.await_format(&running, "#{pane_state_emoji}", "🔄");
+    server.await_format(&shell, "#{pane_state_emoji}", "");
     assert_eq!(
         server.format(&shell, "#{E:window-status-format}"),
-        "0:🔧#[default]#[nounderscore]💲#[default] project*"
+        "0:🔄#[nounderscore]#[default] project*"
     );
 }
 
@@ -275,7 +275,7 @@ fn selection_and_configuration_override_only_presentation_defaults() {
                 &pane,
                 "#{git_branch}:#{pane_agent_state}:#{pane_state_emoji}"
             ),
-            "::"
+            ":none:"
         );
         assert_eq!(
             server.run(&["show-options", "-gwv", "window-status-format"]),
@@ -288,7 +288,7 @@ fn selection_and_configuration_override_only_presentation_defaults() {
     server.await_format(&pane, "#{git_branch}", "main");
     assert_eq!(
         server.format(&pane, "#{pane_agent_state}:#{pane_state_emoji}"),
-        ":"
+        "none:"
     );
     assert_eq!(
         server.run(&["show-options", "-gwv", "window-status-format"]),
@@ -395,4 +395,26 @@ fn pane_loops_and_control_subscriptions_observe_cached_changes() {
     control.await_line(" : next");
     server.run(&["kill-pane", "-t", &first]);
     server.await_format(&second, "#{git_branch}", "");
+}
+
+#[test]
+fn osc_status_subscriptions_update_without_plugins() {
+    let server = Server::start(Some("none"), "");
+    let pane = server.pane(server.root.to_str().unwrap());
+    let mut control = Control::new(&server);
+    control.send(&format!(
+        "refresh-client -B 'status:{pane}:#{{pane_agent}}/#{{pane_agent_state}}'"
+    ));
+    control.await_line(" : /none");
+    for state in ["working", "blocked", "done", "clear"] {
+        let command = format!("printf '\\033]7501;state={state}:app=demo\\007'");
+        server.run(&["send-keys", "-t", &pane, "-l", &command]);
+        server.run(&["send-keys", "-t", &pane, "Enter"]);
+        let expected = if state == "clear" {
+            "/none".to_owned()
+        } else {
+            format!("demo/{state}")
+        };
+        control.await_line(&format!(" : {expected}"));
+    }
 }

@@ -7,7 +7,7 @@ use crate::format::{format_tree, FormatValue, FORMAT_TYPE_PANE};
 use crate::grid::grid_get_line;
 use crate::grid::view::grid_view_get_cell;
 use crate::names::parse_window_name_cstring;
-use crate::osdep::{osdep_get_cwd, osdep_get_name_cstring};
+use crate::osdep::osdep_get_name_cstring;
 use crate::shared::pane::{PANE_CMDRUNNING, PANE_STATUSDRAWN};
 use crate::shared::screen::*;
 use crate::style::colour::colour_format;
@@ -49,6 +49,9 @@ fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue> {
             }
             .to_owned(),
         )),
+        b"pane_agent" | b"pane_agent_state" | b"pane_state_emoji" => {
+            format_cb_program_status(context, key).map(FormatValue::String)
+        }
         b"pane_start_command" => format_cb_start_command(context).map(FormatValue::String),
         b"pane_start_command_list" => {
             format_cb_start_command_list(context).map(FormatValue::String)
@@ -211,10 +214,34 @@ fn format_cb_current_command(ft: &mut format_tree) -> Option<CString> {
     Some(value)
 }
 
+fn format_cb_program_status(ft: &mut format_tree, key: &CStr) -> Option<CString> {
+    let pane = ft.wp.upgrade()?;
+    let pane = pane.borrow();
+    let status = pane.base.program_status.as_ref();
+    let value = match key.to_bytes() {
+        b"pane_agent" => status.and_then(tiri_vt::ProgramStatus::app).unwrap_or(""),
+        b"pane_agent_state" => status.map_or("none", |status| match status.state() {
+            tiri_vt::ProgramState::Idle => "idle",
+            tiri_vt::ProgramState::Working => "working",
+            tiri_vt::ProgramState::Done => "done",
+            tiri_vt::ProgramState::Blocked => "blocked",
+            tiri_vt::ProgramState::Error => "error",
+        }),
+        b"pane_state_emoji" => status.map_or("", |status| match status.state() {
+            tiri_vt::ProgramState::Idle => "💤",
+            tiri_vt::ProgramState::Working => "🔄",
+            tiri_vt::ProgramState::Done => "✅",
+            tiri_vt::ProgramState::Blocked => "✋",
+            tiri_vt::ProgramState::Error => "❌",
+        }),
+        _ => return None,
+    };
+    Some(CString::new(value).expect("program status contains no NUL"))
+}
+
 fn format_cb_current_path(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
-    let wp = pane.borrow();
-    osdep_get_cwd(std::os::fd::AsFd::as_fd(wp.fd.as_ref()?))
+    pane.current_path()
 }
 
 fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {

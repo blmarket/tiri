@@ -89,6 +89,7 @@ pub trait WindowPane {
     fn acknowledge_unseen_changes(&self);
     /// Derive an owned default Window name from this pane's command or shell.
     fn default_window_name(&self) -> CString;
+    fn current_path(&self) -> Option<CString>;
     /// A borrow can become Ref::map on one RefCell containing the whole pane.
     type Palette<'a>: std::ops::Deref<Target = colour_palette>
     where
@@ -893,6 +894,11 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn acknowledge_unseen_changes(&self) {
         self.borrow_mut().flags &= !PANE_UNSEENCHANGES;
     }
+    fn current_path(&self) -> Option<CString> {
+        let pane = self.borrow();
+        crate::osdep::osdep_get_cwd(std::os::fd::AsFd::as_fd(pane.fd.as_ref()?))
+    }
+
     fn default_window_name(&self) -> CString {
         let pane = self.borrow();
         let command = crate::cmd::cmd_stringify_argv_cstring(&pane.argv);

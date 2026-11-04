@@ -48,7 +48,7 @@ pub struct screen {
     pub write_list: Option<Box<[screen_write_cline]>>,
     pub hyperlinks: Option<crate::hyperlinks::HyperlinksRef>,
     pub progress_bar: progress_bar,
-    pub program_status: Option<tiri_agent::observability::v1::ProgramStatus>,
+    pub program_status: Option<tiri_vt::ProgramStatus>,
 }
 
 /// Owned display state used after releasing the screen's owner or component borrow.

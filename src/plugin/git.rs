@@ -35,9 +35,7 @@ const VARIABLES: &[Variable] = &[
     Variable::new(c"git_action_total"),
 ];
 
-/// How often every pane's working directory is read back. Slower than the
-/// agent sweep: a `cd` is a keystroke away from being noticed either way, and
-/// this one is doing filesystem work rather than reading `/proc`.
+/// How often every pane's working directory is read back.
 const INTERVAL: Duration = Duration::from_millis(500);
 
 /// What the plugin publishes for one pane. Every field is empty for a pane

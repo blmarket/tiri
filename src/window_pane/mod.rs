@@ -19,7 +19,6 @@ mod lifecycle;
 mod mode_visuals;
 mod model;
 mod mouse;
-pub(crate) mod observability;
 mod process;
 mod pty;
 mod render;

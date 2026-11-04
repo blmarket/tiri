@@ -134,7 +134,7 @@ fn snapshots_are_per_pane_and_remove_disappeared_values() {
 
 #[test]
 fn selection_matches_tiri_environment_semantics() {
-    assert_eq!(enabled_names(None), ["agent", "git"]);
+    assert_eq!(enabled_names(None), ["git"]);
     assert_eq!(
         enabled_names(Some(OsStr::new(" Agent , Git "))),
         ["agent", "git"]
