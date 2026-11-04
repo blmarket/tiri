@@ -8,3 +8,9 @@ pub use parser::{
     INPUT_LAST, InputEndType, InputParam, Osc133Command, Parser, SgrAttr, SgrColor, SgrOp, VtHost,
     WinOp, buffer_size, set_buffer_size,
 };
+
+mod terminal;
+pub use terminal::{
+    ReplyError, TerminalHost, TerminalReplyKind, TerminalReplyState, TerminalReport,
+    parse_terminal_reply,
+};

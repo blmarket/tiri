@@ -1649,7 +1649,12 @@ fn tty_keys_next_input(
         }
     }
     if current_block == 1917311967535052937 {
-        match tty_keys_sync(terminal_client_owner, bytes, &mut size) {
+        match tty_keys_terminal_reply(
+            terminal_client_owner,
+            tiri_vt::TerminalReplyKind::SynchronizedOutput,
+            bytes,
+            &mut size,
+        ) {
             0 => {
                 key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                 current_block = 5025795842197473417;
@@ -1668,7 +1673,12 @@ fn tty_keys_next_input(
             5025795842197473417 => {}
             16977559109335092698 => {}
             _ => {
-                match tty_keys_device_attributes(terminal_client_owner, bytes, &mut size) {
+                match tty_keys_terminal_reply(
+                    terminal_client_owner,
+                    tiri_vt::TerminalReplyKind::PrimaryAttributes,
+                    bytes,
+                    &mut size,
+                ) {
                     0 => {
                         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         current_block = 5025795842197473417;
@@ -1687,7 +1697,12 @@ fn tty_keys_next_input(
                     5025795842197473417 => {}
                     16977559109335092698 => {}
                     _ => {
-                        match tty_keys_device_attributes2(terminal_client_owner, bytes, &mut size) {
+                        match tty_keys_terminal_reply(
+                            terminal_client_owner,
+                            tiri_vt::TerminalReplyKind::SecondaryAttributes,
+                            bytes,
+                            &mut size,
+                        ) {
                             0 => {
                                 key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                                 current_block = 5025795842197473417;
@@ -1706,8 +1721,9 @@ fn tty_keys_next_input(
                             5025795842197473417 => {}
                             16977559109335092698 => {}
                             _ => {
-                                match tty_keys_extended_device_attributes(
+                                match tty_keys_terminal_reply(
                                     terminal_client_owner,
+                                    tiri_vt::TerminalReplyKind::ExtendedAttributes,
                                     bytes,
                                     &mut size,
                                 ) {
@@ -2565,184 +2581,76 @@ fn tty_keys_clipboard(
     *reply = Some(input_request_clipboard_data { data: out, clip });
     0 as ::core::ffi::c_int
 }
-/// Primary and secondary DA parameters are shorter than this, the size of
-/// the old fixed copy.
-const DA_PARAMS_MAX: size_t = 128;
+struct TerminalReplyHost<'a>(&'a ClientRef);
 
-/// The DA parameters as numbers: at most 32 fields, each read by
-/// `scan::strtoul_field`, stopping at a NUL as the C string split did.
-fn tty_keys_da_fields(params: &[u8]) -> impl Iterator<Item = i8> + '_ {
-    scan::until_nul(params)
-        .split(|&byte| byte == b';')
-        .take(32)
-        .map(scan::strtoul_field)
-}
+impl tiri_vt::TerminalHost for TerminalReplyHost<'_> {
+    fn terminal_reply_state(&self) -> tiri_vt::TerminalReplyState {
+        let terminal = self.0.borrow_terminal();
+        tiri_vt::TerminalReplyState {
+            primary_attributes: terminal.flags & TTY_HAVEDA != 0,
+            secondary_attributes: terminal.flags & TTY_HAVEDA2 != 0,
+            extended_attributes: terminal.flags & TTY_HAVEXDA != 0,
+            synchronized_output: terminal.flags & TTY_HAVESYNC != 0,
+            supports_synchronized_output: terminal
+                .term
+                .as_deref()
+                .is_some_and(|term| tty_term_has(term, TTYC_SYNC) != 0),
+        }
+    }
 
-/// Match `\e[<marker>...c` and return the parameters between them; `Err` is
-/// the parser's answer when this is not a complete DA reply.
-fn tty_keys_da_params(bytes: &[u8], marker: u8) -> Result<&[u8], ::core::ffi::c_int> {
-    let len: size_t = bytes.len();
-    for (i, &expected) in [b'\x1b', b'[', marker].iter().enumerate() {
-        if bytes[i] != expected {
-            return Err(-(1 as ::core::ffi::c_int));
+    fn terminal_report(&mut self, report: tiri_vt::TerminalReport<'_>) {
+        for feature in report.features {
+            tty_parse_client_features(self.0, feature, c",");
         }
-        if len == i + 1 {
-            return Err(1 as ::core::ffi::c_int);
+        if let Some(name) = report.terminal {
+            tty_default_features(self.0, name);
         }
-    }
-    let mut i: size_t = 0;
-    while i < DA_PARAMS_MAX {
-        if 3 + i == len {
-            return Err(1 as ::core::ffi::c_int);
+        if let Some(version) = report.version {
+            self.0.record_terminal_type(version);
         }
-        if bytes[3 + i].is_ascii_lowercase() {
-            break;
-        }
-        i += 1;
-    }
-    if i == DA_PARAMS_MAX || bytes[3 + i] != b'c' {
-        return Err(-(1 as ::core::ffi::c_int));
-    }
-    Ok(&bytes[3..3 + i])
-}
-fn tty_keys_device_attributes(
-    terminal_client_owner: &ClientRef,
-    bytes: &[u8],
-    size: &mut size_t,
-) -> ::core::ffi::c_int {
-    *size = 0 as size_t;
-    if terminal_client_owner.borrow_terminal().flags & TTY_HAVEDA != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    let params = match tty_keys_da_params(bytes, b'?') {
-        Ok(params) => params,
-        Err(n) => return n,
-    };
-    *size = params.len() + 4;
-    let fields: Vec<i8> = tty_keys_da_fields(params).collect();
-    if let [61..=65, features @ ..] = fields.as_slice() {
-        for &p in features {
-            log_debug(format_args!(
-                "{}: DA feature: {}",
-                log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
-                p as ::core::ffi::c_int
-            ));
-            let feature = match p {
-                4 => c"sixel",
-                21 => c"margins",
-                28 => c"rectfill",
-                52 => c"clipboard",
-                _ => continue,
+        {
+            let mut terminal = self.0.borrow_terminal_mut();
+            if let Some(xtermjs) = report.xtermjs {
+                if xtermjs {
+                    terminal.flags |= TTY_XTERMJS;
+                } else {
+                    terminal.flags &= !TTY_XTERMJS;
+                }
+            }
+            terminal.flags |= match report.kind {
+                tiri_vt::TerminalReplyKind::PrimaryAttributes => TTY_HAVEDA,
+                tiri_vt::TerminalReplyKind::SecondaryAttributes => TTY_HAVEDA2,
+                tiri_vt::TerminalReplyKind::ExtendedAttributes => TTY_HAVEXDA,
+                tiri_vt::TerminalReplyKind::SynchronizedOutput => TTY_HAVESYNC,
             };
-            tty_parse_client_features(terminal_client_owner, feature, c",");
         }
+        tty_update_features(self.0);
     }
-    log_debug(format_args!(
-        "{}: received primary DA {}",
-        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
-        log_cstr_n(&bytes[..*size])
-    ));
-    {
-        tty_update_features(terminal_client_owner);
-        terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA;
-    }
-    0 as ::core::ffi::c_int
 }
-fn tty_keys_sync(
-    terminal_client_owner: &ClientRef,
+
+fn tty_keys_terminal_reply(
+    client: &ClientRef,
+    kind: tiri_vt::TerminalReplyKind,
     bytes: &[u8],
     size: &mut size_t,
-) -> ::core::ffi::c_int {
-    let len: size_t = bytes.len();
-    let prefix = b"\x1B[?2026;";
-    *size = 0 as size_t;
-    if terminal_client_owner.borrow_terminal().flags & TTY_HAVESYNC != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    for (i, &expected) in prefix.iter().enumerate() {
-        if i == len {
-            return 1 as ::core::ffi::c_int;
+) -> i32 {
+    *size = 0;
+    match tiri_vt::parse_terminal_reply(&mut TerminalReplyHost(client), kind, bytes) {
+        Ok(consumed) => {
+            *size = consumed;
+            log_debug(format_args!(
+                "{}: received {:?} {}",
+                log_cstr(client.name().as_deref().unwrap_or(c"(null)")),
+                kind,
+                log_cstr_n(&bytes[..consumed])
+            ));
+            0
         }
-        if bytes[i] != expected {
-            return -(1 as ::core::ffi::c_int);
-        }
+        Err(tiri_vt::ReplyError::Incomplete) => 1,
+        Err(tiri_vt::ReplyError::Unrecognized) => -1,
     }
-    let mut i: size_t = prefix.len();
-    if i == len {
-        return 1 as ::core::ffi::c_int;
-    }
-    if !(b'0'..=b'4').contains(&bytes[i]) {
-        return -(1 as ::core::ffi::c_int);
-    }
-    let status = bytes[i] - b'0';
-    i += 1;
-    for &expected in b"$y" {
-        if i == len {
-            return 1 as ::core::ffi::c_int;
-        }
-        if bytes[i] != expected {
-            return -(1 as ::core::ffi::c_int);
-        }
-        i += 1;
-    }
-    *size = i;
-    log_debug(format_args!(
-        "{}: received DECRPM {}",
-        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
-        log_cstr_n(&bytes[..*size])
-    ));
-    if let 1..=3 = status {
-        tty_parse_client_features(terminal_client_owner, c"sync", c",");
-        terminal_client_owner.borrow_terminal_mut().flags &= !TTY_XTERMJS;
-        tty_update_features(terminal_client_owner);
-    }
-    terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVESYNC;
-    0 as ::core::ffi::c_int
 }
-fn tty_keys_device_attributes2(
-    terminal_client_owner: &ClientRef,
-    bytes: &[u8],
-    size: &mut size_t,
-) -> ::core::ffi::c_int {
-    *size = 0 as size_t;
-    if terminal_client_owner.borrow_terminal().flags & TTY_HAVEDA2 != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    let params = match tty_keys_da_params(bytes, b'>') {
-        Ok(params) => params,
-        Err(n) => return n,
-    };
-    *size = params.len() + 4;
-    let terminal = match tty_keys_da_fields(params).next() {
-        Some(77) => Some(c"mintty"),
-        Some(84) => Some(c"tmux"),
-        Some(85) => Some(c"rxvt-unicode"),
-        _ => None,
-    };
-    if let Some(terminal) = terminal {
-        tty_default_features(terminal_client_owner, terminal);
-    }
-    if params == b"0;276;0" {
-        let mut tty = terminal_client_owner.borrow_terminal_mut();
-        let has_sync = tty
-            .term
-            .as_deref()
-            .is_some_and(|term| tty_term_has(term, TTYC_SYNC) != 0);
-        if tty.flags & TTY_HAVEXDA == 0 && !has_sync {
-            tty.flags |= TTY_XTERMJS;
-        }
-    }
-    log_debug(format_args!(
-        "{}: received secondary DA {}",
-        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
-        log_cstr_n(&bytes[..*size])
-    ));
-    {
-        tty_update_features(terminal_client_owner);
-        terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA2;
-    }
-    0 as ::core::ffi::c_int
-}
+
 /// Extended DA, colour and palette reply text is shorter than this, one
 /// less than the old fixed copy.
 const REPLY_TEXT_MAX: size_t = 127;
@@ -2775,65 +2683,6 @@ fn tty_keys_reply_text_len(
         return Err(-(1 as ::core::ffi::c_int));
     }
     Ok(i)
-}
-fn tty_keys_extended_device_attributes(
-    terminal_client_owner: &ClientRef,
-    bytes: &[u8],
-    size: &mut size_t,
-) -> ::core::ffi::c_int {
-    /// Text prefixes in the order they are tried, with the feature set each
-    /// selects; a prefix is compared as `strncmp` compared it.
-    const TERMINALS: [(&[u8], &CStr); 8] = [
-        (b"iTerm2 ", c"iTerm2"),
-        (b"tmux ", c"tmux"),
-        (b"XTerm(", c"XTerm"),
-        (b"mintty ", c"mintty"),
-        (b"foot(", c"foot"),
-        (b"WezTerm", c"WezTerm"),
-        (b"ghostty ", c"ghostty"),
-        (b"Rio ", c"Rio"),
-    ];
-    let len: size_t = bytes.len();
-    *size = 0 as size_t;
-    if terminal_client_owner.borrow_terminal().flags & TTY_HAVEXDA != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    for (i, &expected) in b"\x1bP>|".iter().enumerate() {
-        if bytes[i] != expected {
-            return -(1 as ::core::ffi::c_int);
-        }
-        if len == i + 1 {
-            return 1 as ::core::ffi::c_int;
-        }
-    }
-    let i = match tty_keys_reply_text_len(bytes, 4, false) {
-        Ok(i) => i,
-        Err(n) => return n,
-    };
-    *size = 5 + i;
-    if i == 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    let text = scan::until_nul(&bytes[4..4 + i - 1]);
-    let terminal_type = CString::new(text).expect("terminal type stops at a NUL");
-    if let Some(&(_, name)) = TERMINALS
-        .iter()
-        .find(|(prefix, _)| text.starts_with(prefix))
-    {
-        tty_default_features(terminal_client_owner, name);
-    }
-    log_debug(format_args!(
-        "{}: received extended DA {}",
-        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
-        log_cstr_n(&bytes[..*size])
-    ));
-    {
-        terminal_client_owner.record_terminal_type(&terminal_type);
-        terminal_client_owner.borrow_terminal_mut().flags &= !TTY_XTERMJS;
-        tty_update_features(terminal_client_owner);
-        terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEXDA;
-    }
-    0 as ::core::ffi::c_int
 }
 /// The text of a BEL or `\e\\` terminated reply as the colour parsers read
 /// it: without a final Escape and up to the first NUL.
@@ -2978,22 +2827,11 @@ fn tty_keys_palette(
 /// Byte-slice forms of the C conversions the reply parsers once ran on
 /// NUL-terminated copies of the reply.
 mod scan {
-    use crate::text::numbers::{integer_prefix, unsigned_long};
 
     /// The bytes before the first NUL: what a C string function reading a
     /// copy of `text` saw.
     pub(super) fn until_nul(text: &[u8]) -> &[u8] {
         text.split(|&byte| byte == 0).next().unwrap_or(text)
-    }
-
-    /// `strtoul(field, &end, 10)` cast to `char`, or 0 when `end` stops
-    /// short of the end of the field. An empty field is 0.
-    pub(super) fn strtoul_field(field: &[u8]) -> i8 {
-        let prefix = integer_prefix(field, 10);
-        if prefix.consumed != field.len() {
-            return 0;
-        }
-        unsigned_long(&prefix) as i8
     }
 
     #[cfg(test)]
@@ -3055,15 +2893,6 @@ mod scan {
                 let text = CString::new(input).unwrap();
                 unsafe {
                     let mut end = std::ptr::null_mut();
-                    let value = libc::strtoul(text.as_ptr(), &mut end, 10);
-                    let whole = *end == 0;
-                    let expected = if whole {
-                        value as ::core::ffi::c_char
-                    } else {
-                        0
-                    };
-                    assert_eq!(strtoul_field(input), expected as i8, "strtoul {input:?}");
-
                     let value = libc::strtol(text.as_ptr(), &mut end, 10);
                     let consumed = end.offset_from(text.as_ptr()) as usize;
                     assert_eq!(
@@ -3552,7 +3381,15 @@ mod reply_parser_tests {
 
     fn da(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
-        (tty_keys_device_attributes(owner, bytes, &mut size), size)
+        (
+            tty_keys_terminal_reply(
+                owner,
+                tiri_vt::TerminalReplyKind::PrimaryAttributes,
+                bytes,
+                &mut size,
+            ),
+            size,
+        )
     }
 
     fn da_features(params: &[u8]) -> i32 {
@@ -3568,8 +3405,19 @@ mod reply_parser_tests {
     fn primary_device_attributes() {
         let owner = client();
         let sequence = b"\x1b[?64;4;21;28;52c";
-        assert_prefixes_wait(|b, s| tty_keys_device_attributes(&owner, b, s), sequence);
-        assert_header_rejects(|b, s| tty_keys_device_attributes(&owner, b, s), sequence, 3);
+        assert_prefixes_wait(
+            |b, s| {
+                tty_keys_terminal_reply(&owner, tiri_vt::TerminalReplyKind::PrimaryAttributes, b, s)
+            },
+            sequence,
+        );
+        assert_header_rejects(
+            |b, s| {
+                tty_keys_terminal_reply(&owner, tiri_vt::TerminalReplyKind::PrimaryAttributes, b, s)
+            },
+            sequence,
+            3,
+        );
         assert_eq!(da(&owner, b"\x1b[?64;4x"), (-1, 0));
         assert_eq!(da(&owner, b"\x1b[?64;4cX"), (0, 8));
         assert_eq!(owner.terminal_feature_mask(), features_with(c"sixel"));
@@ -3634,16 +3482,41 @@ mod reply_parser_tests {
 
     fn da2(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
-        (tty_keys_device_attributes2(owner, bytes, &mut size), size)
+        (
+            tty_keys_terminal_reply(
+                owner,
+                tiri_vt::TerminalReplyKind::SecondaryAttributes,
+                bytes,
+                &mut size,
+            ),
+            size,
+        )
     }
 
     #[test]
     fn secondary_device_attributes() {
         let owner = client();
         let sequence = b"\x1b[>84;0;0c";
-        assert_prefixes_wait(|b, s| tty_keys_device_attributes2(&owner, b, s), sequence);
+        assert_prefixes_wait(
+            |b, s| {
+                tty_keys_terminal_reply(
+                    &owner,
+                    tiri_vt::TerminalReplyKind::SecondaryAttributes,
+                    b,
+                    s,
+                )
+            },
+            sequence,
+        );
         assert_header_rejects(
-            |b, s| tty_keys_device_attributes2(&owner, b, s),
+            |b, s| {
+                tty_keys_terminal_reply(
+                    &owner,
+                    tiri_vt::TerminalReplyKind::SecondaryAttributes,
+                    b,
+                    s,
+                )
+            },
             sequence,
             3,
         );
@@ -3716,7 +3589,12 @@ mod reply_parser_tests {
     fn xda(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
         (
-            tty_keys_extended_device_attributes(owner, bytes, &mut size),
+            tty_keys_terminal_reply(
+                owner,
+                tiri_vt::TerminalReplyKind::ExtendedAttributes,
+                bytes,
+                &mut size,
+            ),
             size,
         )
     }
@@ -3726,11 +3604,25 @@ mod reply_parser_tests {
         let owner = client();
         let sequence = b"\x1bP>|foot(1.16.2)\x1b\\";
         assert_prefixes_wait(
-            |b, s| tty_keys_extended_device_attributes(&owner, b, s),
+            |b, s| {
+                tty_keys_terminal_reply(
+                    &owner,
+                    tiri_vt::TerminalReplyKind::ExtendedAttributes,
+                    b,
+                    s,
+                )
+            },
             sequence,
         );
         assert_header_rejects(
-            |b, s| tty_keys_extended_device_attributes(&owner, b, s),
+            |b, s| {
+                tty_keys_terminal_reply(
+                    &owner,
+                    tiri_vt::TerminalReplyKind::ExtendedAttributes,
+                    b,
+                    s,
+                )
+            },
             sequence,
             4,
         );
@@ -3785,15 +3677,44 @@ mod reply_parser_tests {
 
     fn sync(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
-        (tty_keys_sync(owner, bytes, &mut size), size)
+        (
+            tty_keys_terminal_reply(
+                owner,
+                tiri_vt::TerminalReplyKind::SynchronizedOutput,
+                bytes,
+                &mut size,
+            ),
+            size,
+        )
     }
 
     #[test]
     fn synchronized_output_reports() {
         let owner = client();
         let sequence = b"\x1b[?2026;2$y";
-        assert_prefixes_wait(|b, s| tty_keys_sync(&owner, b, s), sequence);
-        assert_header_rejects(|b, s| tty_keys_sync(&owner, b, s), sequence, 8);
+        assert_prefixes_wait(
+            |b, s| {
+                tty_keys_terminal_reply(
+                    &owner,
+                    tiri_vt::TerminalReplyKind::SynchronizedOutput,
+                    b,
+                    s,
+                )
+            },
+            sequence,
+        );
+        assert_header_rejects(
+            |b, s| {
+                tty_keys_terminal_reply(
+                    &owner,
+                    tiri_vt::TerminalReplyKind::SynchronizedOutput,
+                    b,
+                    s,
+                )
+            },
+            sequence,
+            8,
+        );
         assert_eq!(sync(&owner, b"\x1b[?2026;5$y"), (-1, 0));
         assert_eq!(sync(&owner, b"\x1b[?2026;2xy"), (-1, 0));
         assert_eq!(sync(&owner, b"\x1b[?2026;2$x"), (-1, 0));
