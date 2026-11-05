@@ -222,6 +222,7 @@ pub(crate) fn server_start(
     server_clear_messages();
     set_start_time(SystemTime::now());
     crate::plugin::init();
+    crate::window_pane::process_status::start();
     #[cfg(target_os = "linux")]
     let listener = if systemd_activated() {
         systemd_create_socket(flags)
@@ -266,6 +267,7 @@ pub(crate) fn server_start(
             drop(process_owner);
             SERVER_PROC.set(refbox::Weak::new());
             crate::plugin::shutdown();
+            crate::window_pane::process_status::shutdown();
             reactor::shutdown_runtime(runtime);
             std::process::exit(1);
         }
@@ -278,6 +280,7 @@ pub(crate) fn server_start(
     proc_loop(&server_proc(), runtime, Some(&mut loop_callback));
     server_destroy_sessions(false);
     crate::plugin::shutdown();
+    crate::window_pane::process_status::shutdown();
     crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();

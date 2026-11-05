@@ -1544,6 +1544,19 @@ impl VtHost for ScreenVtHost<'_, '_> {
 
     fn osc_133(&mut self, cmd: Osc133Command) {
         let pane_owner = self.ictx.wp.upgrade();
+        let running = match &cmd {
+            Osc133Command::PromptStart | Osc133Command::CommandFinished { .. } => Some(false),
+            Osc133Command::OutputStart => Some(true),
+            _ => None,
+        };
+        if let Some(pane) = pane_owner.as_ref() {
+            let changed = super::process_status::shell_event(&pane.borrow(), running);
+            if changed {
+                if let Some(window) = pane.window_observer().upgrade() {
+                    server_status_window(&window);
+                }
+            }
+        }
         let cx = self.sctx.with_screen(|s| s.cx);
         let cy = self.sctx.with_screen(|s| s.cy);
         let line = self.sctx.with_screen(|s| {
@@ -1642,6 +1655,7 @@ impl VtHost for ScreenVtHost<'_, '_> {
         });
         if changed {
             if let Some(pane) = self.ictx.wp.upgrade() {
+                super::process_status::shell_event(&pane.borrow(), None);
                 if let Some(window) = pane.window_observer().upgrade() {
                     server_status_window(&window);
                 }

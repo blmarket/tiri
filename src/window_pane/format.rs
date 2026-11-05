@@ -227,13 +227,16 @@ fn format_cb_program_status(ft: &mut format_tree, key: &CStr) -> Option<CString>
             tiri_vt::ProgramState::Blocked => "blocked",
             tiri_vt::ProgramState::Error => "error",
         }),
-        b"pane_state_emoji" => status.map_or("", |status| match status.state() {
-            tiri_vt::ProgramState::Idle => "💤",
-            tiri_vt::ProgramState::Working => "🔄",
-            tiri_vt::ProgramState::Done => "✅",
-            tiri_vt::ProgramState::Blocked => "✋",
-            tiri_vt::ProgramState::Error => "❌",
-        }),
+        b"pane_state_emoji" => status.map_or_else(
+            || super::process_status::emoji(&pane),
+            |status| match status.state() {
+                tiri_vt::ProgramState::Idle => "💤",
+                tiri_vt::ProgramState::Working => "🔄",
+                tiri_vt::ProgramState::Done => "✅",
+                tiri_vt::ProgramState::Blocked => "✋",
+                tiri_vt::ProgramState::Error => "❌",
+            },
+        ),
         _ => return None,
     };
     Some(CString::new(value).expect("program status contains no NUL"))

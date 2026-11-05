@@ -170,7 +170,7 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     server.await_format(
         &pane,
         "#{git_branch}:#{pane_agent_state}:#{pane_state_emoji}",
-        "main:none:",
+        "main:none:💲",
     );
     assert_eq!(
         server.format(&pane, "#{@git_branch}:#{@pane_agent_state}"),
@@ -192,7 +192,7 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     server.await_format(
         &pane,
         "#{E:window-status-format}",
-        "0:#[nounderscore]#[default] project*",
+        "0:#[nounderscore]💲#[default]💲 project*",
     );
     let inactive = server.run(&[
         "new-window",
@@ -216,7 +216,7 @@ fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     server.await_format(
         &inactive,
         "#{E:window-status-format}",
-        "1:#[underscore]#[default] project ",
+        "1:#[underscore]💲#[default]💲 project ",
     );
     let all = server.run(&["display-message", "-a", "-t", &pane]);
     let plugin_fields: Vec<_> = all
@@ -258,10 +258,10 @@ fn window_status_lists_pane_emojis_in_layout_order() {
     assert_eq!(server.format(&running, "#{pane_index}"), "0");
     assert_eq!(server.format(&shell, "#{pane_index}"), "1");
     server.await_format(&running, "#{pane_state_emoji}", "🔄");
-    server.await_format(&shell, "#{pane_state_emoji}", "");
+    server.await_format(&shell, "#{pane_state_emoji}", "💲");
     assert_eq!(
         server.format(&shell, "#{E:window-status-format}"),
-        "0:🔄#[nounderscore]#[default] project*"
+        "0:🔄#[nounderscore]💲#[default] project*"
     );
 }
 
@@ -270,12 +270,10 @@ fn selection_and_configuration_override_only_presentation_defaults() {
     for disabled in ["none", ""] {
         let server = Server::start(Some(disabled), "");
         let pane = server.pane(server.root.to_str().unwrap());
-        assert_eq!(
-            server.format(
-                &pane,
-                "#{git_branch}:#{pane_agent_state}:#{pane_state_emoji}"
-            ),
-            ":none:"
+        server.await_format(
+            &pane,
+            "#{git_branch}:#{pane_agent_state}:#{pane_state_emoji}",
+            ":none:💲",
         );
         assert_eq!(
             server.run(&["show-options", "-gwv", "window-status-format"]),
@@ -288,7 +286,7 @@ fn selection_and_configuration_override_only_presentation_defaults() {
     server.await_format(&pane, "#{git_branch}", "main");
     assert_eq!(
         server.format(&pane, "#{pane_agent_state}:#{pane_state_emoji}"),
-        "none:"
+        "none:💲"
     );
     assert_eq!(
         server.run(&["show-options", "-gwv", "window-status-format"]),

@@ -313,6 +313,7 @@ pub(super) fn spawn_pane(
                 let mut pane = new_pane_owner.borrow_mut();
                 pane.flags &= !PANE_STATUSDRAWN;
                 pane.exit_status = None;
+                *pane.process_status.get_mut() = Default::default();
             } else {
                 new_pane_owner = created_pane.expect("new pane placed");
             }

@@ -26,6 +26,7 @@ pub struct window_pane {
     pub(super) shell: Option<CString>,
     pub(super) cwd: Option<CString>,
     pub(super) pid: pid_t,
+    pub(super) process_status: RefCell<super::process_status::ProcessStatus>,
     pub(super) tty: [u8; 32],
     /// Set once the process is reaped; cleared on respawn.
     pub(super) exit_status: Option<std::process::ExitStatus>,
@@ -103,6 +104,7 @@ impl Default for window_pane {
             shell: Default::default(),
             cwd: Default::default(),
             pid: Default::default(),
+            process_status: Default::default(),
             tty: Default::default(),
             exit_status: None,
             dead_time: UNIX_EPOCH,

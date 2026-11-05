@@ -42,7 +42,7 @@ fn osc_reports_update_builtin_formats_without_plugins_or_agent_detection() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    wait_for_status(&server, "|none|");
+    wait_for_status(&server, "|none|⌛");
     for (state, emoji) in [
         ("idle", "💤"),
         ("working", "🔄"),
@@ -61,7 +61,7 @@ fn osc_reports_update_builtin_formats_without_plugins_or_agent_detection() {
         send(&server, "working");
         wait_for_status(&server, "demo|working|🔄");
         send(&server, clear);
-        wait_for_status(&server, "|none|");
+        wait_for_status(&server, "|none|⌛");
     }
     assert_eq!(
         server.display("#{pane_agent_pid}|#{pane_agent_session_id}|#{pane_agent_model}"),
@@ -81,8 +81,8 @@ fn osc_reports_update_builtin_formats_without_plugins_or_agent_detection() {
 #[test]
 fn process_exit_clears_transient_reports_and_retains_completed_reports() {
     for (state, expected) in [
-        ("working", "|none|"),
-        ("blocked", "|none|"),
+        ("working", "|none|🛑"),
+        ("blocked", "|none|🛑"),
         ("done", "demo|done|✅"),
         ("error", "demo|error|❌"),
     ] {
@@ -98,4 +98,89 @@ fn process_exit_clears_transient_reports_and_retains_completed_reports() {
         }
         wait_for_status(&server, expected);
     }
+}
+
+fn configure_emoji_status(server: &Server) {
+    server.success(&["set-option", "-g", "status-interval", "0"]);
+    server.success(&[
+        "set-option",
+        "-g",
+        "status-format[0]",
+        "STATE:#{pane_state_emoji}",
+    ]);
+    server.success(&["set-option", "-g", "automatic-rename", "off"]);
+}
+
+fn wait_for_emoji(client: &mut common::TerminalClient, emoji: &str) {
+    client.wait_screen(|screen| {
+        screen
+            .row(screen.cells.len() - 1)
+            .contains(&format!("STATE:{emoji}"))
+    });
+}
+
+#[test]
+fn foreground_changes_redraw_status_without_periodic_status_refresh() {
+    let server = Server::new();
+    let output = server
+        .command()
+        .env("TMUX_C2RS_PLUGINS", "none")
+        .args(["new-session", "-d", "/bin/sh"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    configure_emoji_status(&server);
+    let mut client = server.attach_terminal(80, 24);
+    wait_for_emoji(&mut client, "💲");
+    client.send(b"sleep 2\r");
+    wait_for_emoji(&mut client, "🔧");
+    wait_for_emoji(&mut client, "💲");
+}
+
+#[test]
+fn same_process_exec_redraws_status_without_terminal_activity() {
+    use std::os::unix::fs::symlink;
+
+    let server = Server::new();
+    let root = std::env::temp_dir().join(format!("tiri-process-exec-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let gate = root.join("go");
+    let remote = root.join("ssh");
+    symlink("/bin/sh", &remote).unwrap();
+    let script = format!(
+        "while [ ! -e '{}' ]; do sleep 0.05; done; exec '{}' -c 'sleep 1000; :'",
+        gate.display(),
+        remote.display()
+    );
+    let output = server
+        .command()
+        .env("TMUX_C2RS_PLUGINS", "none")
+        .args(["new-session", "-d", &script])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    configure_emoji_status(&server);
+    let mut client = server.attach_terminal(80, 24);
+    wait_for_emoji(&mut client, "🔧");
+    let pid = server.display("#{pane_pid}");
+    std::fs::write(&gate, "").unwrap();
+    wait_for_emoji(&mut client, "📡");
+    assert_eq!(server.display("#{pane_pid}"), pid);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn shell_events_redraw_without_changing_foreground_process() {
+    let server = Server::new();
+    server.success(&["new-session", "-d", "/bin/sh"]);
+    configure_emoji_status(&server);
+    let mut client = server.attach_terminal(80, 24);
+    wait_for_emoji(&mut client, "💲");
+    let pid = server.display("#{pane_pid}");
+    client.send(br"printf '\033]133;C\007'; read value; printf '\033]133;A\007'");
+    client.send(b"\r");
+    wait_for_emoji(&mut client, "🔧");
+    client.send(b"done\r");
+    wait_for_emoji(&mut client, "💲");
+    assert_eq!(server.display("#{pane_pid}"), pid);
 }

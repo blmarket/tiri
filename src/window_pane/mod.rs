@@ -20,6 +20,7 @@ mod mode_visuals;
 mod model;
 mod mouse;
 mod process;
+pub(crate) mod process_status;
 mod pty;
 mod render;
 mod sort;
