@@ -607,7 +607,7 @@ mod ownership_tests {
     fn binding(key: key_code) -> Box<key_binding> {
         Box::new(key_binding {
             key,
-            commands: cmd_list_new(),
+            commands: Rc::new(cmd_list_new()),
             note: None,
             tablename: None,
             flags: 0,
@@ -674,13 +674,13 @@ mod ownership_tests {
     #[test]
     fn defaults_restore_notes_flags_and_command_ownership() {
         let name = c"binding-owner-defaults";
-        let original = cmd_list_new();
+        let original = Rc::new(cmd_list_new());
         let original_lifetime = std::rc::Rc::downgrade(&original);
         key_bindings_add(name, 65, Some(c"original"), 1, Some(original));
         let table_owner = key_bindings_get_table(name, 0).unwrap();
         let _ = key_bindings_init_done();
         assert_eq!(original_lifetime.strong_count(), 2);
-        let replacement = cmd_list_new();
+        let replacement = Rc::new(cmd_list_new());
         let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
         key_bindings_add(name, 65, Some(c"replacement"), 0, Some(replacement));
         assert_eq!(original_lifetime.strong_count(), 1);
@@ -706,7 +706,7 @@ mod ownership_tests {
             &original_lifetime
         ));
         assert_eq!(original_lifetime.strong_count(), 2);
-        key_bindings_add(name, 66, None, 0, Some(cmd_list_new()));
+        key_bindings_add(name, 66, None, 0, Some(Rc::new(cmd_list_new())));
         key_bindings_reset(name, 66);
         assert!(key_bindings_get(&table_owner.borrow(), 66).is_none());
         drop(table_owner);
@@ -717,7 +717,7 @@ mod ownership_tests {
     #[test]
     fn dispatch_snapshot_survives_binding_replacement_and_table_removal() {
         let name = c"binding-owner-dispatch";
-        let original = cmd_list_new();
+        let original = Rc::new(cmd_list_new());
         let original_lifetime = std::rc::Rc::downgrade(&original);
         key_bindings_add(name, 65, None, 1, Some(original));
         let table_owner = key_bindings_get_table(name, 0).unwrap();
@@ -726,7 +726,7 @@ mod ownership_tests {
         let command = key_bindings_get(&table_owner.borrow(), 65)
             .unwrap()
             .command();
-        key_bindings_add(name, 65, None, 0, Some(cmd_list_new()));
+        key_bindings_add(name, 65, None, 0, Some(Rc::new(cmd_list_new())));
         assert!(std::rc::Weak::ptr_eq(
             &std::rc::Rc::downgrade(command.cmdlist()),
             &original_lifetime

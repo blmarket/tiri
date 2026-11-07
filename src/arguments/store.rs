@@ -71,7 +71,7 @@ fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
             args_value::String(expanded)
         }
         args_value::Commands(commands, _) => {
-            args_value::commands(cmd_list_copy(commands, argv))
+            args_value::commands(std::rc::Rc::new(cmd_list_copy(commands, argv)))
         }
         args_value::None => args_value::None,
     }

@@ -205,11 +205,11 @@ impl cmd_find_state {
 }
 
 #[repr(C)]
-/// Owned by ordinary Rc handles from construction through final drop.
+/// Built with single ownership, then shared through Rc handles.
 #[derive(Default)]
 pub struct cmd_list {
     pub group: u_int,
-    /// Sole command owners, released with the final command-list reference.
+    /// Commands owned by this list.
     pub list: Vec<cmd>,
 }
 

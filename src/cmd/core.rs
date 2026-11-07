@@ -399,49 +399,27 @@ pub(crate) fn cmd_print_cstring(cmd: &cmd) -> CString {
     }
     CString::new(buf).expect("command print contains no interior NUL")
 }
-pub fn cmd_list_new() -> std::rc::Rc<cmd_list> {
-    let group = cmd_list_next_group();
-    std::rc::Rc::new(cmd_list {
-        group,
+pub fn cmd_list_new() -> cmd_list {
+    cmd_list {
+        group: cmd_list_next_group(),
         ..cmd_list::default()
-    })
+    }
 }
-pub fn cmd_list_append(cmdlist: &mut std::rc::Rc<cmd_list>, mut command: cmd) {
-    let cmdlist = std::rc::Rc::get_mut(cmdlist).expect("command list is uniquely owned");
+pub fn cmd_list_append(cmdlist: &mut cmd_list, mut command: cmd) {
     command.group = cmdlist.group;
     cmdlist.list.push(command);
 }
-pub fn cmd_list_append_all(
-    cmdlist: &mut std::rc::Rc<cmd_list>,
-    from: &mut std::rc::Rc<cmd_list>,
-) {
-    if std::rc::Rc::ptr_eq(cmdlist, from) {
-        return;
-    }
-    let cmdlist = std::rc::Rc::get_mut(cmdlist).expect("command list is uniquely owned");
-    let from = std::rc::Rc::get_mut(from).expect("command list is uniquely owned");
-    let group = cmdlist.group;
+pub fn cmd_list_append_all(cmdlist: &mut cmd_list, from: &mut cmd_list) {
     for command in &mut from.list {
-        command.group = group;
+        command.group = cmdlist.group;
     }
     cmdlist.list.append(&mut from.list);
 }
-pub fn cmd_list_move(
-    cmdlist: &mut std::rc::Rc<cmd_list>,
-    from: &mut std::rc::Rc<cmd_list>,
-) {
-    if !std::rc::Rc::ptr_eq(cmdlist, from) {
-        let from = std::rc::Rc::get_mut(from).expect("command list is uniquely owned");
-        let destination = std::rc::Rc::get_mut(cmdlist).expect("command list is uniquely owned");
-        destination.list.append(&mut from.list);
-    }
-    let destination = std::rc::Rc::get_mut(cmdlist).expect("command list is uniquely owned");
-    destination.group = cmd_list_next_group();
+pub fn cmd_list_move(cmdlist: &mut cmd_list, from: &mut cmd_list) {
+    cmdlist.list.append(&mut from.list);
+    cmdlist.group = cmd_list_next_group();
 }
-pub fn cmd_list_copy(
-    cmdlist: &cmd_list,
-    argv: &Vec<CString>,
-) -> std::rc::Rc<cmd_list> {
+pub fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> cmd_list {
     let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(format_args!(
@@ -453,9 +431,7 @@ pub fn cmd_list_copy(
 
     for cmd in &cmdlist.list {
         if cmd.group != group {
-            std::rc::Rc::get_mut(&mut owner)
-                .expect("command list is uniquely owned")
-                .group = cmd_list_next_group();
+            owner.group = cmd_list_next_group();
             group = cmd.group;
         }
         let new_cmd = cmd_copy(cmd, argv);

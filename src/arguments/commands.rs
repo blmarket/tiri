@@ -110,7 +110,7 @@ pub fn args_make_commands(
         if argv.is_empty() {
             return Ok(Rc::clone(commands));
         }
-        return Ok(cmd_list_copy(commands, argv));
+        return Ok(Rc::new(cmd_list_copy(commands, argv)));
     }
     let mut cmd = state.cmd.as_ref().expect("prepared command text").clone();
     log_debug(format_args!(

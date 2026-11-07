@@ -222,7 +222,7 @@ mod tests {
         Weak<cmd_list>,
     ) {
         let (answer, answered) = tiri_rt::oneshot::channel();
-        let cmdlist = cmd_list_new();
+        let cmdlist = Rc::new(cmd_list_new());
         let list = Rc::downgrade(&cmdlist);
         let item = cmdq_append(
             Some(owner),
@@ -328,7 +328,7 @@ mod tests {
         for (answer, queued) in [(c"n", 0), (c"y", 1)] {
             let answering = clients::with_queue();
             let mut cdata = Box::new(cmd_confirm_before_data {
-                reply: Some(cmd_confirm_before_reply::Background(cmd_list_new())),
+                reply: Some(cmd_confirm_before_reply::Background(Rc::new(cmd_list_new()))),
                 confirm_key: b'y',
                 default_yes: 0,
             });

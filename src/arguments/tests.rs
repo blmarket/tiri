@@ -167,7 +167,7 @@ fn borrowed_parser_command_retains_only_while_stored() {
         Ok(ARGS_PARSE_COMMANDS)
     }
 
-    let cmdlist = cmd_list_new();
+    let cmdlist = Rc::new(cmd_list_new());
     let values = [
         ParseValue::String(c"command"),
         ParseValue::Commands(&cmdlist),
@@ -202,7 +202,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
     }
 
     let command = cstring("command");
-    let command_lists = [cmd_list_new(), cmd_list_new()];
+    let command_lists = [Rc::new(cmd_list_new()), Rc::new(cmd_list_new())];
     let values = [
         ParseValue::String(command.as_c_str()),
         ParseValue::Commands(&command_lists[0]),
@@ -241,7 +241,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
 #[test]
 fn rejected_command_argument_keeps_source_value_ownership() {
     let command = cstring("command");
-    let command_list = cmd_list_new();
+    let command_list = Rc::new(cmd_list_new());
     let values = [
         ParseValue::String(command.as_c_str()),
         ParseValue::Commands(&command_list),
