@@ -67,12 +67,11 @@ pub static cmd_unlink_window_entry: cmd_entry = {
     }
 };
 fn cmd_kill_window_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut s: Option<SessionRef> = target.session_handle();
@@ -81,7 +80,7 @@ fn cmd_kill_window_exec(
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CmdOutcome::Error;
     }
-    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_unlink_window_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0), &cmd_unlink_window_entry) {
         if args_has(args, 'k' as i32 as u_char) == 0
             && (crate::shared::session::SessionRef::window_linked_outside_group(
                 s.as_ref(),

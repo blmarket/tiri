@@ -28,7 +28,7 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
     }
 };
 fn cmd_pipe_pane_exec(
-    command: refbox::Weak<cmd>,
+    command: &cmd,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();

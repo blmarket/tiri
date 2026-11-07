@@ -142,12 +142,11 @@ fn cmd_select_pane_redraw(w_owner: &WindowRef) {
     }
 }
 fn cmd_select_pane_marked_pane(
-    mut command: refbox::Weak<cmd>,
+    command: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = command.try_borrow().expect("live command");
-    let arguments = cmd_get_args(&cmd_ref);
+    let arguments = cmd_get_args(command);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
@@ -202,14 +201,12 @@ fn cmd_select_pane_marked_pane(
     CmdOutcome::Normal
 }
 fn cmd_select_pane_exec(
-    mut command: refbox::Weak<cmd>,
+    command: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let entry = cmd_get_entry(&command.try_borrow().expect("live command"));
-    let marked_command = command.clone();
-    let cmd_ref = command.try_borrow().expect("live command");
-    let arguments = cmd_get_args(&cmd_ref);
+    let entry = cmd_get_entry(command);
+    let arguments = cmd_get_args(command);
     let current = cmdq_get_state_owned(&item);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
@@ -257,7 +254,7 @@ fn cmd_select_pane_exec(
             return CmdOutcome::Normal;
         }
         if args_has(arguments, b'm') != 0 || args_has(arguments, b'M') != 0 {
-            return cmd_select_pane_marked_pane(marked_command.clone(), item_handle);
+            return cmd_select_pane_marked_pane(command, item_handle);
         }
         if let Some(style) = args_get(arguments, b'P') {
             {

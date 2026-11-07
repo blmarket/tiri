@@ -53,12 +53,11 @@ pub static cmd_switch_client_entry: cmd_entry = {
     }
 };
 fn cmd_switch_client_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,

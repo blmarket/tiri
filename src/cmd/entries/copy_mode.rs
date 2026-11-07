@@ -66,12 +66,11 @@ pub static cmd_clock_mode_entry: cmd_entry = {
     }
 };
 fn cmd_copy_mode_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let mut event = cmdq_get_event(&(item));
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let target = crate::cmd::queue::cmdq_get_target(&item);
@@ -105,7 +104,7 @@ fn cmd_copy_mode_exec(
             return CmdOutcome::Normal;
         }
     }
-    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_clock_mode_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0), &cmd_clock_mode_entry) {
         pane_owner.set_mode(None, &window_clock_mode, Some(item_handle), None, None);
         return CmdOutcome::Normal;
     }

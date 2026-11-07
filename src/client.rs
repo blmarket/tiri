@@ -240,7 +240,7 @@ pub fn client_main(
         if pr.status as ::core::ffi::c_uint
             == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if cmd_list_any_have(&pr.cmdlist.as_ref().expect("parsed command list").borrow()) != 0 {
+            if cmd_list_any_have(pr.cmdlist.as_ref().expect("parsed command list")) != 0 {
                 flags |= CLIENT_STARTSERVER as uint64_t;
             }
             drop(pr.cmdlist.take());

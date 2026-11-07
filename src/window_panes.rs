@@ -24,7 +24,7 @@ use crate::window::Window as _;
 use crate::shared::abi::*;
 use crate::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
 use crate::shared::client::ClientRef;
-use crate::shared::command::{cmd, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::event::*;
 use crate::shared::grid::*;
 use crate::shared::key::*;
@@ -766,22 +766,21 @@ fn window_panes_init(
         .upgrade()
         .expect("mode belongs to a live pane");
     let original_window = mode_pane_owner.window_observer();
-    let mut self_0: refbox::Weak<cmd> = refbox::Weak::new();
     let mut s: Option<SessionRef> = None;
     let (sx, sy) = mode_pane_owner.screen_size(false);
     let mut delay: u_int = 0;
     let Some(item_owner) = item_handle else {
         return false;
     };
-    let (source, target) = {
+    let (source, target, has_cmd) = {
         let item = item_owner.borrow();
-        self_0 = cmdq_get_cmd(&item);
         (
             crate::cmd::queue::cmdq_get_source(&item).clone(),
             crate::cmd::queue::cmdq_get_target(&item).clone(),
+            cmdq_get_cmd(&item).is_some(),
         )
     };
-    if !self_0.is_alive() {
+    if !has_cmd {
         return false;
     }
     s = target.session_handle();
@@ -827,7 +826,7 @@ fn window_panes_init(
         preview: None,
         timer: Default::default(),
         state: Some(args_make_commands_prepare(
-            self_0.clone(),
+            cmdq_get_cmd(&item_owner.borrow()).expect("live command"),
             (item_handle).expect("command queue item"),
             0 as u_int,
             Some(c"select-pane -t \"%%%\""),

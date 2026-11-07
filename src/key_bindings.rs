@@ -115,7 +115,7 @@ pub fn key_bindings_add(
     key: key_code,
     note: Option<&CStr>,
     repeat: ::core::ffi::c_int,
-    cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
+    cmdlist: Option<std::rc::Rc<cmd_list>>,
 ) {
     let owner = key_bindings_get_table(name, 1).expect("created key table");
     let mut table = owner.borrow_mut();
@@ -139,7 +139,7 @@ pub fn key_bindings_add(
         tablename: Some(table.name.clone()),
         flags: if repeat != 0 { KEY_BINDING_REPEAT } else { 0 },
     });
-    let s = cmd_list_print_cstring(&bd.cmdlist().borrow(), 0);
+    let s = cmd_list_print_cstring(bd.cmdlist(), 0);
     let key_string = key_string_format(key, true);
     table.key_bindings.insert(bd);
     log_debug(format_args!(
@@ -572,7 +572,7 @@ pub fn key_bindings_dispatch(
     if c.is_none() || !c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
         readonly = 1 as ::core::ffi::c_int;
     } else {
-        readonly = cmd_list_all_have(&bd.cmdlist().borrow());
+        readonly = cmd_list_all_have(bd.cmdlist());
     }
     if readonly == 0 {
         new_item_allocation = cmdq_get_callback_owned(

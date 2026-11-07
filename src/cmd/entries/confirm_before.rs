@@ -17,7 +17,6 @@ use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item
 use crate::shared::prompt::*;
 use crate::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
 use crate::status::status_prompt_set;
-use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -32,7 +31,7 @@ pub enum cmd_confirm_before_reply {
     /// The waiting item's continuation, which owns the command list.
     Wait(tiri_rt::oneshot::Sender<bool>),
     /// -b: a confirmed command is appended to the answering client's queue.
-    Background(Rc<RefCell<cmd_list>>),
+    Background(Rc<cmd_list>),
 }
 pub static cmd_confirm_before_entry: cmd_entry = {
     cmd_entry {
@@ -66,18 +65,17 @@ fn cmd_confirm_before_args_parse(
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 fn cmd_confirm_before_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    let Some(cmdlist) = args_make_commands_now(self_0.clone(), item_handle, 0, 1) else {
+    let Some(cmdlist) = args_make_commands_now(self_0, item_handle, 0, 1) else {
         return CmdOutcome::Error;
     };
     let mut cdata = Box::new(cmd_confirm_before_data {
@@ -101,7 +99,7 @@ fn cmd_confirm_before_exec(
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        let cmd = cmd_list_first(&cmdlist.borrow())
+        let cmd = cmd_list_first(&cmdlist)
             .expect("confirmation command")
             .entry
             .name;
@@ -148,7 +146,7 @@ fn cmd_confirm_before_exec(
 /// command list and park.
 async fn cmd_confirm_before_wait(
     answered: tiri_rt::oneshot::Receiver<bool>,
-    cmdlist: Rc<RefCell<cmd_list>>,
+    cmdlist: Rc<cmd_list>,
     item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(confirmed) = answered.await else {
@@ -221,7 +219,7 @@ mod tests {
     ) -> (
         Weak<std::cell::RefCell<cmdq_item>>,
         Box<cmd_confirm_before_data>,
-        Weak<RefCell<cmd_list>>,
+        Weak<cmd_list>,
     ) {
         let (answer, answered) = tiri_rt::oneshot::channel();
         let cmdlist = cmd_list_new();

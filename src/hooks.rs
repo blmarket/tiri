@@ -88,14 +88,14 @@ thread_local! {
 fn hooks_insert_one(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     hd: &hooks_data,
-    commands: Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>>,
+    commands: Option<&std::rc::Rc<cmd_list>>,
     state: &std::rc::Rc<cmdq_state>,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let Some(commands) = commands else {
         return item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     };
     if log_get_level() != 0 as ::core::ffi::c_int {
-        let s = cmd_list_print_cstring(&commands.borrow(), 0 as ::core::ffi::c_int);
+        let s = cmd_list_print_cstring(commands, 0 as ::core::ffi::c_int);
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",

@@ -43,12 +43,11 @@ pub static cmd_kill_pane_entry: cmd_entry = {
     }
 };
 fn cmd_kill_pane_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let pane_owner = target.wp.upgrade();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);

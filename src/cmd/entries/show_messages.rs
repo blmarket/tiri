@@ -40,13 +40,12 @@ pub static cmd_show_messages_entry: cmd_entry = {
     }
 };
 fn cmd_show_messages_terminals(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let target = if args_has(args, b't') != 0 {
         tc_owner.as_ref()
@@ -75,17 +74,16 @@ fn cmd_show_messages_terminals(
 }
 
 fn cmd_show_messages_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     blank = 0 as ::core::ffi::c_int;
     done = blank;
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        blank = cmd_show_messages_terminals(self_0.clone(), item_handle, blank);
+        blank = cmd_show_messages_terminals(self_0, item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }
     if args_has(args, 'J' as i32 as u_char) != 0 {

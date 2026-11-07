@@ -42,7 +42,7 @@ type cmd_parse_arguments = VecDeque<Box<cmd_parse_argument>>;
 enum cmd_parse_argument {
     String(CString),
     Commands(Box<cmd_parse_commands>),
-    ParsedCommands(Rc<std::cell::RefCell<cmd_list>>),
+    ParsedCommands(Rc<cmd_list>),
 }
 mod lexer;
 use lexer::Lexer;
@@ -269,7 +269,7 @@ fn cmd_parse_log_commands(cmds: &cmd_parse_commands, prefix: &CStr) {
                     cmd_parse_log_commands(commands, &nested);
                 }
                 cmd_parse_argument::ParsedCommands(commands) => {
-                    let printed = cmd_list_print_cstring(&commands.borrow(), 0);
+                    let printed = cmd_list_print_cstring(commands, 0);
                     log_debug(format_args!(
                         "{} {}:{}: {}",
                         log_bytes(prefix.to_bytes()),
@@ -368,7 +368,7 @@ fn cmd_parse_build_command(
         Ok(command) => {
             pr.status = CMD_PARSE_SUCCESS;
             pr.cmdlist = Some(cmd_list_new());
-            cmd_list_append(pr.cmdlist.as_ref().expect("parsed command list"), command);
+            cmd_list_append(pr.cmdlist.as_mut().expect("parsed command list"), command);
         }
         Err(cause) => {
             pr.status = CMD_PARSE_ERROR;
@@ -383,7 +383,7 @@ fn cmd_parse_build_commands(
     pr: &mut cmd_parse_result,
 ) {
     let mut line: u_int = UINT_MAX;
-    let mut current: Option<Rc<std::cell::RefCell<cmd_list>>> = None;
+    let mut current: Option<Rc<cmd_list>> = None;
     *pr = cmd_parse_result::empty();
     let command_count = cmds.items.len();
     if command_count == 0 {
@@ -392,13 +392,13 @@ fn cmd_parse_build_commands(
         return;
     }
     cmd_parse_log_commands(cmds, c"cmd_parse_build_commands");
-    let result_owner = cmd_list_new();
-    let result = &result_owner;
+    let mut result_owner = cmd_list_new();
+    let result = &mut result_owner;
     for cmd in &mut cmds.items {
         if !pi.flags & CMD_PARSE_ONEGROUP != 0 && cmd.line != line {
-            if let Some(current) = current.take() {
-                cmd_parse_print_commands(pi, &current.borrow());
-                cmd_list_move(result, &current);
+            if let Some(mut current) = current.take() {
+                cmd_parse_print_commands(pi, &current);
+                cmd_list_move(result, &mut current);
             }
         }
         let current = current.get_or_insert_with(cmd_list_new);
@@ -410,14 +410,14 @@ fn cmd_parse_build_commands(
         {
             return;
         }
-        cmd_list_append_all(current, pr.cmdlist.as_ref().expect("parsed command list"));
+        cmd_list_append_all(current, pr.cmdlist.as_mut().expect("parsed command list"));
         drop(pr.cmdlist.take());
     }
-    if let Some(current) = current {
-        cmd_parse_print_commands(pi, &current.borrow());
-        cmd_list_move(result, &current);
+    if let Some(mut current) = current {
+        cmd_parse_print_commands(pi, &current);
+        cmd_list_move(result, &mut current);
     }
-    let s = cmd_list_print_cstring(&result.borrow(), 0);
+    let s = cmd_list_print_cstring(result, 0);
     log_debug(format_args!(
         "{}: {}",
         "cmd_parse_build_commands",
@@ -635,7 +635,7 @@ mod parser_collection_tests {
         cmd
     }
 
-    fn compiled_commands(source: &CStr) -> Rc<std::cell::RefCell<cmd_list>> {
+    fn compiled_commands(source: &CStr) -> Rc<cmd_list> {
         let mut input = cmd_parse_input {
             flags: CMD_PARSE_NOALIAS,
             ..Default::default()
@@ -731,11 +731,10 @@ mod parser_collection_tests {
                 );
                 assert_eq!(
                     cmd_list_print_cstring(
-                        &result
+                        result
                             .cmdlist
                             .as_ref()
-                            .expect("parsed command list")
-                            .borrow(),
+                            .expect("parsed command list"),
                         0
                     )
                     .as_bytes(),

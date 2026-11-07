@@ -3266,7 +3266,7 @@ fn server_client_default_command(
     let new_item_allocation;
     let cmdlist = OptionsScope::GlobalServer.with_local(|oo| options_get_command(oo));
     if c_owner.borrow().flags & CLIENT_READONLY as uint64_t != 0
-        && cmd_list_all_have(&cmdlist.borrow()) == 0
+        && cmd_list_all_have(&cmdlist) == 0
     {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",
@@ -3345,7 +3345,7 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
                 _ => {
                     if owner.borrow().flags & CLIENT_READONLY as uint64_t != 0
                         && cmd_list_all_have(
-                            &pr.cmdlist.as_ref().expect("parsed command list").borrow(),
+                            pr.cmdlist.as_ref().expect("parsed command list"),
                         ) == 0
                     {
                         new_item_allocation = Some(cmdq_get_callback_owned(

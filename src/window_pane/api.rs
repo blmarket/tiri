@@ -346,7 +346,7 @@ pub trait WindowPane {
     /// Execute pipe-pane while process descriptors and callbacks stay owned here.
     fn pipe(
         &self,
-        command: refbox::Weak<cmd>,
+        command: &cmd,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> CmdOutcome;
     fn process_id(&self) -> pid_t;
@@ -1286,7 +1286,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
 
     fn pipe(
         &self,
-        command: refbox::Weak<cmd>,
+        command: &cmd,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> CmdOutcome {
         process::pipe_pane(self, command, item)

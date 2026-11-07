@@ -61,15 +61,14 @@ pub static cmd_suspend_client_entry: cmd_entry = {
     }
 };
 fn cmd_detach_client_exec(
-    mut command: refbox::Weak<cmd>,
+    command: &cmd,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let suspend = std::ptr::eq(
-        cmd_get_entry(&command.try_borrow().expect("live command")),
+        cmd_get_entry(command),
         &cmd_suspend_client_entry,
     );
-    let cmd_ref = command.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(command);
     let source = cmdq_get_source(&item.borrow()).clone();
     let client = cmdq_get_client(Some(&item.borrow()));
     let target = cmdq_get_target_client(Some(&item.borrow())).expect("target client");

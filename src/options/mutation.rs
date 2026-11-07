@@ -19,7 +19,7 @@ fn command_parser(value: &CStr) -> cmd_parse_result {
 fn parse_commands(
     value: &CStr,
     parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
-) -> Result<Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>, CString> {
+) -> Result<Option<std::rc::Rc<cmd_list>>, CString> {
     let mut parsed = parse(value);
     if parsed.status != crate::shared::command::CMD_PARSE_SUCCESS {
         return Err(parsed

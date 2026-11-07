@@ -129,19 +129,18 @@ fn cmd_list_keys_format_add_key_binding(ft: &mut format_tree, bd: &key_binding, 
     });
     format_add(ft, c"key_string", |out| write_cstr(out, &*key_string));
     let command = cmd_list_print_cstring(
-        &bd.cmdlist().borrow(),
+        bd.cmdlist(),
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
     format_add(ft, c"key_command", |out| write_cstr(out, &*command));
 }
 fn cmd_list_keys_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut table = None;

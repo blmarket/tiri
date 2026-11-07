@@ -715,12 +715,11 @@ fn cmd_display_menu_get_menu_pos(
     1 as ::core::ffi::c_int
 }
 fn cmd_display_menu_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &target_state;
     let event = cmdq_get_event(&(item));
@@ -853,7 +852,7 @@ fn cmd_display_menu_exec(
     CmdOutcome::Normal
 }
 fn cmd_display_popup_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let mut shellcmd_session_value: Option<std::ffi::CString> = None;
@@ -861,8 +860,7 @@ fn cmd_display_popup_exec(
 
     let item = item_handle.borrow();
     let mut current_block: u64;
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut s: Option<SessionRef> = target.session_handle();
     let tc_owner = cmdq_get_target_client(Some(&*item));

@@ -1526,7 +1526,7 @@ impl key_bindings {
 
 pub struct key_binding {
     pub key: key_code,
-    pub commands: std::rc::Rc<std::cell::RefCell<cmd_list>>,
+    pub commands: std::rc::Rc<cmd_list>,
     pub note: Option<std::ffi::CString>,
     pub tablename: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
@@ -1534,7 +1534,7 @@ pub struct key_binding {
 
 impl key_binding {
     /// Borrow the retained command list for the remaining legacy command APIs.
-    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::RefCell<cmd_list>> {
+    pub fn cmdlist(&self) -> &std::rc::Rc<cmd_list> {
         &self.commands
     }
 
@@ -1551,12 +1551,12 @@ impl key_binding {
 
 pub struct KeyBindingCommand {
     pub key: key_code,
-    pub commands: std::rc::Rc<std::cell::RefCell<cmd_list>>,
+    pub commands: std::rc::Rc<cmd_list>,
     pub flags: ::core::ffi::c_int,
 }
 
 impl KeyBindingCommand {
-    pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::RefCell<cmd_list>> {
+    pub fn cmdlist(&self) -> &std::rc::Rc<cmd_list> {
         &self.commands
     }
 }

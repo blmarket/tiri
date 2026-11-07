@@ -49,12 +49,11 @@ fn cmd_show_environment_escape(value: &CStr) -> CString {
     CString::new(escaped).expect("environment value was truncated at its first NUL")
 }
 fn cmd_show_environment_print(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     if args_has(args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
@@ -95,12 +94,11 @@ fn cmd_show_environment_print(
     };
 }
 fn cmd_show_environment_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
 
     let mut envent: Option<&environ_entry> = None;
@@ -141,12 +139,12 @@ fn cmd_show_environment_exec(
             });
             return CmdOutcome::Error;
         }
-        cmd_show_environment_print(self_0.clone(), item_handle, envent.unwrap());
+        cmd_show_environment_print(self_0, item_handle, envent.unwrap());
         return CmdOutcome::Normal;
     }
     for entry in environ_iter(&env) {
         let envent = entry;
-        cmd_show_environment_print(self_0.clone(), item_handle, envent);
+        cmd_show_environment_print(self_0, item_handle, envent);
     }
     CmdOutcome::Normal
 }

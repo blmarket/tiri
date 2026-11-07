@@ -61,14 +61,13 @@ fn cmd_if_shell_args_parse(_args: &args, idx: u_int) -> Result<args_parse_type, 
     Ok(ARGS_PARSE_STRING)
 }
 fn cmd_if_shell_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -84,14 +83,14 @@ fn cmd_if_shell_exec(
     if args_has(args, 'F' as i32 as u_char) != 0 {
         let cmdlist = if !matches!(shellcmd.as_bytes().first(), None | Some(b'0')) {
             args_make_commands_now(
-                self_0.clone(),
+                self_0,
                 item_handle,
                 1 as u_int,
                 0 as ::core::ffi::c_int,
             )
         } else if count == 3 as u_int {
             args_make_commands_now(
-                self_0.clone(),
+                self_0,
                 item_handle,
                 2 as u_int,
                 0 as ::core::ffi::c_int,
@@ -113,7 +112,7 @@ fn cmd_if_shell_exec(
         client: None,
     });
     cdata.cmd_if = Some(args_make_commands_prepare(
-        self_0.clone(),
+        self_0,
         item_handle,
         1 as u_int,
         None,
@@ -122,7 +121,7 @@ fn cmd_if_shell_exec(
     ));
     if count == 3 as u_int {
         cdata.cmd_else = Some(args_make_commands_prepare(
-            self_0.clone(),
+            self_0,
             item_handle,
             2 as u_int,
             None,

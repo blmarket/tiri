@@ -36,14 +36,13 @@ use tiri_sys::{
 /// it execs.
 pub(super) fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     {
         let item = item_handle.borrow();
         let queue_client = cmdq_get_client(Some(&*item));
-        let cmd_ref = self_0.try_borrow().expect("live command");
-        let args = cmd_get_args(&cmd_ref);
+        let args = cmd_get_args(self_0);
         let target = crate::cmd::queue::cmdq_get_target(&item);
         let tc_owner = cmdq_get_target_client(Some(&*item));
         let mut tc: Option<ClientRef> = tc_owner.clone();

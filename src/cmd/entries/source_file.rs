@@ -234,12 +234,11 @@ fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     CString::new(quoted).expect("C string path has no interior NUL")
 }
 fn cmd_source_file_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut failed = false;
@@ -285,7 +284,7 @@ fn cmd_source_file_exec(
         cdata.flags |= CMD_PARSE_PARSEONLY;
     }
     if c.is_none() || !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
-        parse_flags = cmd_get_parse_flags(self_0.clone());
+        parse_flags = cmd_get_parse_flags(self_0);
         if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
             cdata.flags |= CMD_PARSE_VERBOSE;
         }

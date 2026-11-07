@@ -221,13 +221,12 @@ fn cmd_send_keys_inject_string(
     after
 }
 fn cmd_send_keys_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let mouse_pane_owner;
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
@@ -328,7 +327,7 @@ fn cmd_send_keys_exec(
         );
         return CmdOutcome::Normal;
     }
-    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_send_prefix_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0), &cmd_send_prefix_entry) {
         if args_has(args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
                 &s.as_ref().expect("live session").borrow_options_mut(),

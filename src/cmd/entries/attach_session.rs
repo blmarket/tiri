@@ -274,11 +274,10 @@ pub fn cmd_attach_session(
     CmdOutcome::Normal
 }
 fn cmd_attach_session_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     cmd_attach_session(
         item_handle,
         args_get(args, 't' as i32 as u_char),

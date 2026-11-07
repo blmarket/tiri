@@ -68,7 +68,7 @@ fn options_value_to_cstring(
     };
     match tableentry.type_0 {
         OPTIONS_TABLE_COMMAND => {
-            cmd_list_print_cstring(&ov.commands().expect("command option").borrow(), 0)
+            cmd_list_print_cstring(ov.commands().expect("command option"), 0)
         }
         OPTIONS_TABLE_NUMBER => {
             CString::new(ov.number().to_string()).expect("decimal number has no NUL")
@@ -549,7 +549,7 @@ pub fn options_get_number(table: &options, name: &CStr) -> ::core::ffi::c_longlo
     })
 }
 
-pub fn options_get_command(oo: &options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
+pub fn options_get_command(oo: &options) -> std::rc::Rc<cmd_list> {
     let name = c"default-client-command";
     options_read_entry(oo, name, |entry| {
         if !entry
@@ -660,7 +660,7 @@ pub fn options_set_number<'a>(
 pub fn options_set_command<'a>(
     oo: &'a mut options,
     name: &CStr,
-    value: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
+    value: Option<std::rc::Rc<cmd_list>>,
 ) -> &'a mut options_entry {
     if name.to_bytes().starts_with(b"@") {
         fatalx(|out| {

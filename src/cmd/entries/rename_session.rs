@@ -30,12 +30,11 @@ pub static cmd_rename_session_entry: cmd_entry = {
     }
 };
 fn cmd_rename_session_exec(
-    mut command: refbox::Weak<cmd>,
+    command: &cmd,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     use crate::session::Session;
-    let cmd_ref = command.try_borrow().expect("live command");
-    let arguments = cmd_get_args(&cmd_ref);
+    let arguments = cmd_get_args(command);
     let name = args_string(arguments, 0).expect("rename-session argument");
     let expanded = format_single_from_target_cstring(item, name);
     let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();

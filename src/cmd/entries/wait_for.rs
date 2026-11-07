@@ -148,11 +148,10 @@ fn cmd_wait_for_prune_expired(wc: &mut wait_channel) {
     wc.lockers.retain(|waiter| !waiter.is_cancelled());
 }
 fn cmd_wait_for_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let mut name: &CStr = args_string(args, 0 as u_int).expect("argument is present");
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item_handle, name, args);

@@ -71,7 +71,7 @@ fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
             args_value::String(expanded)
         }
         args_value::Commands(commands, _) => {
-            args_value::commands(cmd_list_copy(&commands.borrow(), argv))
+            args_value::commands(cmd_list_copy(commands, argv))
         }
         args_value::None => args_value::None,
     }
@@ -106,7 +106,7 @@ pub fn args_to_vector(args: &args) -> Vec<CString> {
         match value {
             args_value::String(text) => argv.push(text.clone()),
             args_value::Commands(commands, _) => {
-                argv.push(cmd_list_print_cstring(&commands.borrow(), 0));
+                argv.push(cmd_list_print_cstring(commands, 0));
             }
             args_value::None => {}
         }
@@ -157,7 +157,7 @@ pub fn args_string(args: &args, idx: u_int) -> Option<&CStr> {
         args_value::None => Some(c""),
         args_value::String(text) => Some(text),
         args_value::Commands(commands, cached) => {
-            Some(cached.get_or_init(|| cmd_list_print_cstring(&commands.borrow(), 0)))
+            Some(cached.get_or_init(|| cmd_list_print_cstring(commands, 0)))
         }
     }
 }

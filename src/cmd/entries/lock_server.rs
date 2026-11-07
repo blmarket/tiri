@@ -84,19 +84,19 @@ pub static cmd_lock_client_entry: cmd_entry = {
     }
 };
 fn cmd_lock_server_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     if std::ptr::eq(
-        cmd_get_entry(&self_0.try_borrow().expect("live command")),
+        cmd_get_entry(self_0),
         &cmd_lock_server_entry,
     ) {
         server_lock();
     } else if std::ptr::eq(
-        cmd_get_entry(&self_0.try_borrow().expect("live command")),
+        cmd_get_entry(self_0),
         &cmd_lock_session_entry,
     ) {
         server_lock_session(&target.s.upgrade().expect("live target session"));

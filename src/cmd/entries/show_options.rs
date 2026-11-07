@@ -108,16 +108,15 @@ pub static cmd_show_hooks_entry: cmd_entry = {
     }
 };
 fn cmd_show_options_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
-    let window = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_show_window_options_entry) as i32;
-    let show_hooks = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_show_hooks_entry);
+    let window = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_window_options_entry) as i32;
+    let show_hooks = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);
     let monitor = show_hooks && args_has(args, b'B') != 0;
     let quiet = args_has(args, b'q') != 0;
     if args_count(args) == 0 {
@@ -132,13 +131,13 @@ fn cmd_show_options_exec(
                     .collect::<Vec<_>>()
             });
             for name in names {
-                if !cmd_show_hooks_print_monitor(self_0.clone(), item_handle, &selected, &name) {
+                if !cmd_show_hooks_print_monitor(self_0, item_handle, &selected, &name) {
                     break;
                 }
             }
             return CmdOutcome::Normal;
         }
-        return cmd_show_options_all(self_0.clone(), item_handle, scope, &selected);
+        return cmd_show_options_all(self_0, item_handle, scope, &selected);
     }
 
     let argument =
@@ -180,10 +179,10 @@ fn cmd_show_options_exec(
         return CmdOutcome::Normal;
     };
     if monitor {
-        cmd_show_hooks_print_monitor(self_0.clone(), item_handle, &resolved, &parsed.name);
+        cmd_show_hooks_print_monitor(self_0, item_handle, &resolved, &parsed.name);
     } else {
         cmd_show_options_print(
-            self_0.clone(),
+            self_0,
             item_handle,
             &resolved,
             &parsed.name,
@@ -224,7 +223,7 @@ fn show_options_resolve(
 }
 
 fn cmd_show_options_print(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
@@ -265,7 +264,7 @@ fn cmd_show_options_print(
                         break;
                     }
                     cmd_show_options_print(
-                        self_0.clone(),
+                        self_0,
                         item_handle,
                         scope,
                         name,
@@ -279,11 +278,10 @@ fn cmd_show_options_print(
         }
     }
 
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let template = args_get(args, b'F').map(CStr::to_owned);
     let value_only = args_has(args, b'v');
-    let show_hooks = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_show_hooks_entry);
+    let show_hooks = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
@@ -358,13 +356,12 @@ fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
 }
 
 fn cmd_show_hooks_print_monitor(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
 ) -> bool {
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let template = args_get(args, b'F')
         .map(CStr::to_owned)
         .unwrap_or_else(|| SHOW_HOOKS_MONITOR_TEMPLATE.to_owned());
@@ -422,17 +419,16 @@ fn cmd_show_hooks_print_monitor(
 }
 
 fn cmd_show_options_all(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: i32,
     selected: &OptionsScope,
 ) -> CmdOutcome {
     let show_hooks = std::ptr::eq(
-        cmd_get_entry(&self_0.try_borrow().expect("live command")),
+        cmd_get_entry(self_0),
         &cmd_show_hooks_entry,
     );
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let include_hooks = args_has(args, b'H') != 0;
     let include_parent = args_has(args, b'A') != 0;
     let names = selected.with_local(|table| {
@@ -455,7 +451,7 @@ fn cmd_show_options_all(
         let user_hook =
             name.as_bytes().first() == Some(&b'@') && (hooks_is_event(&name) != 0 || monitor);
         if (show_hooks && user_hook) || (!show_hooks && (!user_hook || include_hooks)) {
-            cmd_show_options_print(self_0.clone(), item_handle, selected, &name, None, 0, false);
+            cmd_show_options_print(self_0, item_handle, selected, &name, None, 0, false);
         }
     }
     for definition in options_table
@@ -472,7 +468,7 @@ fn cmd_show_options_all(
         let name = definition.name.unwrap();
         if let Some((resolved, parent)) = show_options_resolve(selected, name, include_parent) {
             cmd_show_options_print(
-                self_0.clone(),
+                self_0,
                 item_handle,
                 &resolved,
                 name,

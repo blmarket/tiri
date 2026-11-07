@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 /// Box-owned prepared command; retained model references have typed owners.
 pub struct args_command_state {
-    cmdlist: Option<Rc<std::cell::RefCell<cmd_list>>>,
+    cmdlist: Option<Rc<cmd_list>>,
     client: Option<ClientRef>,
     cmd: Option<std::ffi::CString>,
     pi: cmd_parse_input,
@@ -37,12 +37,12 @@ impl args_command_state {
 }
 
 pub fn args_make_commands_now(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     idx: u_int,
     expand: ::core::ffi::c_int,
-) -> Option<Rc<std::cell::RefCell<cmd_list>>> {
-    let mut state = args_make_commands_prepare(self_0.clone(), item_handle, idx, None, 0, expand);
+) -> Option<Rc<cmd_list>> {
+    let mut state = args_make_commands_prepare(self_0, item_handle, idx, None, 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
         Err(error) => {
@@ -52,7 +52,7 @@ pub fn args_make_commands_now(
     }
 }
 pub fn args_make_commands_prepare(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut idx: u_int,
     default_command: Option<&'static CStr>,
@@ -60,8 +60,7 @@ pub fn args_make_commands_prepare(
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
@@ -89,8 +88,7 @@ pub fn args_make_commands_prepare(
     if wait != 0 {
         state.pi.set_item(Some(item_handle));
     }
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let (source, line) = cmd_get_source(&cmd_ref);
+    let (source, line) = cmd_get_source(self_0);
     state.pi.line = line;
     if let Some(file) = source {
         state.file = Some(file.to_owned());
@@ -106,13 +104,13 @@ pub fn args_make_commands_prepare(
 pub fn args_make_commands(
     state: &mut args_command_state,
     argv: &Vec<CString>,
-) -> Result<Rc<std::cell::RefCell<cmd_list>>, Option<CString>> {
+) -> Result<Rc<cmd_list>, Option<CString>> {
     let mut i: ::core::ffi::c_int = 0;
     if let Some(commands) = state.cmdlist.as_ref() {
         if argv.is_empty() {
             return Ok(Rc::clone(commands));
         }
-        return Ok(cmd_list_copy(&commands.borrow(), argv));
+        return Ok(cmd_list_copy(commands, argv));
     }
     let mut cmd = state.cmd.as_ref().expect("prepared command text").clone();
     log_debug(format_args!(
@@ -162,8 +160,7 @@ impl Drop for args_command_state {
 
 pub(crate) fn args_make_commands_get_command_cstring(state: &args_command_state) -> CString {
     if let Some(commands) = state.cmdlist.as_ref() {
-        let commands = commands.borrow();
-        let Some(first) = cmd_list_first(&commands) else {
+        let Some(first) = cmd_list_first(commands) else {
             return CString::new(Vec::new()).expect("empty command name has no NUL");
         };
         return first.entry.name.to_owned();

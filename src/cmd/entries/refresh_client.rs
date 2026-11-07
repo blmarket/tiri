@@ -72,12 +72,11 @@ fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &CStr) {
     );
 }
 fn cmd_refresh_client_control_client_size(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let size = args_get(args, 'C' as i32 as u_char)
@@ -203,12 +202,11 @@ fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
 }
 
 fn cmd_refresh_client_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut adjust: u_int = 0;
@@ -304,7 +302,7 @@ fn cmd_refresh_client_exec(
         }
     } else if args_has(args, 'C' as i32 as u_char) != 0 {
         if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
-            return cmd_refresh_client_control_client_size(self_0.clone(), item_handle);
+            return cmd_refresh_client_control_client_size(self_0, item_handle);
         }
     } else {
         if args_has(args, 'S' as i32 as u_char) != 0 {

@@ -1,7 +1,7 @@
 //! Argument values: parser input borrows, stored arguments own.
 
 use crate::shared::command::cmd_list;
-use std::cell::{OnceCell, RefCell};
+use std::cell::OnceCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -9,7 +9,7 @@ use std::rc::Rc;
 #[derive(Copy, Clone)]
 pub enum ParseValue<'a> {
     String(&'a CStr),
-    Commands(&'a Rc<RefCell<cmd_list>>),
+    Commands(&'a Rc<cmd_list>),
 }
 
 impl<'a> ParseValue<'a> {
@@ -41,11 +41,11 @@ impl<'a> ParseValue<'a> {
 pub enum args_value {
     None,
     String(CString),
-    Commands(Rc<RefCell<cmd_list>>, OnceCell<CString>),
+    Commands(Rc<cmd_list>, OnceCell<CString>),
 }
 
 impl args_value {
-    pub fn commands(value: Rc<RefCell<cmd_list>>) -> Self {
+    pub fn commands(value: Rc<cmd_list>) -> Self {
         args_value::Commands(value, OnceCell::new())
     }
 
@@ -56,7 +56,7 @@ impl args_value {
         }
     }
 
-    pub fn as_commands(&self) -> Option<&Rc<RefCell<cmd_list>>> {
+    pub fn as_commands(&self) -> Option<&Rc<cmd_list>> {
         match self {
             args_value::Commands(value, _) => Some(value),
             _ => None,

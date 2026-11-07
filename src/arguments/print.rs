@@ -11,7 +11,7 @@ use std::ffi::{CStr, CString};
 pub(super) fn args_value_for_log<'a>(value: ParseValue<'a>) -> Cow<'a, CStr> {
     match value {
         ParseValue::String(text) => Cow::Borrowed(text),
-        ParseValue::Commands(commands) => Cow::Owned(cmd_list_print_cstring(&commands.borrow(), 0)),
+        ParseValue::Commands(commands) => Cow::Owned(cmd_list_print_cstring(commands, 0)),
     }
 }
 
@@ -21,7 +21,7 @@ fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     }
     match value {
         args_value::Commands(commands, _) => {
-            let expanded = cmd_list_print_cstring(&commands.borrow(), 0);
+            let expanded = cmd_list_print_cstring(commands, 0);
             buf.extend_from_slice(b"{ ");
             buf.extend_from_slice(expanded.as_bytes());
             buf.extend_from_slice(b" }");

@@ -44,11 +44,10 @@ fn cmd_bind_key_args_parse(_args: &args, _idx: u_int) -> Result<args_parse_type,
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 fn cmd_bind_key_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let mut key: key_code = 0;
     let mut tablename: &CStr = c"";
     let mut note: Option<&CStr> = args_get(args, 'N' as i32 as u_char);

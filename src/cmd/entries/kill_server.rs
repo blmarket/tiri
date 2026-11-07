@@ -55,11 +55,11 @@ pub static cmd_start_server_entry: cmd_entry = {
     }
 };
 fn cmd_kill_server_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     _item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     if std::ptr::eq(
-        cmd_get_entry(&self_0.try_borrow().expect("live command")),
+        cmd_get_entry(self_0),
         &cmd_kill_server_entry,
     ) {
         let _ = tiri_sys::send_signal(std::process::id() as libc::pid_t, SIGTERM);

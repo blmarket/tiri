@@ -59,13 +59,12 @@ fn cmd_list_single_command(
     }
 }
 fn cmd_list_commands(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let template: &CStr = args_get(args, 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
     let mut ft_owner = format_create(
         queue_client.as_ref(),

@@ -85,12 +85,11 @@ pub static cmd_split_window_entry: cmd_entry = {
     }
 };
 fn cmd_split_window_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {

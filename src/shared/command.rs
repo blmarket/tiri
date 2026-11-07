@@ -210,7 +210,7 @@ impl cmd_find_state {
 pub struct cmd_list {
     pub group: u_int,
     /// Sole command owners, released with the final command-list reference.
-    pub list: Vec<refbox::RefBox<cmd>>,
+    pub list: Vec<cmd>,
 }
 
 #[repr(C)]
@@ -247,7 +247,7 @@ pub struct cmd_entry {
 /// Command entry point; the dispatching queue item retains the command-list
 /// owner for the duration of the call.
 pub type cmd_exec_fn =
-    fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
+    fn(&cmd, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
 
 #[repr(C)]
 /// Queue items and callers share ownership through ordinary Rc handles.
@@ -288,12 +288,12 @@ impl cmd_parse_input {
 
 pub struct cmd_parse_result {
     pub status: cmd_parse_status,
-    pub cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
+    pub cmdlist: Option<std::rc::Rc<cmd_list>>,
     pub error: Option<CString>,
 }
 
 impl cmd_parse_result {
-    pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<std::cell::RefCell<cmd_list>>> {
+    pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<cmd_list>> {
         self.cmdlist.take()
     }
 

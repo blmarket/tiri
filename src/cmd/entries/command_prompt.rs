@@ -32,7 +32,7 @@ pub struct cmd_command_prompt_cdata {
     /// Resumes the waiting item with the commands to insert after it; the
     /// prompt closing or being freed without any drops it, which resumes the
     /// item with nothing (tmux's cmd_command_prompt_free). None for -b and -i.
-    pub resume: Option<tiri_rt::oneshot::Sender<Rc<RefCell<cmd_list>>>>,
+    pub resume: Option<tiri_rt::oneshot::Sender<Rc<cmd_list>>>,
     pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
@@ -108,12 +108,11 @@ fn cmd_command_prompt_args_parse(
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 fn cmd_command_prompt_exec(
-    self_0: refbox::Weak<cmd>,
+    self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let cmd_ref = self_0.try_borrow().expect("live command");
-    let args = cmd_get_args(&cmd_ref);
+    let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let target = crate::cmd::queue::cmdq_get_target(&item);
@@ -153,7 +152,7 @@ fn cmd_command_prompt_exec(
         cdata.wp = std::rc::Rc::downgrade(wp.as_ref().expect("prompt target pane"));
     }
     cdata.state = Some(args_make_commands_prepare(
-        self_0.clone(),
+        self_0,
         item_handle,
         0 as u_int,
         Some(c"%1"),
@@ -258,7 +257,7 @@ fn cmd_command_prompt_exec(
 /// the send as tmux's callback does. A prompt closed or freed without any
 /// resumes the item with nothing queued.
 async fn cmd_command_prompt_wait(
-    answered: tiri_rt::oneshot::Receiver<Rc<RefCell<cmd_list>>>,
+    answered: tiri_rt::oneshot::Receiver<Rc<cmd_list>>,
     item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(cmdlist) = answered.await else {
