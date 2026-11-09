@@ -3,7 +3,7 @@ use crate::arguments::{
 };
 use crate::cfg::{cfg_add_cause, cfg_finished};
 use crate::cmd::find::cmd_find_client;
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_source, cmd_print_cstring};
 use crate::control::{control_write, control_write_guard};
 use crate::events::events_fire;
 use crate::events_payload::{
@@ -57,13 +57,12 @@ pub struct cmdq_item {
     client_lent: bool,
     /// Nonowning command target; upgrade before accessing the client.
     pub target_client: ClientWeak,
-    pub group: u_int,
     pub number: u_int,
     pub time: time_t,
     pub state: Option<std::rc::Rc<cmdq_state>>,
     pub source: cmd_find_state,
     pub target: cmd_find_state,
-    cmdlist: Option<(std::rc::Rc<cmd_list>, usize)>,
+    cmdlist: Option<(std::rc::Rc<cmd_list>, usize, usize)>,
     /// Runs the item when it reaches the head: `cmdq_fire_command` for a
     /// command, the queued callback otherwise. Taken when the item starts.
     start: cmdq_cb,
@@ -175,7 +174,6 @@ impl cmdq_item {
             client: Default::default(),
             client_lent: false,
             target_client: Default::default(),
-            group: Default::default(),
             number: Default::default(),
             time: Default::default(),
             state: Default::default(),
@@ -336,8 +334,8 @@ pub fn cmdq_new() -> Box<cmdq_list> {
 }
 
 pub fn cmdq_get_cmd(item: &cmdq_item) -> Option<&cmd> {
-    let (cmdlist, index) = item.cmdlist.as_ref()?;
-    cmdlist.list.get(*index)
+    let (cmdlist, group, index) = item.cmdlist.as_ref()?;
+    cmdlist.groups.get(*group)?.get(*index)
 }
 pub fn cmdq_get_client(item_handle: Option<&cmdq_item>) -> Option<ClientRef> {
     item_handle.and_then(|item| item.client.upgrade())
@@ -513,14 +511,14 @@ pub fn cmdq_insert_hook(
     current: Option<&cmd_find_state>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let ((cmdlist, cmd_index), flags) = {
+    let ((cmdlist, group_index, cmd_index), flags) = {
         let item = item_handle.borrow();
         (
             item.cmdlist.clone().expect("live command"),
             cmdq_get_flags(&item),
         )
     };
-    let cmd_ref = &cmdlist.list[cmd_index];
+    let cmd_ref = &cmdlist.groups[group_index][cmd_index];
     let args_0 = cmd_get_args(cmd_ref);
     let mut i: u_int = 0;
     if flags & CMDQ_STATE_NOHOOKS != 0 {
@@ -772,19 +770,26 @@ fn cmdq_remove(item_handle: std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
     );
 }
 fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
-    let (group, queue) = {
+    let (cmdlist, group, queue) = {
         let item = item_handle.borrow();
-        (item.group, item.queue.clone())
+        let Some((cmdlist, group, _)) = &item.cmdlist else {
+            return;
+        };
+        (cmdlist.clone(), *group, item.queue.clone())
     };
-    if group == 0 as u_int {
-        return;
-    }
     let queue = queue.expect("queued group anchor");
     let mut position = queue.with_queue(|queue| queue.position(item_handle) + 1);
     loop {
         let next = queue.with_queue(|queue| {
             let owner = queue.list.get(position)?;
-            if owner.borrow().group == group {
+            let same_group = owner
+                .borrow()
+                .cmdlist
+                .as_ref()
+                .is_some_and(|(commands, index, _)| {
+                    std::rc::Rc::ptr_eq(commands, &cmdlist) && *index == group
+                });
+            if same_group {
                 Some(queue.list.remove(position))
             } else {
                 Some(None)
@@ -802,7 +807,7 @@ pub fn cmdq_get_command(
     commands: &std::rc::Rc<cmd_list>,
     state: Option<&std::rc::Rc<cmdq_state>>,
 ) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
-    if commands.list.is_empty() {
+    if commands.groups.iter().all(Vec::is_empty) {
         return cmdq_get_callback_owned(
             c"cmdq_empty_command",
             Some(Box::new(|_| CmdOutcome::Normal)),
@@ -812,16 +817,17 @@ pub fn cmdq_get_command(
         .cloned()
         .unwrap_or_else(|| cmdq_new_state(None, None, 0));
     let mut remaining = None;
-    for (index, command) in commands.list.iter().enumerate().rev() {
-        let owner = cmdq_new_named_item(cmd_get_entry(command).name);
-        {
-            let mut item = owner.borrow_mut();
-            item.group = cmd_get_group(command);
-            item.state = Some(state.clone());
-            item.cmdlist = Some((commands.clone(), index));
-            item.next = remaining;
+    for (group_index, group) in commands.groups.iter().enumerate().rev() {
+        for (index, command) in group.iter().enumerate().rev() {
+            let owner = cmdq_new_named_item(cmd_get_entry(command).name);
+            {
+                let mut item = owner.borrow_mut();
+                item.state = Some(state.clone());
+                item.cmdlist = Some((commands.clone(), group_index, index));
+                item.next = remaining;
+            }
+            remaining = Some(owner);
         }
-        remaining = Some(owner);
     }
     remaining.expect("nonempty command list")
 }
@@ -847,12 +853,9 @@ fn cmdq_find_flag(
             .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
         return CmdOutcome::Normal;
     }
-    let (cmdlist, cmd_index) = item_handle
-        .borrow()
-        .cmdlist
-        .clone()
-        .expect("live command");
-    let cmd_ref = &cmdlist.list[cmd_index];
+    let (cmdlist, group_index, cmd_index) =
+        item_handle.borrow().cmdlist.clone().expect("live command");
+    let cmd_ref = &cmdlist.groups[group_index][cmd_index];
     if fs.find_target(
         Some(item_handle),
         args_get(cmd_get_args(cmd_ref), flag.flag),
@@ -921,18 +924,17 @@ fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
 }
 fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
     let mut current_block: u64;
-    let (saved_client, state, (cmdlist, cmd_index), saved, group) = {
+    let (saved_client, state, (cmdlist, group_index, cmd_index), saved) = {
         let item = item_handle.borrow();
         (
             cmdq_get_client(Some(&item)),
             cmdq_get_state_owned(&item),
             item.cmdlist.clone().expect("live command"),
             item.client.clone(),
-            item.group,
         )
     };
     let name = cmdq_name(saved_client.as_ref());
-    let cmd_ref = &cmdlist.list[cmd_index];
+    let cmd_ref = &cmdlist.groups[group_index][cmd_index];
     let args = cmd_get_args(cmd_ref);
     let entry = cmd_get_entry(cmd_ref);
     let mut tc = None;
@@ -962,7 +964,7 @@ fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -
             "{} {}: ({}) {}",
             "cmdq_fire_command",
             crate::log::log_bytes(name.as_bytes()),
-            group,
+            group_index,
             crate::log::log_bytes(tmp.as_bytes())
         ));
     }
@@ -1095,7 +1097,6 @@ pub fn cmdq_get_callback_owned(
     let owner = cmdq_new_named_item(name);
     {
         let mut item = owner.borrow_mut();
-        item.group = 0 as u_int;
         item.state = Some(cmdq_new_state(None, None, 0 as ::core::ffi::c_int));
         item.start = Some(cb.expect("non-null queue callback"));
     }
@@ -1284,6 +1285,70 @@ mod lifecycle_tests {
                 CmdOutcome::Normal
             })),
         )
+    }
+
+    #[test]
+    fn command_failure_skips_its_group_across_insertions_but_preserves_other_lists() {
+        let mut input = crate::shared::command::cmd_parse_input {
+            flags: CMD_PARSE_NOALIAS,
+            ..Default::default()
+        };
+        let commands = crate::cmd::parse::cmd_parse_from_buffer(
+            b"display-message first; display-message skipped\ndisplay-message next",
+            Some(&mut input),
+        )
+        .expect("parsed commands");
+        let copied = Rc::new(crate::cmd::cmd_list_copy(&commands, &Vec::new()));
+        let trace = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut first = None;
+        for (batch, commands) in [&commands, &copied].into_iter().enumerate() {
+            let head = cmdq_get_command(commands, None);
+            let mut current = Some(head.clone());
+            while let Some(owner) = current {
+                let mut item = owner.borrow_mut();
+                let (_, group, index) = item.cmdlist.as_ref().unwrap();
+                let position = (batch, *group, *index);
+                let trace = trace.clone();
+                item.start = Some(Box::new(move |_| {
+                    trace.borrow_mut().push(position);
+                    if position == (0, 0, 0) {
+                        CmdOutcome::Error
+                    } else {
+                        CmdOutcome::Normal
+                    }
+                }));
+                current = item.next.clone();
+            }
+            if batch == 0 {
+                first = Some(Rc::downgrade(&head));
+            }
+            cmdq_append(None, head);
+        }
+        let first = first.unwrap().upgrade().unwrap();
+        let recorded = trace.clone();
+        cmdq_insert_after(
+            &first,
+            cmdq_get_callback_owned(
+                c"interleaved callback",
+                Some(Box::new(move |_| {
+                    recorded.borrow_mut().push((2, 0, 0));
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        drop(first);
+        assert_eq!(cmdq_next(None), 6);
+        assert_eq!(
+            *trace.borrow(),
+            [
+                (0, 0, 0),
+                (2, 0, 0),
+                (0, 1, 0),
+                (1, 0, 0),
+                (1, 0, 1),
+                (1, 1, 0),
+            ]
+        );
     }
 
     #[test]

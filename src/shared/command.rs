@@ -200,16 +200,14 @@ impl cmd_find_state {
 /// Built with single ownership, then shared through Rc handles.
 #[derive(Default)]
 pub struct cmd_list {
-    pub group: u_int,
     /// Commands owned by this list.
-    pub list: Vec<cmd>,
+    pub groups: Vec<Vec<cmd>>,
 }
 
 #[repr(C)]
 pub struct cmd {
     pub entry: &'static cmd_entry,
     pub args: Box<args>,
-    pub group: u_int,
     pub file: Option<std::ffi::CString>,
     pub line: u_int,
     pub parse_flags: ::core::ffi::c_int,
@@ -238,8 +236,7 @@ pub struct cmd_entry {
 
 /// Command entry point; the dispatching queue item retains the command-list
 /// owner for the duration of the call.
-pub type cmd_exec_fn =
-    fn(&cmd, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
+pub type cmd_exec_fn = fn(&cmd, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
 
 #[repr(C)]
 /// Queue items and callers share ownership through ordinary Rc handles.

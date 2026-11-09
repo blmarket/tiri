@@ -76,10 +76,7 @@ fn parser_slices_preserve_optional_values_and_flag_boundaries() {
 #[test]
 fn borrowed_payloads_copy_to_owners_without_retaining_input_storage() {
     let text = CString::new(b"borrowed\xff".as_slice()).unwrap();
-    let commands = Rc::new(cmd_list {
-        group: 0,
-        list: Vec::new(),
-    });
+    let commands = Rc::new(cmd_list { groups: Vec::new() });
     let observer = Rc::downgrade(&commands);
     let inputs = [ParseValue::String(&text), ParseValue::Commands(&commands)];
     assert_eq!(inputs[0].as_string().unwrap().as_ptr(), text.as_ptr());

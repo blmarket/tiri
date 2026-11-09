@@ -87,3 +87,27 @@ fn control_mode_ends_a_suspended_command_before_its_output() {
         "attach, then run-shell ended at its suspension:\n{output}"
     );
 }
+
+#[test]
+fn a_source_line_failure_preserves_the_following_line() {
+    let server = Server::new();
+    server.start(80, 24, 1);
+    let mut child = server
+        .command()
+        .args(["source-file", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("source stdin");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"select-window -t nosuch; set -g @skipped 1\nset -g @following 1\n")
+        .expect("write source");
+    let output = child.wait_with_output().expect("source completes");
+    assert!(!output.status.success());
+    assert_eq!(server.display("#{@skipped}"), "");
+    assert_eq!(server.display("#{@following}"), "1");
+}

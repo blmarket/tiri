@@ -193,17 +193,6 @@ pub static cmd_table: [&cmd_entry; 89] = {
         &cmd_wait_for_entry,
     ]
 };
-thread_local! {
-    static CMD_LIST_NEXT_GROUP: std::cell::Cell<u_int> = const { std::cell::Cell::new(1) };
-}
-
-fn cmd_list_next_group() -> u_int {
-    CMD_LIST_NEXT_GROUP.with(|next| {
-        let group = next.get();
-        next.set(group.wrapping_add(1));
-        group
-    })
-}
 pub fn cmd_log_argv(argv: &[CString], prefix: &CStr) {
     for (i, arg) in argv.iter().enumerate() {
         log_debug(format_args!(
@@ -255,9 +244,6 @@ pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
 }
 pub fn cmd_get_args(cmd: &cmd) -> &args {
     &cmd.args
-}
-pub fn cmd_get_group(cmd: &cmd) -> u_int {
-    cmd.group
 }
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
     (cmd.file.as_deref(), cmd.line)
@@ -363,7 +349,6 @@ pub fn cmd_parse(
     Ok(cmd {
         entry,
         args,
-        group: 0,
         file: file.map(CStr::to_owned),
         line,
         parse_flags,
@@ -373,7 +358,6 @@ pub fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> cmd {
     cmd {
         entry: cmd.entry,
         args: args_copy(&cmd.args, argv),
-        group: 0,
         file: cmd.file.clone(),
         line: cmd.line,
         parse_flags: 0,
@@ -400,43 +384,27 @@ pub(crate) fn cmd_print_cstring(cmd: &cmd) -> CString {
     CString::new(buf).expect("command print contains no interior NUL")
 }
 pub fn cmd_list_new() -> cmd_list {
-    cmd_list {
-        group: cmd_list_next_group(),
-        ..cmd_list::default()
-    }
-}
-pub fn cmd_list_append(cmdlist: &mut cmd_list, mut command: cmd) {
-    command.group = cmdlist.group;
-    cmdlist.list.push(command);
-}
-pub fn cmd_list_append_all(cmdlist: &mut cmd_list, from: &mut cmd_list) {
-    for command in &mut from.list {
-        command.group = cmdlist.group;
-    }
-    cmdlist.list.append(&mut from.list);
-}
-pub fn cmd_list_move(cmdlist: &mut cmd_list, from: &mut cmd_list) {
-    cmdlist.list.append(&mut from.list);
-    cmdlist.group = cmd_list_next_group();
+    cmd_list::default()
 }
 pub fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> cmd_list {
-    let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(format_args!(
         "{}: {}",
         "cmd_list_copy",
         log_bytes(s.as_bytes())
     ));
-    let mut owner = cmd_list_new();
-
-    for cmd in &cmdlist.list {
-        if cmd.group != group {
-            owner.group = cmd_list_next_group();
-            group = cmd.group;
-        }
-        let new_cmd = cmd_copy(cmd, argv);
-        cmd_list_append(&mut owner, new_cmd);
-    }
+    let owner = cmd_list {
+        groups: cmdlist
+            .groups
+            .iter()
+            .map(|group| {
+                group
+                    .iter()
+                    .map(|command| cmd_copy(command, argv))
+                    .collect()
+            })
+            .collect(),
+    };
     let s = cmd_list_print_cstring(&owner, 0);
     log_debug(format_args!(
         "{}: {}",
@@ -447,13 +415,18 @@ pub fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> cmd_list {
 }
 pub(crate) fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();
-    let commands = &cmdlist.list;
-    for (index, cmd) in commands.iter().enumerate() {
+    let mut commands = cmdlist
+        .groups
+        .iter()
+        .enumerate()
+        .flat_map(|(group, commands)| commands.iter().map(move |command| (group, command)))
+        .peekable();
+    while let Some((group, cmd)) = commands.next() {
         let this = cmd_print_cstring(cmd);
         buf.extend_from_slice(this.as_bytes());
 
-        if let Some(next) = commands.get(index + 1) {
-            let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && cmd.group != next.group;
+        if let Some((next_group, _)) = commands.peek() {
+            let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && group != *next_group;
             let separator: &[u8] = match (flags & CMD_LIST_PRINT_ESCAPED != 0, grouped) {
                 (false, false) => b" ; ",
                 (false, true) => b" ;; ",
@@ -467,11 +440,11 @@ pub(crate) fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString 
 }
 
 pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<&cmd> {
-    cmdlist.list.first()
+    cmdlist.groups.iter().flatten().next()
 }
 pub fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
-    for cmd in &cmdlist.list {
+    for cmd in cmdlist.groups.iter().flatten() {
         if !cmd.entry.flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -480,7 +453,7 @@ pub fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
 }
 pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
-    for cmd in &cmdlist.list {
+    for cmd in cmdlist.groups.iter().flatten() {
         if cmd.entry.flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }

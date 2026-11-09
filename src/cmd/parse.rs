@@ -1,16 +1,13 @@
 use crate::arguments::ParseValue;
 use crate::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
-use crate::cmd::{
-    cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new,
-    cmd_list_print_cstring, cmd_parse,
-};
+use crate::cmd::{cmd_get_alias, cmd_list_new, cmd_list_print_cstring, cmd_parse};
 use crate::environ::environ_put;
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::log::{log_bytes, log_debug};
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
-use crate::shared::command::{cmd_find_state, cmd_list, cmdq_state};
 use crate::shared::command::cmd_parse_input;
+use crate::shared::command::{cmd_find_state, cmd_list, cmdq_state};
 use crate::shared::command::{
     CMD_PARSE_MAX_ENVIRON_LEN, CMD_PARSE_NOALIAS, CMD_PARSE_ONEGROUP, CMD_PARSE_PARSEONLY,
     CMD_PARSE_VERBOSE,
@@ -347,9 +344,9 @@ fn cmd_parse_build_command(
         .collect();
     let command = cmd_parse(&values, pi.file.as_deref(), pi.line, pi.flags)
         .map_err(|cause| cmd_parse_get_error(pi.file.as_deref(), pi.line, &cause))?;
-    let mut commands = cmd_list_new();
-    cmd_list_append(&mut commands, command);
-    Ok(commands)
+    Ok(cmd_list {
+        groups: vec![vec![command]],
+    })
 }
 
 fn cmd_parse_build_commands(
@@ -364,18 +361,20 @@ fn cmd_parse_build_commands(
         if !pi.flags & CMD_PARSE_ONEGROUP != 0 && cmd.line != line {
             if let Some(mut current) = current.take() {
                 cmd_parse_print_commands(pi, &current);
-                cmd_list_move(&mut result, &mut current);
+                result.groups.append(&mut current.groups);
             }
         }
-        let current = current.get_or_insert_with(cmd_list_new);
+        let current = current.get_or_insert_with(|| cmd_list {
+            groups: vec![Vec::new()],
+        });
         pi.line = cmd.line;
         line = pi.line;
-        let mut commands = cmd_parse_build_command(cmd, pi)?;
-        cmd_list_append_all(current, &mut commands);
+        let commands = cmd_parse_build_command(cmd, pi)?;
+        current.groups[0].extend(commands.groups.into_iter().flatten());
     }
     if let Some(mut current) = current {
         cmd_parse_print_commands(pi, &current);
-        cmd_list_move(&mut result, &mut current);
+        result.groups.append(&mut current.groups);
     }
     let s = cmd_list_print_cstring(&result, 0);
     log_debug(format_args!(
@@ -596,14 +595,14 @@ mod parser_collection_tests {
         let shared = source.clone();
         let original_text = cmd_list_print_cstring(&source, 0);
         let copied = crate::cmd::cmd_list_copy(&source, &vec![c"replacement".to_owned()]);
-        assert_eq!(source.list.len(), 3);
-        assert_eq!(source.list[0].group, source.list[1].group);
-        assert_ne!(source.list[1].group, source.list[2].group);
-        assert_eq!(copied.list[0].group, copied.list[1].group);
-        assert_ne!(copied.list[1].group, copied.list[2].group);
-        for (original, copy) in source.list.iter().zip(&copied.list) {
-            assert_ne!(original.group, copy.group);
-        }
+        assert_eq!(
+            source.groups.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+        assert_eq!(
+            copied.groups.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![2, 1]
+        );
         assert_eq!(
             cmd_list_print_cstring(&copied, 0).as_bytes(),
             b"display-message replacement ; display-message second ;; display-message third"
@@ -712,7 +711,7 @@ mod parser_collection_tests {
             cmd_parse_from_argv(&[]),
             cmd_parse_from_arguments(&[], None),
         ] {
-            assert!(result.expect("empty input is valid").list.is_empty());
+            assert!(result.expect("empty input is valid").groups.is_empty());
         }
     }
 
