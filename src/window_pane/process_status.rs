@@ -16,6 +16,7 @@ pub(super) struct ProcessStatus {
     checked: Option<Instant>,
     emoji: Option<&'static str>,
     shell_running: Option<bool>,
+    report_foreground: Option<libc::pid_t>,
 }
 
 thread_local! {
@@ -35,7 +36,18 @@ pub(crate) fn shutdown() {
 fn tick() {
     TIMER.set(None);
     for pane in window_pane_tree::snapshot() {
-        let changed = refresh(&pane.borrow(), false);
+        let changed = {
+            let mut pane = pane.borrow_mut();
+            let reported = pane.process_status.borrow().report_foreground;
+            let expired = pane.base.program_status.is_some()
+                && reported.is_some()
+                && foreground_group(&pane).is_some_and(|foreground| Some(foreground) != reported);
+            if expired {
+                pane.base.program_status = None;
+                pane.process_status.borrow_mut().report_foreground = None;
+            }
+            refresh(&pane, expired) || expired
+        };
         if changed {
             if let Some(window) = pane.window_observer().upgrade() {
                 crate::server_fn::server_status_window(&window);
@@ -43,6 +55,23 @@ fn tick() {
         }
     }
     start();
+}
+
+fn foreground_group(pane: &window_pane) -> Option<libc::pid_t> {
+    pane.fd.as_ref().and_then(|fd| {
+        tiri_sys::terminal_foreground_group(fd.as_fd())
+            .ok()
+            .filter(|&pid| pid > 0)
+    })
+}
+
+pub(super) fn program_status_event(pane: &window_pane) {
+    pane.process_status.borrow_mut().report_foreground = pane
+        .base
+        .program_status
+        .as_ref()
+        .and_then(|_| foreground_group(pane));
+    refresh(pane, true);
 }
 
 pub(super) fn shell_event(pane: &window_pane, running: Option<bool>) -> bool {
@@ -67,11 +96,7 @@ fn refresh(pane: &window_pane, force: bool) -> bool {
         return false;
     }
     let now = Instant::now();
-    let foreground = pane.fd.as_ref().and_then(|fd| {
-        tiri_sys::terminal_foreground_group(fd.as_fd())
-            .ok()
-            .filter(|&pid| pid > 0)
-    });
+    let foreground = foreground_group(pane);
     let key = (
         pane.pid,
         pane.fd.as_ref().map_or(-1, |fd| fd.as_fd().as_raw_fd()),

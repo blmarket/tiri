@@ -118,7 +118,9 @@ pub(super) fn finish_process(
         if wp.base.program_status.as_ref().is_some_and(|status| {
             matches!(
                 status.state(),
-                tiri_vt::ProgramState::Working | tiri_vt::ProgramState::Blocked
+                tiri_vt::ProgramState::Idle
+                    | tiri_vt::ProgramState::Working
+                    | tiri_vt::ProgramState::Blocked
             )
         }) {
             wp.base.program_status = None;

@@ -1655,7 +1655,7 @@ impl VtHost for ScreenVtHost<'_, '_> {
         });
         if changed {
             if let Some(pane) = self.ictx.wp.upgrade() {
-                super::process_status::shell_event(&pane.borrow(), None);
+                super::process_status::program_status_event(&pane.borrow());
                 if let Some(window) = pane.window_observer().upgrade() {
                     server_status_window(&window);
                 }
