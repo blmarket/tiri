@@ -7,27 +7,13 @@ use super::store::*;
 use super::types::*;
 use crate::cmd::parse::cmd_parse_from_string;
 use crate::format::bytes::write_cstr;
-use crate::shared::command::{cmd_list, cmd_parse_result};
+use crate::shared::command::cmd_list;
 use crate::shared::limits::UINT_MAX;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
-fn command_parser(value: &CStr) -> cmd_parse_result {
+fn command_parser(value: &CStr) -> Result<std::rc::Rc<cmd_list>, CString> {
     cmd_parse_from_string(value, None)
-}
-
-fn parse_commands(
-    value: &CStr,
-    parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
-) -> Result<Option<std::rc::Rc<cmd_list>>, CString> {
-    let mut parsed = parse(value);
-    if parsed.status != crate::shared::command::CMD_PARSE_SUCCESS {
-        return Err(parsed
-            .error
-            .take()
-            .unwrap_or_else(|| c"invalid command".to_owned()));
-    }
-    Ok(parsed.take_cmdlist())
 }
 
 impl OptionsScope {
@@ -48,7 +34,7 @@ impl OptionsScope {
         name: &CStr,
         value: Option<&CStr>,
         append: bool,
-        parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
+        parse: &mut impl FnMut(&CStr) -> Result<std::rc::Rc<cmd_list>, CString>,
     ) -> Result<(), CString> {
         if definition.is_none() {
             if !name.to_bytes().starts_with(b"@") {
@@ -67,7 +53,7 @@ impl OptionsScope {
             });
         }
         let value = value.ok_or_else(|| c"empty value".to_owned())?;
-        let commands = parse_commands(value, parse)?;
+        let commands = Some(parse(value)?);
         if self.with_entry(name, |_| ()).is_none() {
             self.reset_default_with_parser(definition, parse);
         }
@@ -113,7 +99,7 @@ impl OptionsScope {
         key: &CStr,
         value: Option<&CStr>,
         append: bool,
-        parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
+        parse: &mut impl FnMut(&CStr) -> Result<std::rc::Rc<cmd_list>, CString>,
     ) -> Result<(), CString> {
         let (identity, definition) = self
             .with_entry(name, |entry| (entry.id(), entry.tableentry))
@@ -127,7 +113,7 @@ impl OptionsScope {
             return Err(options_string_cause(c"bad array key: %s", &[key]));
         };
         if let Some(value) = value.filter(|_| definition.type_0 == OPTIONS_TABLE_COMMAND) {
-            let commands = parse_commands(value, parse)?;
+            let commands = Some(parse(value)?);
             self.with_entry(name, |entry| {
                 assert_eq!(entry.id(), identity, "array option replaced while parsing");
                 *entry
@@ -160,7 +146,7 @@ impl OptionsScope {
         &self,
         name: &CStr,
         value: &CStr,
-        parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
+        parse: &mut impl FnMut(&CStr) -> Result<std::rc::Rc<cmd_list>, CString>,
     ) -> Result<(), CString> {
         let (identity, separator) = self
             .with_entry(name, |entry| {
@@ -260,7 +246,7 @@ impl OptionsScope {
     fn reset_default_with_parser(
         &self,
         definition: &'static options_table_entry,
-        parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
+        parse: &mut impl FnMut(&CStr) -> Result<std::rc::Rc<cmd_list>, CString>,
     ) {
         let name = definition.name.expect("named option definition");
         while self.remove_entry(name) {}
@@ -285,11 +271,10 @@ impl OptionsScope {
                     .to_owned(),
             ),
             OPTIONS_TABLE_COMMAND => {
-                let mut parsed = parse(definition.default_str.expect("string option default"));
-                if parsed.status != crate::shared::command::CMD_PARSE_SUCCESS {
+                let Ok(commands) = parse(definition.default_str.expect("string option default")) else {
                     return;
-                }
-                options_value::Command(OptionCommand(parsed.take_cmdlist()))
+                };
+                options_value::Command(OptionCommand(Some(commands)))
             }
             _ => options_value::Number(definition.default_num),
         };

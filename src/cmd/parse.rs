@@ -9,9 +9,8 @@ use crate::format::{format_create, format_defaults, format_expand_cstring, forma
 use crate::log::{log_bytes, log_debug};
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
-use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmd_list, cmdq_state};
-use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::command::cmd_parse_input;
 use crate::shared::command::{
     CMD_PARSE_MAX_ENVIRON_LEN, CMD_PARSE_NOALIAS, CMD_PARSE_ONEGROUP, CMD_PARSE_PARSEONLY,
     CMD_PARSE_VERBOSE,
@@ -387,22 +386,11 @@ fn cmd_parse_build_commands(
     Ok(result)
 }
 
-fn cmd_parse_publish(result: Result<cmd_list, CString>) -> cmd_parse_result {
-    match result {
-        Ok(commands) => cmd_parse_result {
-            status: CMD_PARSE_SUCCESS,
-            cmdlist: Some(Rc::new(commands)),
-            error: None,
-        },
-        Err(error) => cmd_parse_result {
-            status: CMD_PARSE_ERROR,
-            cmdlist: None,
-            error: Some(error),
-        },
-    }
-}
 /// Parse file contents already read into memory.
-pub fn cmd_parse_from_file(bytes: &[u8], pi: Option<&mut cmd_parse_input>) -> cmd_parse_result {
+pub fn cmd_parse_from_file(
+    bytes: &[u8],
+    pi: Option<&mut cmd_parse_input>,
+) -> Result<Rc<cmd_list>, CString> {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -418,19 +406,14 @@ pub fn cmd_parse_from_file(bytes: &[u8], pi: Option<&mut cmd_parse_input>) -> cm
             idx: 0,
         },
     };
-    let mut pr = cmd_parse_result::empty();
     let pi = pi.unwrap_or(&mut input);
-    let mut cmds = match cmd_parse_do_file(bytes, pi) {
-        Ok(cmds) => cmds,
-        Err(cause) => {
-            pr.status = CMD_PARSE_ERROR;
-            pr.error = Some(cause);
-            return pr;
-        }
-    };
-    cmd_parse_publish(cmd_parse_build_commands(&mut cmds, pi))
+    let mut cmds = cmd_parse_do_file(bytes, pi)?;
+    cmd_parse_build_commands(&mut cmds, pi).map(Rc::new)
 }
-pub fn cmd_parse_from_string(s: &CStr, pi: Option<&mut cmd_parse_input>) -> cmd_parse_result {
+pub fn cmd_parse_from_string(
+    s: &CStr,
+    pi: Option<&mut cmd_parse_input>,
+) -> Result<Rc<cmd_list>, CString> {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -454,21 +437,16 @@ pub fn cmd_parse_and_append(
     s: &CStr,
     owner: Option<&ClientRef>,
     state: Option<&std::rc::Rc<cmdq_state>>,
-) -> Result<cmd_parse_status, Option<CString>> {
-    let item_allocation;
-    let mut pr = cmd_parse_from_string(s, None);
-    if pr.status == CMD_PARSE_ERROR {
-        return Err(pr.error.take());
-    }
-    item_allocation = cmdq_get_command(
-        pr.cmdlist.as_ref().expect("successful command parse"),
-        state,
-    );
-    cmdq_append(owner, item_allocation);
-    drop(pr.cmdlist.take());
-    Ok(pr.status)
+) -> Result<(), CString> {
+    let commands = cmd_parse_from_string(s, None)?;
+    let item = cmdq_get_command(&commands, state);
+    cmdq_append(owner, item);
+    Ok(())
 }
-pub fn cmd_parse_from_buffer(buf: &[u8], pi: Option<&mut cmd_parse_input>) -> cmd_parse_result {
+pub fn cmd_parse_from_buffer(
+    buf: &[u8],
+    pi: Option<&mut cmd_parse_input>,
+) -> Result<Rc<cmd_list>, CString> {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -484,25 +462,15 @@ pub fn cmd_parse_from_buffer(buf: &[u8], pi: Option<&mut cmd_parse_input>) -> cm
             idx: 0,
         },
     };
-    let mut pr = cmd_parse_result::empty();
     let pi = pi.unwrap_or(&mut input);
     if buf.is_empty() {
-        pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = Some(Rc::new(cmd_list_new()));
-        return pr;
+        return Ok(Rc::new(cmd_list_new()));
     }
-    let mut cmds = match cmd_parse_do_buffer(buf, pi) {
-        Ok(cmds) => cmds,
-        Err(cause) => {
-            pr.status = CMD_PARSE_ERROR;
-            pr.error = Some(cause);
-            return pr;
-        }
-    };
-    cmd_parse_publish(cmd_parse_build_commands(&mut cmds, pi))
+    let mut cmds = cmd_parse_do_buffer(buf, pi)?;
+    cmd_parse_build_commands(&mut cmds, pi).map(Rc::new)
 }
 /// Parse argv while borrowing its strings for the duration of the parser call.
-pub fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
+pub fn cmd_parse_from_argv(argv: &[CString]) -> Result<Rc<cmd_list>, CString> {
     let values: Vec<ParseValue> = argv
         .iter()
         .map(|string| ParseValue::String(string))
@@ -513,7 +481,7 @@ pub fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
 pub fn cmd_parse_from_arguments(
     values: &[ParseValue<'_>],
     pi: Option<&mut cmd_parse_input>,
-) -> cmd_parse_result {
+) -> Result<Rc<cmd_list>, CString> {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -566,7 +534,7 @@ pub fn cmd_parse_from_arguments(
     if !cmd.arguments.is_empty() {
         cmds.items.push(cmd);
     }
-    cmd_parse_publish(cmd_parse_build_commands(&mut cmds, pi))
+    cmd_parse_build_commands(&mut cmds, pi).map(Rc::new)
 }
 #[cfg(test)]
 mod parser_collection_tests {
@@ -611,9 +579,7 @@ mod parser_collection_tests {
             flags: CMD_PARSE_NOALIAS,
             ..Default::default()
         };
-        let mut result = cmd_parse_from_string(source, Some(&mut input));
-        assert_eq!(result.status, CMD_PARSE_SUCCESS, "{:?}", result.error);
-        result.cmdlist.take().expect("successful command parse")
+        cmd_parse_from_string(source, Some(&mut input)).expect("successful command parse")
     }
 
     #[test]
@@ -626,8 +592,7 @@ mod parser_collection_tests {
             b"display-message '%1'; display-message second\ndisplay-message third",
             Some(&mut input),
         );
-        assert_eq!(parsed.status, CMD_PARSE_SUCCESS, "{:?}", parsed.error);
-        let source = parsed.cmdlist.expect("parsed commands");
+        let source = parsed.expect("parsed commands");
         let shared = source.clone();
         let original_text = cmd_list_print_cstring(&source, 0);
         let copied = crate::cmd::cmd_list_copy(&source, &vec![c"replacement".to_owned()]);
@@ -707,11 +672,10 @@ mod parser_collection_tests {
                 file: Some(c"nested.conf".to_owned()),
                 ..Default::default()
             };
-            let mut result = cmd_parse_publish(cmd_parse_build_commands(&mut commands, &mut input));
+            let result = cmd_parse_build_commands(&mut commands, &mut input).map(Rc::new);
             if fail_nested {
-                assert_eq!(result.status, CMD_PARSE_ERROR);
                 assert_eq!(
-                    result.error.as_deref(),
+                    result.err().as_deref(),
                     Some(c"nested.conf:7: unknown command: unknown-parser-owner-command")
                 );
                 assert_eq!(
@@ -722,7 +686,7 @@ mod parser_collection_tests {
                 drop(commands);
                 assert!(observer.upgrade().is_none());
             } else {
-                assert_eq!(result.status, CMD_PARSE_SUCCESS, "{:?}", result.error);
+                let result = result.expect("parsed command list");
                 drop(commands);
                 assert_eq!(
                     observer.strong_count(),
@@ -730,19 +694,44 @@ mod parser_collection_tests {
                     "built command must retain its nested command list"
                 );
                 assert_eq!(
-                    cmd_list_print_cstring(
-                        result
-                            .cmdlist
-                            .as_ref()
-                            .expect("parsed command list"),
-                        0
-                    )
-                    .as_bytes(),
+                    cmd_list_print_cstring(&result, 0).as_bytes(),
                     b"if-shell -F 1 { display-message -p nested }"
                 );
-                drop(result.cmdlist.take());
+                drop(result);
                 assert!(observer.upgrade().is_none());
             }
+        }
+    }
+
+    #[test]
+    fn public_parsers_return_owned_empty_lists_for_empty_input() {
+        for result in [
+            cmd_parse_from_file(b"", None),
+            cmd_parse_from_buffer(b"", None),
+            cmd_parse_from_string(c"", None),
+            cmd_parse_from_argv(&[]),
+            cmd_parse_from_arguments(&[], None),
+        ] {
+            assert!(result.expect("empty input is valid").list.is_empty());
+        }
+    }
+
+    #[test]
+    fn public_parsers_preserve_command_error_locations() {
+        for parse in [cmd_parse_from_file, cmd_parse_from_buffer] {
+            let mut input = cmd_parse_input {
+                flags: CMD_PARSE_NOALIAS,
+                file: Some(c"commands.conf".to_owned()),
+                line: 7,
+                ..Default::default()
+            };
+            let error = parse(b"unknown-parser-result-command", Some(&mut input))
+                .err()
+                .expect("unknown command fails");
+            assert_eq!(
+                error.as_c_str(),
+                c"commands.conf:7: unknown command: unknown-parser-result-command"
+            );
         }
     }
 

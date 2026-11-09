@@ -19,7 +19,6 @@ use crate::style::colour::{colour_format, colour_parse_cstr};
 
 use crate::shared::abi::*;
 use crate::shared::command::cmd_list;
-use crate::shared::command::cmd_parse_result;
 use crate::shared::key::*;
 use crate::shared::limits::UINT_MAX;
 use std::collections::btree_map;
@@ -159,7 +158,6 @@ pub fn options_default<'a>(
     oo: &'a mut options,
     oe: &'static options_table_entry,
 ) -> &'a mut options_entry {
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let o = options_empty(oo, oe);
     if oe.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         let array = o.value.array_mut().expect("empty array option");
@@ -182,13 +180,10 @@ pub fn options_default<'a>(
             set_scalar_string(o, oe.default_str.expect("string option default").to_owned());
         }
         6 => {
-            pr = cmd_parse_from_string(oe.default_str.expect("string option default"), None);
-            match pr.status as ::core::ffi::c_uint {
-                0 => {}
-                1 => {
-                    o.value = options_value::Command(OptionCommand(pr.cmdlist.take()));
-                }
-                _ => {}
+            if let Ok(commands) =
+                cmd_parse_from_string(oe.default_str.expect("string option default"), None)
+            {
+                o.value = options_value::Command(OptionCommand(Some(commands)));
             }
         }
         _ => {
@@ -332,12 +327,8 @@ impl options_array {
             return Ok(());
         };
         if oe.type_0 == OPTIONS_TABLE_COMMAND {
-            let mut pr = cmd_parse_from_string(value, None);
-            if pr.status as ::core::ffi::c_uint == 0 {
-                return Err(pr.error.expect("command parse error"));
-            }
-            *self.get_or_insert(&new_key) =
-                options_value::Command(OptionCommand(pr.cmdlist.take()));
+            let commands = cmd_parse_from_string(value, None)?;
+            *self.get_or_insert(&new_key) = options_value::Command(OptionCommand(Some(commands)));
             return Ok(());
         }
         if oe.type_0 == OPTIONS_TABLE_STRING {

@@ -141,13 +141,9 @@ pub fn args_make_commands(
         "args_make_commands",
         log_bytes(cmd.as_bytes())
     ));
-    let mut pr = cmd_parse_from_string(cmd.as_c_str(), Some(&mut state.pi));
+    let result = cmd_parse_from_string(cmd.as_c_str(), Some(&mut state.pi));
     drop(cmd);
-    match pr.status as ::core::ffi::c_uint {
-        0 => Err(pr.error),
-        1 => Ok(pr.cmdlist.take().expect("successful command parse")),
-        _ => fatalx(|out| out.write_all(b"invalid parse return state")),
-    }
+    result.map_err(Some)
 }
 impl Drop for args_command_state {
     fn drop(&mut self) {

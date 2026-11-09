@@ -3336,29 +3336,24 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
             current_block = 13472856163611868459;
         } else {
             cmd_log_argv(&argv, c"cmd_unpack_argv");
-            let mut pr = cmd_parse_from_argv(&argv);
-            match pr.status as ::core::ffi::c_uint {
-                0 => {
-                    cause = pr.error;
+            let pr = cmd_parse_from_argv(&argv);
+            match pr {
+                Err(error) => {
+                    cause = Some(error);
                     current_block = 12680788052841528405;
                 }
-                _ => {
+                Ok(commands) => {
                     if owner.borrow().flags & CLIENT_READONLY as uint64_t != 0
-                        && cmd_list_all_have(
-                            pr.cmdlist.as_ref().expect("parsed command list"),
-                        ) == 0
+                        && cmd_list_all_have(&commands) == 0
                     {
                         new_item_allocation = Some(cmdq_get_callback_owned(
                             c"server_client_read_only",
                             Some(Box::new(server_client_read_only)),
                         ));
                     } else {
-                        new_item_allocation = Some(cmdq_get_command(
-                            pr.cmdlist.as_ref().expect("successful command parse"),
-                            None,
-                        ));
+                        new_item_allocation = Some(cmdq_get_command(&commands, None));
                     }
-                    drop(pr.cmdlist.take());
+                    drop(commands);
                     current_block = 13472856163611868459;
                 }
             }

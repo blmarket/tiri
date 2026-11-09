@@ -87,10 +87,6 @@ mod owned_argv_tests {
     }
 }
 
-pub type cmd_parse_status = ::core::ffi::c_uint;
-pub const CMD_PARSE_SUCCESS: cmd_parse_status = 1;
-pub const CMD_PARSE_ERROR: cmd_parse_status = 0;
-
 pub const CMD_PARSE_QUIET: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const CMD_PARSE_PARSEONLY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMD_STARTSERVER: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -133,10 +129,6 @@ mod tests {
         assert_eq!(CMD_FIND_PANE, 0);
         assert_eq!(CMD_FIND_WINDOW, 1);
         assert_eq!(CMD_FIND_SESSION, 2);
-        assert_eq!(size_of::<cmd_parse_status>(), 4);
-        assert_eq!(align_of::<cmd_parse_status>(), 4);
-        assert_eq!(CMD_PARSE_ERROR, 0);
-        assert_eq!(CMD_PARSE_SUCCESS, 1);
     }
 }
 
@@ -283,25 +275,5 @@ pub struct cmd_parse_input {
 impl cmd_parse_input {
     pub fn set_item(&mut self, item: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>) {
         self.item = item.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    }
-}
-
-pub struct cmd_parse_result {
-    pub status: cmd_parse_status,
-    pub cmdlist: Option<std::rc::Rc<cmd_list>>,
-    pub error: Option<CString>,
-}
-
-impl cmd_parse_result {
-    pub fn take_cmdlist(&mut self) -> Option<std::rc::Rc<cmd_list>> {
-        self.cmdlist.take()
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            status: CMD_PARSE_ERROR,
-            cmdlist: None,
-            error: None,
-        }
     }
 }

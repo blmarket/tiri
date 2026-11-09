@@ -12,7 +12,6 @@ use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;
-use crate::shared::command::cmd_parse_result;
 use crate::shared::command::CMDQ_STATE_REPEAT;
 use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item};
@@ -524,26 +523,19 @@ pub fn key_bindings_init() {
         c"bind -Tcopy-mode-vi C-Up { send -X scroll-up }",
         c"bind -Tcopy-mode-vi C-Down { send -X scroll-down }",
     ];
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     for command in defaults {
-        pr = cmd_parse_from_string(command, None);
-        if pr.status as ::core::ffi::c_uint
-            != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            log_debug(format_args!(
-                "{}",
-                log_cstr(pr.error.as_deref().unwrap_or(c"(null)"))
-            ));
+        let commands = cmd_parse_from_string(command, None).unwrap_or_else(|error| {
+            log_debug(format_args!("{}", log_cstr(&error)));
             fatalx(|out| {
                 out.write_all(b"bad default key: ")?;
                 out.write_all(command.to_bytes())
             });
-        }
+        });
         cmdq_append(
             None,
-            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None),
+            cmdq_get_command(&commands, None),
         );
-        drop(pr.cmdlist.take());
+        drop(commands);
     }
     cmdq_append(
         None,

@@ -30,7 +30,6 @@ use crate::options::{
 };
 use crate::shared::abi::*;
 use crate::shared::client::ClientWeak;
-use crate::shared::command::cmd_parse_result;
 use crate::shared::command::CMDQ_STATE_NOHOOKS;
 use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::shared::events::{event_payload, events_callback, EventSinkId};
@@ -109,7 +108,11 @@ fn hooks_insert_one(
     }
     cmdq_append(None, new_item_allocation)
 }
-fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
+fn hooks_parse(
+    hd: &mut hooks_data,
+    fs: &cmd_find_state,
+    value: &CStr,
+) -> Result<std::rc::Rc<cmd_list>, CString> {
     if hd.expand == 0 {
         return cmd_parse_from_string(value, None);
     }
@@ -200,16 +203,15 @@ fn hooks_insert(
             })
             .expect("resolved hook");
         let pr = hooks_parse(hd, &fs, &value);
-        match pr.status {
-            0 => log_debug(format_args!(
+        match pr {
+            Err(error) => log_debug(format_args!(
                 "hooks_insert: can't parse hook {}: {}",
                 crate::log::log_bytes(name.to_bytes()),
-                log_cstr(pr.error.as_deref().unwrap_or(c"(null)"))
+                log_cstr(&error)
             )),
-            1 => {
-                hooks_insert_one(after.upgrade().as_ref(), hd, pr.cmdlist.as_ref(), &state);
+            Ok(commands) => {
+                hooks_insert_one(after.upgrade().as_ref(), hd, Some(&commands), &state);
             }
-            _ => {}
         }
     } else {
         let keys = source
@@ -240,23 +242,20 @@ fn hooks_insert(
                     break;
                 };
                 let pr = hooks_parse(hd, &fs, &value);
-                match pr.status {
-                    0 => {
-                        if let Some(error) = pr.error.as_ref() {
-                            cmdq_error(item_handle.expect("hook command item"), |out| {
-                                write_cstr(out, error.as_c_str())
-                            });
-                        }
+                match pr {
+                    Err(error) => {
+                        cmdq_error(item_handle.expect("hook command item"), |out| {
+                            write_cstr(out, error.as_c_str())
+                        });
                     }
-                    1 => {
+                    Ok(commands) => {
                         after = hooks_insert_one(
                             after.upgrade().as_ref(),
                             hd,
-                            pr.cmdlist.as_ref(),
+                            Some(&commands),
                             &state,
                         );
                     }
-                    _ => {}
                 }
             } else {
                 let commands = source

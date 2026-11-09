@@ -60,7 +60,6 @@ use crate::screen_write::{
 use crate::shared::abi::ssize_t;
 use crate::shared::abi::*;
 use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_LIGHT_GREY};
-use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::environment::{environ, environ_entry};
@@ -753,15 +752,12 @@ fn window_customize_set_command_value(
         return Err(None);
     };
     let mut kt = table.borrow_mut();
-    let mut pr = cmd_parse_from_string(s, None);
-    if pr.status == CMD_PARSE_ERROR {
-        return Err(pr.error);
-    }
+    let commands = cmd_parse_from_string(s, None).map_err(Some)?;
     let Some(bd) = kt.key_bindings.get_mut(item.key) else {
-        drop(pr.cmdlist.take());
+        drop(commands);
         return Err(None);
     };
-    bd.commands = pr.cmdlist.take().expect("successful command parse");
+    bd.commands = commands;
     Ok(())
 }
 fn window_customize_set_note_value(
@@ -3686,26 +3682,27 @@ fn window_customize_set_command_callback(
         return PROMPT_CLOSE;
     };
     let mut kt = table.borrow_mut();
-    let mut pr = cmd_parse_from_string(s, None);
-    match pr.status as ::core::ffi::c_uint {
-        0 => {
-            cmd_parse_error_uppercase_first(&mut pr.error);
+    let pr = cmd_parse_from_string(s, None);
+    match pr {
+        Err(error) => {
+            let mut error = Some(error);
+            cmd_parse_error_uppercase_first(&mut error);
             status_message_set(
                 c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
-                |out| write_cstr(out, pr.error.as_deref()),
+                |out| write_cstr(out, error.as_deref()),
             );
             PROMPT_CLOSE
         }
-        _ => {
+        Ok(commands) => {
             let Some(bd) = kt.key_bindings.get_mut(item.key) else {
-                drop(pr.cmdlist.take());
+                drop(commands);
                 return PROMPT_CLOSE;
             };
-            bd.commands = pr.cmdlist.take().expect("successful command parse");
+            bd.commands = commands;
             drop(kt);
             mode_tree_build(&window_customize_tree(mode));
             mode_tree_draw(&window_customize_tree(mode));
@@ -3884,27 +3881,28 @@ fn window_customize_add_key_callback(
         return PROMPT_CLOSE;
     }
     drop(keystr);
-    let mut pr = cmd_parse_from_string(cstr_suffix(s, command_offset), None);
-    match pr.status as ::core::ffi::c_uint {
-        0 => {
-            cmd_parse_error_uppercase_first(&mut pr.error);
+    let pr = cmd_parse_from_string(cstr_suffix(s, command_offset), None);
+    match pr {
+        Err(error) => {
+            let mut error = Some(error);
+            cmd_parse_error_uppercase_first(&mut error);
             status_message_set(
                 c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
-                |out| write_cstr(out, pr.error.as_deref()),
+                |out| write_cstr(out, error.as_deref()),
             );
             PROMPT_CLOSE
         }
-        _ => {
+        Ok(commands) => {
             key_bindings_add(
                 item.table.as_deref().expect("key binding table name"),
                 key,
                 None,
                 0 as ::core::ffi::c_int,
-                pr.take_cmdlist(),
+                Some(commands),
             );
             mode_tree_build(&window_customize_tree(mode));
             mode_tree_draw(&window_customize_tree(mode));

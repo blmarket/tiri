@@ -20,7 +20,7 @@ use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmdq_item};
-use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::command::cmd_parse_input;
 use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
 use crate::shared::errno::ErrorText;
 use crate::shared::session::SessionRef;
@@ -144,7 +144,6 @@ pub fn load_cfg(
             idx: 0,
         },
     };
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
 
     log_debug(format_args!("loading {}", log_cstr(path)));
     // tmux lexes the stream with `getc`, which reads an error as EOF: a
@@ -172,15 +171,15 @@ pub fn load_cfg(
     pi.line = 1 as u_int;
     pi.set_item(None);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    pr = cmd_parse_from_file(&bytes, Some(&mut pi));
-    if pr.status as ::core::ffi::c_uint
-        == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        cfg_add_cause(|out| write_cstr(out, pr.error.as_deref()));
-        return -(1 as ::core::ffi::c_int);
-    }
+    let commands = match cmd_parse_from_file(&bytes, Some(&mut pi)) {
+        Ok(commands) => commands,
+        Err(error) => {
+            cfg_add_cause(|out| write_cstr(out, error.as_c_str()));
+            return -1;
+        }
+    };
     if flags & CMD_PARSE_PARSEONLY != 0 {
-        drop(pr.cmdlist.take());
+        drop(commands);
         return 0 as ::core::ffi::c_int;
     }
 
@@ -191,14 +190,11 @@ pub fn load_cfg(
         c"current_file",
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    let new_item0_allocation = cmdq_get_command(
-        pr.cmdlist.as_ref().expect("successful command parse"),
-        Some(&state),
-    );
+    let new_item0_allocation = cmdq_get_command(&commands, Some(&state));
 
     cmdq_append(None, new_item0_allocation);
 
-    drop(pr.cmdlist.take());
+    drop(commands);
 
     0 as ::core::ffi::c_int
 }
@@ -226,7 +222,6 @@ pub fn load_cfg_from_buffer(
             idx: 0,
         },
     };
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
 
     if let Some(new_item) = new_item.as_deref_mut() {
         *new_item = std::rc::Weak::new();
@@ -237,15 +232,15 @@ pub fn load_cfg_from_buffer(
     pi.line = 1 as u_int;
     pi.set_item(item_handle);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    pr = cmd_parse_from_buffer(buf, Some(&mut pi));
-    if pr.status as ::core::ffi::c_uint
-        == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        cfg_add_cause(|out| write_cstr(out, pr.error.as_deref()));
-        return -(1 as ::core::ffi::c_int);
-    }
+    let commands = match cmd_parse_from_buffer(buf, Some(&mut pi)) {
+        Ok(commands) => commands,
+        Err(error) => {
+            cfg_add_cause(|out| write_cstr(out, error.as_c_str()));
+            return -1;
+        }
+    };
     if flags & CMD_PARSE_PARSEONLY != 0 {
-        drop(pr.cmdlist.take());
+        drop(commands);
         return 0 as ::core::ffi::c_int;
     }
     let state = if let Some(item) = item_handle {
@@ -258,16 +253,13 @@ pub fn load_cfg_from_buffer(
         c"current_file",
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    let new_item0_allocation = cmdq_get_command(
-        pr.cmdlist.as_ref().expect("successful command parse"),
-        Some(&state),
-    );
+    let new_item0_allocation = cmdq_get_command(&commands, Some(&state));
     let last = if let Some(item) = item_handle {
         cmdq_insert_after(item, new_item0_allocation)
     } else {
         cmdq_append(None, new_item0_allocation)
     };
-    drop(pr.cmdlist.take());
+    drop(commands);
 
     if let Some(new_item) = new_item {
         *new_item = last;

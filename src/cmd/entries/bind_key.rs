@@ -9,7 +9,6 @@ use crate::format::bytes::write_cstr;
 use crate::key_bindings::key_bindings_add;
 use crate::key_string::key_string_parse_cstr;
 use crate::shared::abi::*;
-use crate::shared::command::cmd_parse_result;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -47,11 +46,11 @@ fn cmd_bind_key_exec(
     self_0: &cmd,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
+    let pr;
     let args = cmd_get_args(self_0);
     let mut key: key_code = 0;
     let mut tablename: &CStr = c"";
     let mut note: Option<&CStr> = args_get(args, 'N' as i32 as u_char);
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut count: u_int = args_count(args);
     key = key_string_parse_cstr(args_string(args, 0 as u_int).expect("argument is present"))
@@ -95,10 +94,13 @@ fn cmd_bind_key_exec(
             .collect();
         pr = cmd_parse_from_arguments(&values, None);
     }
-    if pr.status as ::core::ffi::c_uint == 0 {
-        cmdq_error(item_handle, |out| write_cstr(out, pr.error.as_deref()));
-        return CmdOutcome::Error;
-    }
-    key_bindings_add(tablename, key, note, repeat, pr.take_cmdlist());
+    let commands = match pr {
+        Ok(commands) => commands,
+        Err(error) => {
+            cmdq_error(item_handle, |out| write_cstr(out, error.as_c_str()));
+            return CmdOutcome::Error;
+        }
+    };
+    key_bindings_add(tablename, key, note, repeat, Some(commands));
     CmdOutcome::Normal
 }

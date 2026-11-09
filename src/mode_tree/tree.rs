@@ -2332,8 +2332,9 @@ pub fn mode_tree_run_command(
         return;
     }
     let state = cmdq_new_state(fs, None, 0);
-    if let Err(mut error) = cmd_parse_and_append(&command, client_owner, Some(&state)) {
+    if let Err(error) = cmd_parse_and_append(&command, client_owner, Some(&state)) {
         if let Some(owner) = client_owner {
+            let mut error = Some(error);
             cmd_parse_error_uppercase_first(&mut error);
             status_message_set(Some(owner), -1, 1, 0, 0, |out| {
                 write_cstr(out, error.as_deref())

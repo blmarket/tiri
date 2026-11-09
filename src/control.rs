@@ -629,7 +629,7 @@ fn control_read_callback(owner: &ClientRef) {
             ) {
                 let error_item_allocation = cmdq_get_callback_owned(
                     c"control_error",
-                    Some(Box::new(move |item| control_error(item, error))),
+                    Some(Box::new(move |item| control_error(item, Some(error)))),
                 );
                 cmdq_append(Some(owner), error_item_allocation);
             }

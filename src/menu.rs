@@ -559,7 +559,7 @@ pub fn menu_key(
     ) {
         cmdq_append(
             client_owner,
-            cmdq_get_error(error.as_deref().unwrap_or(c"")),
+            cmdq_get_error(&error),
         );
     }
 

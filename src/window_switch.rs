@@ -563,9 +563,10 @@ fn window_switch_run_command(
     drop(data);
     if !command.as_bytes().is_empty() {
         state = cmdq_new_state(Some(&fs), None, 0 as ::core::ffi::c_int);
-        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), client_owner, Some(&state))
+        if let Err(error) = cmd_parse_and_append(command.as_c_str(), client_owner, Some(&state))
         {
             if let Some(owner) = client_owner {
+                let mut error = Some(error);
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(
                     Some(owner),

@@ -26,8 +26,6 @@ use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
 };
-use crate::shared::command::cmd_parse_result;
-use crate::shared::command::*;
 use crate::shared::errno::ErrorText;
 use crate::shared::posix_io::{STDERR_FILENO, WAIT_ANY, WNOHANG};
 use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
@@ -220,7 +218,6 @@ pub fn client_main(
     mut flags: uint64_t,
     mut feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut i: ::core::ffi::c_int = 0;
     let mut ppid: pid_t = 0;
     let mut msg: msgtype = 0 as msgtype;
@@ -236,14 +233,11 @@ pub fn client_main(
         flags |= CLIENT_STARTSERVER as uint64_t;
     } else {
         msg = MSG_COMMAND;
-        pr = cmd_parse_from_argv(argv);
-        if pr.status as ::core::ffi::c_uint
-            == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            if cmd_list_any_have(pr.cmdlist.as_ref().expect("parsed command list")) != 0 {
+        if let Ok(commands) = cmd_parse_from_argv(argv) {
+            if cmd_list_any_have(&commands) != 0 {
                 flags |= CLIENT_STARTSERVER as uint64_t;
             }
-            drop(pr.cmdlist.take());
+            drop(commands);
         }
     }
     let mut process_owner = proc_start(c"client");
