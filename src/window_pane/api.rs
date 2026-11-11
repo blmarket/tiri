@@ -74,12 +74,9 @@ pub trait WindowPane {
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     fn outer_geometry(&self) -> (i32, i32, u32, u32);
     fn pane_lines(&self) -> pane_lines;
-    type LayoutMeta<'a>: std::ops::DerefMut<Target = Option<Box<dyn std::any::Any>>>
-    where
-        Self: 'a;
     /// This pane's layout metadata; only the Window writes it. The guard
     /// permits metadata-only work and must end before dispatch.
-    fn borrow_layout_meta(&self) -> Self::LayoutMeta<'_>;
+    fn borrow_layout_meta(&self) -> std::cell::RefMut<'_, Option<Box<dyn std::any::Any>>>;
     fn border_status(&self) -> i32;
     fn has_pending_change(&self) -> bool;
     fn acknowledge_change(&self);
@@ -91,17 +88,11 @@ pub trait WindowPane {
     fn default_window_name(&self) -> CString;
     fn current_path(&self) -> Option<CString>;
     /// A borrow can become Ref::map on one RefCell containing the whole pane.
-    type Palette<'a>: std::ops::Deref<Target = colour_palette>
-    where
-        Self: 'a;
     /// Do not reenter the pane, dispatch callbacks or let component pointers
     /// escape while the returned guard is alive.
-    fn borrow_palette(&self) -> Self::Palette<'_>;
-    type PaletteMut<'a>: std::ops::DerefMut<Target = colour_palette>
-    where
-        Self: 'a;
+    fn borrow_palette(&self) -> std::cell::Ref<'_, colour_palette>;
     /// The mutation guard permits palette-only work and must end before dispatch.
-    fn borrow_palette_mut(&self) -> Self::PaletteMut<'_>;
+    fn borrow_palette_mut(&self) -> std::cell::RefMut<'_, colour_palette>;
 
     fn id(&self) -> u32;
     fn find_by_id(id: u32) -> Option<Self>
@@ -875,8 +866,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn pane_lines(&self) -> pane_lines {
         window_pane_get_pane_lines(&self.borrow())
     }
-    type LayoutMeta<'a> = std::cell::RefMut<'a, Option<Box<dyn std::any::Any>>>;
-    fn borrow_layout_meta(&self) -> Self::LayoutMeta<'_> {
+    fn borrow_layout_meta(&self) -> std::cell::RefMut<'_, Option<Box<dyn std::any::Any>>> {
         std::cell::RefMut::map(self.borrow_mut(), |pane| &mut pane.layout_meta)
     }
     fn border_status(&self) -> i32 {
@@ -908,12 +898,10 @@ impl WindowPane for Rc<RefCell<window_pane>> {
             .unwrap_or_else(|| pane.shell.as_deref().expect("pane shell"));
         crate::names::parse_window_name_cstring(source)
     }
-    type Palette<'a> = std::cell::Ref<'a, colour_palette>;
-    type PaletteMut<'a> = std::cell::RefMut<'a, colour_palette>;
-    fn borrow_palette_mut(&self) -> Self::PaletteMut<'_> {
+    fn borrow_palette_mut(&self) -> std::cell::RefMut<'_, colour_palette> {
         std::cell::RefMut::map(self.borrow_mut(), |pane| &mut pane.palette)
     }
-    fn borrow_palette(&self) -> Self::Palette<'_> {
+    fn borrow_palette(&self) -> std::cell::Ref<'_, colour_palette> {
         std::cell::Ref::map(self.borrow(), |pane| &pane.palette)
     }
 

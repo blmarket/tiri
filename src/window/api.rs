@@ -21,10 +21,7 @@ pub trait Window {
 
     /// Selection history is separate from pane order. Only pure history edits
     /// may run while this component is borrowed.
-    type PaneHistoryMut<'a>: std::ops::DerefMut<Target = PaneHistory>
-    where
-        Self: 'a;
-    fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_>;
+    fn borrow_pane_history_mut(&self) -> std::cell::RefMut<'_, PaneHistory>;
     /// The window's panes become exactly `panes`, in this order: the one way
     /// panes are added, removed and reordered. A list that brings in a pane
     /// must be one the layout takes, or the layout's reason comes back and
@@ -216,8 +213,7 @@ impl Window for WindowRef {
         window_find_string(self, name)
     }
 
-    type PaneHistoryMut<'a> = std::cell::RefMut<'a, PaneHistory>;
-    fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_> {
+    fn borrow_pane_history_mut(&self) -> std::cell::RefMut<'_, PaneHistory> {
         std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.last_panes)
     }
     fn rearrange_panes(&self, panes: &[Rc<RefCell<window_pane>>]) -> Result<(), &'static CStr> {

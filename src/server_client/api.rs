@@ -54,31 +54,23 @@ pub trait Client {
     fn update_theme_colours(&self);
     fn handle_key(&self, event: Box<key_event>) -> i32;
 
-    type FormatJobsMut<'a>: std::ops::DerefMut<Target = crate::shared::format::format_job_tree>
-    where
-        Self: 'a;
     /// Immediate cache edits only. Release before expansion, process startup,
     /// job_free, or status notification. Callback identity must not be a pointer
     /// into this cache; removed entries retain their explicit cleanup duty.
-    fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_>;
-    type QueueMut<'a>: std::ops::DerefMut<Target = crate::cmd::queue::cmdq_list>
-    where
-        Self: 'a;
+    fn borrow_format_jobs_mut(
+        &self,
+    ) -> std::cell::RefMut<'_, crate::shared::format::format_job_tree>;
+
     /// Release before executing commands, invoking cancellation, or releasing
     /// queued owners. Queue identity must never be a pointer into this borrow.
-    fn borrow_queue_mut(&self) -> Self::QueueMut<'_>;
-    type Terminal<'a>: std::ops::Deref<Target = tty>
-    where
-        Self: 'a;
-    type TerminalMut<'a>: std::ops::DerefMut<Target = tty>
-    where
-        Self: 'a;
+    fn borrow_queue_mut(&self) -> std::cell::RefMut<'_, crate::cmd::queue::cmdq_list>;
+
     /// Read terminal properties within the guard; release it before model calls,
     /// terminal mutation, formatting, or callback dispatch.
-    fn borrow_terminal(&self) -> Self::Terminal<'_>;
+    fn borrow_terminal(&self) -> std::cell::Ref<'_, tty>;
     /// Only component-only helpers may run under this guard. Release before
     /// terminal IO helpers that query Client, callback dispatch, or model calls.
-    fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
+    fn borrow_terminal_mut(&self) -> std::cell::RefMut<'_, tty>;
     /// Enqueue terminal bytes and account for output within one model borrow.
     fn write_terminal(&self, bytes: &[u8]);
     /// A duplicate of the client's terminal descriptor.
@@ -104,21 +96,12 @@ pub trait Client {
     /// Window dimensions are read before borrowing Client state.
     fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
     fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32);
-    type Status<'a>: std::ops::Deref<Target = crate::shared::status::status_line>
-    where
-        Self: 'a;
-    type StatusMut<'a>: std::ops::DerefMut<Target = crate::shared::status::status_line>
-    where
-        Self: 'a;
     /// Release before formatting, querying Client, callbacks or screen replacement.
-    fn borrow_status(&self) -> Self::Status<'_>;
-    fn borrow_status_mut(&self) -> Self::StatusMut<'_>;
-    type ControlMut<'a>: std::ops::DerefMut<Target = control_state>
-    where
-        Self: 'a;
+    fn borrow_status(&self) -> std::cell::Ref<'_, crate::shared::status::status_line>;
+    fn borrow_status_mut(&self) -> std::cell::RefMut<'_, crate::shared::status::status_line>;
     /// Release before calling models, formatting, dispatching callbacks, or
     /// stopping control mode. No component pointer may escape the guard.
-    fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>>;
+    fn borrow_control_mut(&self) -> Option<std::cell::RefMut<'_, control_state>>;
     fn start_control(&self);
     fn stop_control(&self);
     fn control_pause_after(&self) -> Option<u64>;
@@ -400,8 +383,9 @@ impl Client for ClientRef {
             .unwrap_or(-1)
     }
 
-    type FormatJobsMut<'a> = std::cell::RefMut<'a, crate::shared::format::format_job_tree>;
-    fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_> {
+    fn borrow_format_jobs_mut(
+        &self,
+    ) -> std::cell::RefMut<'_, crate::shared::format::format_job_tree> {
         std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.jobs)
     }
     fn record_terminal_type(&self, name: &CStr) {
@@ -430,12 +414,10 @@ impl Client for ClientRef {
         let requests = std::mem::take(&mut self.borrow_mut().input_requests);
         crate::input::input_cancel_observed_requests(requests);
     }
-    type Terminal<'a> = std::cell::Ref<'a, tty>;
-    type TerminalMut<'a> = std::cell::RefMut<'a, tty>;
-    fn borrow_terminal(&self) -> Self::Terminal<'_> {
+    fn borrow_terminal(&self) -> std::cell::Ref<'_, tty> {
         std::cell::Ref::map(self.borrow(), |state| &state.tty)
     }
-    fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_> {
+    fn borrow_terminal_mut(&self) -> std::cell::RefMut<'_, tty> {
         std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.tty)
     }
     fn write_terminal(&self, bytes: &[u8]) {
@@ -549,18 +531,17 @@ impl Client for ClientRef {
         .expect("arm timer");
         self.borrow_mut().cycle_timer = Some(timer);
     }
-    type QueueMut<'a> = std::cell::RefMut<'a, crate::cmd::queue::cmdq_list>;
-    fn borrow_queue_mut(&self) -> Self::QueueMut<'_> {
+
+    fn borrow_queue_mut(&self) -> std::cell::RefMut<'_, crate::cmd::queue::cmdq_list> {
         std::cell::RefMut::map(self.borrow_mut(), |state| {
             state.queue.as_deref_mut().expect("client command queue")
         })
     }
-    type Status<'a> = std::cell::Ref<'a, crate::shared::status::status_line>;
-    type StatusMut<'a> = std::cell::RefMut<'a, crate::shared::status::status_line>;
-    fn borrow_status(&self) -> Self::Status<'_> {
+
+    fn borrow_status(&self) -> std::cell::Ref<'_, crate::shared::status::status_line> {
         std::cell::Ref::map(self.borrow(), |state| &state.status)
     }
-    fn borrow_status_mut(&self) -> Self::StatusMut<'_> {
+    fn borrow_status_mut(&self) -> std::cell::RefMut<'_, crate::shared::status::status_line> {
         std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.status)
     }
     fn terminal_started(&self) -> bool {
@@ -578,8 +559,7 @@ impl Client for ClientRef {
             state.redraw_scene = Some(scene);
         }
     }
-    type ControlMut<'a> = std::cell::RefMut<'a, control_state>;
-    fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>> {
+    fn borrow_control_mut(&self) -> Option<std::cell::RefMut<'_, control_state>> {
         std::cell::RefMut::filter_map(self.borrow_mut(), |state| {
             state.control_state.as_deref_mut()
         })
