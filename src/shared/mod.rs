@@ -31,7 +31,6 @@ pub mod menu;
 pub mod mouse;
 pub mod pane;
 pub mod paste;
-pub mod popup;
 pub mod posix_io;
 pub mod posix_terminal;
 pub mod process;

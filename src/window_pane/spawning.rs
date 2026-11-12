@@ -165,6 +165,9 @@ fn place_new_pane(
     ) as u_int;
     let (sx, sy) = window.size();
     let pane = window_pane_create(window, sx, sy, hlimit);
+    if let Some(geometry) = sc.geometry {
+        window.set_floating_geometry(&pane, geometry);
+    }
     panes.insert(position, pane.clone());
     if let Err(reason) = window.rearrange_panes(&panes) {
         pane.destroy();
@@ -189,6 +192,14 @@ pub(super) fn spawn_pane(
         let mut loop_0: Option<ClientRef> = None;
         let session_owner = sc.s.upgrade().expect("spawn context session");
         let original_window = winlink_window(&sc.winlink_handle()).expect("spawn window");
+        if sc.flags & crate::shared::spawn::SPAWN_MODAL != 0 {
+            if sc.geometry.is_none() {
+                return Err(c"modal pane must be floating".to_owned());
+            }
+            if original_window.modal_pane().upgrade().is_some() {
+                return Err(c"window already has a modal pane".to_owned());
+            }
+        }
         let result = (|| {
             let created_pane = if sc.flags & SPAWN_RESPAWN != 0 {
                 None
@@ -549,6 +560,9 @@ pub(super) fn spawn_pane(
             spawn_fire_pane_created(sc, &new_pane_owner);
             if sc.flags & SPAWN_RESPAWN != 0 {
                 return Ok(new_pane_owner);
+            }
+            if sc.flags & crate::shared::spawn::SPAWN_MODAL != 0 {
+                new_pane_owner.set_modal(false);
             }
             if !sc.flags & SPAWN_DETACHED != 0
                 || ((winlink_window(&sc.winlink_handle()).as_ref()).expect("live window"))

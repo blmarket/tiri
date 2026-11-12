@@ -125,6 +125,7 @@ fn cmd_new_session_exec(
     let mut dsy: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut sc: spawn_context = spawn_context {
+        geometry: None,
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),

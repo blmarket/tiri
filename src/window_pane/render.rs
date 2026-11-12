@@ -454,7 +454,6 @@ pub(super) fn visible_ranges(
         .upgrade()
         .expect("live pane parent");
     let window_size = window.logical_size();
-    drop(window);
     if py as u_int >= window_size.1 || px as u_int >= window_size.0 {
         return;
     }
@@ -465,4 +464,55 @@ pub(super) fn visible_ranges(
         px: px as u_int,
         nx: width,
     });
+    for floating in window
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+        .filter(|pane| {
+            pane.is_floating()
+                && pane.is_visible()
+                && !window.zoomed_pane().ptr_eq(&Rc::downgrade(pane))
+        })
+    {
+        if Rc::ptr_eq(&floating, base_wp) {
+            continue;
+        }
+        let (left, top, width, height) = floating.outer_geometry();
+        if py < top || py >= top + height as i32 {
+            continue;
+        }
+        let left = left.max(0) as u32;
+        let right = left.saturating_add(width);
+        let mut index = 0;
+        while index < ranges.len() {
+            let range = ranges[index];
+            let end = range.px.saturating_add(range.nx);
+            let before = range.px < left;
+            let after = end > right;
+            if end <= left || range.px >= right {
+                index += 1;
+            } else if before && after {
+                ranges[index].nx = left - range.px;
+                ranges.insert(
+                    index + 1,
+                    visible_range {
+                        px: right,
+                        nx: end - right,
+                    },
+                );
+                index += 2;
+            } else if before {
+                ranges[index].nx = left - range.px;
+                index += 1;
+            } else if after {
+                ranges[index] = visible_range {
+                    px: right,
+                    nx: end - right,
+                };
+                index += 1;
+            } else {
+                ranges.remove(index);
+            }
+        }
+    }
 }

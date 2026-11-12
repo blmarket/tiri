@@ -2,10 +2,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::abi::u_int;
-use super::display::visible_ranges;
-use super::screen::ScreenMode;
-
 pub type client_exit_type = ::core::ffi::c_uint;
 
 pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
@@ -52,7 +48,6 @@ pub const CLIENT_CONTROL_PAUSEAFTER: ::core::ffi::c_ulonglong =
 pub const CLIENT_CONTROL_DISCARD: ::core::ffi::c_ulonglong =
     0x10000000000 as ::core::ffi::c_ulonglong;
 pub const CLIENT_UNATTACHEDFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
-pub const CLIENT_REDRAWOVERLAY: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
 pub const CLIENT_STATUSOFF: ::core::ffi::c_int = 0x800000 as ::core::ffi::c_int;
 pub const CLIENT_NOSIZEFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
 pub const CLIENT_REDRAWWINDOW: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
@@ -79,7 +74,6 @@ pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int = CLIENT_REDRAWWINDOW
     | CLIENT_REDRAWSTATUS
     | CLIENT_REDRAWSTATUSALWAYS
     | CLIENT_REDRAWBORDERS
-    | CLIENT_REDRAWOVERLAY
     | CLIENT_REDRAWMENU;
 pub const CLIENT_NODETACHFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_EXIT;
 
@@ -92,13 +86,6 @@ pub type ClientRef = Rc<RefCell<client>>;
 pub type ClientWeak = std::rc::Weak<RefCell<client>>;
 
 pub use crate::file::{client_file, client_file_cb, client_files};
-
-pub type overlay_draw_cb = Option<Box<dyn FnMut(&ClientRef)>>;
-
-pub type overlay_mode_cb = Option<Box<dyn FnMut(&ClientRef) -> Option<(ScreenMode, u_int, u_int)>>>;
-
-pub type overlay_check_cb =
-    Option<Box<dyn FnMut(&ClientRef, u_int, u_int, u_int) -> visible_ranges>>;
 
 pub fn client_handle(owner: &Option<ClientRef>) -> Option<&ClientRef> {
     owner.as_ref()

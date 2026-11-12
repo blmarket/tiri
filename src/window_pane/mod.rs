@@ -503,7 +503,7 @@ fn window_pane_create(
 fn window_pane_wait_finish(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
     let (waiter, retval) = {
         let mut wp = wp_owner.borrow_mut();
-        let Some(waiter) = wp.wait_close.take() else {
+        let Some((_, waiter)) = wp.wait_close.take() else {
             return;
         };
         let retval = wp
@@ -583,7 +583,6 @@ fn window_pane_scrollbar_redraw_visibility(pane_owner: &Rc<std::cell::RefCell<wi
 }
 
 fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
-    window_pane_wait_finish(pane_owner);
     spawn_editor_finish(pane_owner);
     let owner = window_pane_tree::remove(pane_owner).expect("registered pane owner");
     pane_owner.borrow_mut().flags |= PANE_DESTROYED;
@@ -617,6 +616,7 @@ fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
         timers
     };
     drop(timers);
+    window_pane_wait_finish(pane_owner);
     drop(owner);
 }
 
@@ -2057,11 +2057,39 @@ fn window_pane_get_pane_status(
     if hides_status && std::ptr::eq(window.zoomed_pane().as_ptr(), Rc::as_ptr(pane_owner)) {
         return PANE_STATUS_OFF;
     }
+    if pane_owner.is_floating() && !window.zoomed_pane().ptr_eq(&Rc::downgrade(pane_owner)) {
+        if pane_owner.pane_lines() == PANE_LINES_NONE {
+            return PANE_STATUS_OFF;
+        }
+        return match options_get_number(&pane_owner.borrow_options_mut(), c"pane-border-status")
+            as i32
+        {
+            crate::shared::pane::PANE_STATUS_TOP_FLOATING => PANE_STATUS_TOP,
+            crate::shared::pane::PANE_STATUS_BOTTOM_FLOATING => PANE_STATUS_BOTTOM,
+            status => status,
+        };
+    }
     window.pane_border_status()
 }
 
 fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
-    wp.window_handle().expect("pane window").pane_border_lines()
+    let window = wp.window_handle().expect("pane window");
+    let zoomed = window
+        .zoomed_pane()
+        .upgrade()
+        .is_some_and(|pane| pane.id() == wp.id);
+    if !zoomed
+        && wp
+            .layout_meta
+            .as_deref()
+            .is_some_and(|meta| meta.is::<crate::window::FloatingPane>())
+    {
+        return options_get_number(
+            wp.options.as_ref().expect("pane options"),
+            c"pane-border-lines",
+        ) as pane_lines;
+    }
+    window.pane_border_lines()
 }
 
 impl Drop for window_pane {
@@ -2178,7 +2206,7 @@ mod wait_close_tests {
         let ran = Rc::new(Cell::new(false));
         let (waiter, head) = waiting_head(owner, &ran);
         let pane = draining_pane(pid);
-        pane.wait_until_close(waiter);
+        pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
         assert!(pane.process_exited(pid, ExitStatus::from_raw(status)));
         assert!(pane.borrow().wait_close.is_none());
         let retval = clients::return_value(owner);
@@ -2207,7 +2235,7 @@ mod wait_close_tests {
         let ran = Rc::new(Cell::new(false));
         let (waiter, head) = waiting_head(&owner, &ran);
         let pane = draining_pane(4245);
-        pane.wait_until_close(waiter);
+        pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
         pane.destroy();
         assert_eq!(clients::return_value(&owner), 128 + SIGHUP);
         assert!(ran.get());
@@ -2229,7 +2257,7 @@ mod wait_close_tests {
         }
         window_pane_tree::insert(Rc::clone(&pane));
         assert!(pane.destroy_ready());
-        pane.wait_until_close(waiter);
+        pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
         assert!(!pane.destroy_ready());
         let client = Rc::downgrade(&owner);
         drop(owner);
@@ -2239,7 +2267,7 @@ mod wait_close_tests {
             .borrow()
             .wait_close
             .as_ref()
-            .is_some_and(CmdqWaiter::is_cancelled));
+            .is_some_and(|(_, waiter)| waiter.is_cancelled()));
         assert!(!pane.destroy_ready());
         pane.borrow_mut().exit_status = Some(ExitStatus::from_raw(0));
         assert!(pane.destroy_ready());

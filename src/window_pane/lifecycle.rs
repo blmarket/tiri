@@ -238,7 +238,14 @@ pub(super) fn process_exited(
         log_debug(format_args!("%{} exited", state.id));
         state.flags |= PANE_EXITED;
     }
-    window_pane_wait_finish(pane);
+    if pane
+        .borrow()
+        .wait_close
+        .as_ref()
+        .is_some_and(|(event, _)| *event == crate::shared::pane::PaneWaitFor::ProcessExit)
+    {
+        window_pane_wait_finish(pane);
+    }
     spawn_editor_finish(pane);
     if pane.destroy_ready() {
         finish_process(pane, 1);

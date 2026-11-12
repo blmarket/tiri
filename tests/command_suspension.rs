@@ -158,13 +158,18 @@ fn popup_returns_its_process_status_to_the_awaiting_command_client() {
 }
 
 #[test]
-fn popup_with_close_exit_zero_waits_for_a_key_after_an_unsuccessful_exit() {
+fn popup_with_close_exit_zero_and_key_waits_after_an_unsuccessful_exit() {
     let server = Server::new();
     server.start(80, 24, 1);
     let mut terminal = server.attach_terminal(80, 24);
     let mut command = server
         .command()
-        .args(["display-popup", "-EE", "printf POPUP_RETAINED; exit 7"])
+        .args([
+            "display-popup",
+            "-EE",
+            "-k",
+            "printf POPUP_RETAINED; exit 7",
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

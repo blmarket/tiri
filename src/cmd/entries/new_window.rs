@@ -67,6 +67,7 @@ fn cmd_new_window_exec(
     let current = cmdq_get_state_owned(&(item));
     let target = cmdq_get_target(&item).clone();
     let mut sc: spawn_context = spawn_context {
+        geometry: None,
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),

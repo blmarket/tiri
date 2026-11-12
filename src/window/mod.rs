@@ -12,6 +12,7 @@ mod layout;
 mod model;
 pub use crate::window_pane::*;
 pub use crate::winlink::*;
+pub(crate) use layout::FloatingPane;
 pub use layout::{LayoutAction, LayoutKind};
 pub use model::window;
 mod owner;
@@ -380,7 +381,9 @@ fn window_has_pane(w: &window, pane: &std::rc::Weak<std::cell::RefCell<window_pa
 /// Whether `pane` is shown: every pane is, except while the window is zoomed,
 /// when only the zoomed pane is.
 fn window_pane_is_visible(w: &window, pane: &Weak<RefCell<window_pane>>) -> bool {
-    w.zoomed.strong_count() == 0 || w.zoomed.ptr_eq(pane)
+    w.zoomed.strong_count() == 0
+        || w.zoomed.ptr_eq(pane)
+        || pane.upgrade().is_some_and(|pane| pane.is_floating())
 }
 
 /// Zoom `pane`: it becomes the active pane and takes the whole window, and
@@ -460,6 +463,13 @@ fn window_update_focus(w_owner: Option<&WindowRef>) {
 
 fn window_set_active_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>, notify: i32) -> i32 {
     let observer = Rc::downgrade(pane);
+    if window
+        .modal_pane()
+        .upgrade()
+        .is_some_and(|modal| !Rc::ptr_eq(&modal, pane))
+    {
+        return 0;
+    }
     log_debug(format_args!("window_set_active_pane: pane %{}", pane.id()));
     if window.active_pane().ptr_eq(&observer) {
         return 0;
@@ -519,6 +529,18 @@ fn window_get_active_at(
     mut x: u_int,
     mut y: u_int,
 ) -> Weak<std::cell::RefCell<window_pane>> {
+    if let Some(modal) = window_owner.modal_pane().upgrade() {
+        let (left, top, width, height) = modal.outer_geometry();
+        return if (x as i32) >= left
+            && (y as i32) >= top
+            && (x as i32) < left + width as i32
+            && (y as i32) < top + height as i32
+        {
+            Rc::downgrade(&modal)
+        } else {
+            Weak::new()
+        };
+    }
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
@@ -626,10 +648,31 @@ fn window_rearrange_panes(
             "an arriving pane is reparented to the window"
         );
     }
-    if !arrived.is_empty() {
-        window.layout().admits(panes, window.size())?;
+    if arrived.iter().any(|pane| !pane.is_floating()) {
+        let tiled = panes
+            .iter()
+            .filter(|pane| !pane.is_floating())
+            .cloned()
+            .collect::<Vec<_>>();
+        window.layout().admits(&tiled, window.size())?;
     }
-    if old.len() != panes.len() || old.iter().zip(panes).any(|(a, b)| !Rc::ptr_eq(a, b)) {
+    let old_tiled = old
+        .iter()
+        .filter(|pane| !pane.is_floating())
+        .collect::<Vec<_>>();
+    let new_tiled = panes
+        .iter()
+        .filter(|pane| !pane.is_floating())
+        .collect::<Vec<_>>();
+    if left
+        .iter()
+        .any(|pane| window.zoomed_pane().ptr_eq(&Rc::downgrade(pane)))
+        || old_tiled.len() != new_tiled.len()
+        || old_tiled
+            .iter()
+            .zip(&new_tiled)
+            .any(|(a, b)| !Rc::ptr_eq(a, b))
+    {
         window_unzoom(window, true);
     }
     for pane in &left {
@@ -715,8 +758,27 @@ fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) {
 /// The layout's rectangles for the current panes, in pane order.
 fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
     let size = window.size();
-    let w = window.borrow();
-    w.layout.arrange(&w.panes.snapshot(), size)
+    let panes = window.borrow().panes.snapshot();
+    let tiled = panes
+        .iter()
+        .filter(|pane| !pane.is_floating())
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut cells = window.layout().arrange(&tiled, size).into_iter();
+    panes
+        .iter()
+        .map(|pane| {
+            let meta = pane.borrow_layout_meta();
+            if let Some(floating) = meta
+                .as_deref()
+                .and_then(|meta| meta.downcast_ref::<FloatingPane>())
+            {
+                floating.fit(size)
+            } else {
+                cells.next().expect("tiled pane geometry")
+            }
+        })
+        .collect()
 }
 
 /// The rectangles for the current panes, in pane order.
@@ -738,15 +800,15 @@ fn window_arrange(window: &WindowRef) {
     let cells = panes.into_iter().zip(window_arrangement(window));
     let mut moved = false;
     for (pane, cell) in cells {
-        let cell = if zoomed.strong_count() == 0 {
-            cell
-        } else if zoomed.ptr_eq(&Rc::downgrade(&pane)) {
+        let cell = if zoomed.ptr_eq(&Rc::downgrade(&pane)) {
             layout_geometry {
                 sx,
                 sy,
                 xoff: 0,
                 yoff: 0,
             }
+        } else if zoomed.strong_count() == 0 || pane.is_floating() {
+            cell
         } else {
             continue;
         };
@@ -809,7 +871,11 @@ pub fn window_printable_flags(mut wl: refbox::Weak<winlink>, escape: bool) -> st
 }
 
 fn window_get_pane_status(w: &WindowRef) -> ::core::ffi::c_int {
-    options_get_number(&w.borrow_options_mut(), c"pane-border-status") as ::core::ffi::c_int
+    match options_get_number(&w.borrow_options_mut(), c"pane-border-status") as i32 {
+        crate::shared::pane::PANE_STATUS_TOP_FLOATING
+        | crate::shared::pane::PANE_STATUS_BOTTOM_FLOATING => crate::shared::pane::PANE_STATUS_OFF,
+        status => status,
+    }
 }
 
 fn window_get_pane_lines(w: &WindowRef) -> pane_lines {

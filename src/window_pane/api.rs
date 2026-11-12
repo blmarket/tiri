@@ -40,6 +40,13 @@ fn window_pane_placement(
         }
         sy -= 1;
     }
+    if pane.is_floating() && !window.zoomed_pane().ptr_eq(&Rc::downgrade(pane)) {
+        let border = u32::from(pane.pane_lines() != PANE_LINES_NONE);
+        sx = sx.saturating_sub(border * 2).max(1);
+        sy = geometry.sy.saturating_sub(border * 2).max(1);
+        xoff = geometry.xoff + border as i32;
+        yoff = geometry.yoff + border as i32;
+    }
     if reserve {
         let (width, pad) = {
             let pane = pane.borrow();
@@ -71,6 +78,11 @@ fn window_pane_placement(
 /// preconditions. Component closures must not reenter model code, destroy an
 /// owner, alter component parent links, or let component references escape.
 pub trait WindowPane {
+    fn is_floating(&self) -> bool;
+    fn is_modal(&self) -> bool;
+    fn set_modal(&self, close_on_cancel: bool);
+    fn captures_all_keys(&self) -> bool;
+    fn closes_on_cancel(&self) -> bool;
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     fn outer_geometry(&self) -> (i32, i32, u32, u32);
     fn pane_lines(&self) -> pane_lines;
@@ -184,7 +196,7 @@ pub trait WindowPane {
     /// Trim history below the base cursor when no mode owns the displayed screen.
     fn trim_history(&self);
     /// Finish `waiter` with the exit status once this pane closes.
-    fn wait_until_close(&self, waiter: CmdqWaiter);
+    fn wait_for(&self, event: crate::shared::pane::PaneWaitFor, waiter: CmdqWaiter);
     /// Start stdin delivery to an empty pane. The command suspends on the
     /// returned continuation, or does not wait without one.
     fn start_input(
@@ -335,11 +347,7 @@ pub trait WindowPane {
         context: &mut crate::shared::format::format_tree,
     ) -> Option<crate::format::FormatValue>;
     /// Execute pipe-pane while process descriptors and callbacks stay owned here.
-    fn pipe(
-        &self,
-        command: &cmd,
-        item: &Rc<std::cell::RefCell<cmdq_item>>,
-    ) -> CmdOutcome;
+    fn pipe(&self, command: &cmd, item: &Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
     fn process_id(&self) -> pid_t;
     /// Record an exit before finishing waits/editors; false means a different process.
     fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool;
@@ -408,6 +416,32 @@ pub trait WindowPane {
 }
 
 impl WindowPane for Rc<RefCell<window_pane>> {
+    fn is_floating(&self) -> bool {
+        self.borrow()
+            .layout_meta
+            .as_deref()
+            .is_some_and(|meta| meta.is::<crate::window::FloatingPane>())
+    }
+    fn is_modal(&self) -> bool {
+        self.borrow().flags & crate::shared::pane::PANE_MODAL != 0
+    }
+    fn set_modal(&self, close_on_cancel: bool) {
+        let mut pane = self.borrow_mut();
+        pane.flags |= crate::shared::pane::PANE_MODAL | crate::shared::pane::PANE_CAPTUREALLKEYS;
+        pane.flags &= !crate::shared::pane::PANE_CLOSEONCANCEL;
+        if close_on_cancel {
+            pane.flags |= crate::shared::pane::PANE_CLOSEONCANCEL;
+        }
+    }
+    fn captures_all_keys(&self) -> bool {
+        let pane = self.borrow();
+        pane.flags & crate::shared::pane::PANE_CAPTUREALLKEYS != 0
+            && pane.flags & PANE_EXITED == 0
+            && pane.modes.is_empty()
+    }
+    fn closes_on_cancel(&self) -> bool {
+        self.borrow().flags & crate::shared::pane::PANE_CLOSEONCANCEL != 0
+    }
     fn send_theme_update(&self) {
         window_pane_send_theme_update(self);
     }
@@ -818,8 +852,8 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         pane.base.cy = pane.base.cy.wrapping_add(adjust);
         pane.flags |= PANE_REDRAW;
     }
-    fn wait_until_close(&self, waiter: CmdqWaiter) {
-        let old = self.borrow_mut().wait_close.replace(waiter);
+    fn wait_for(&self, event: crate::shared::pane::PaneWaitFor, waiter: CmdqWaiter) {
+        let old = self.borrow_mut().wait_close.replace((event, waiter));
         drop(old);
     }
     fn start_input(
@@ -861,7 +895,22 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         }
     }
     fn outer_geometry(&self) -> (i32, i32, u32, u32) {
-        window_pane_full_size_offset(self)
+        let (x, y, width, height) = window_pane_full_size_offset(self);
+        let zoomed = self
+            .window_observer()
+            .upgrade()
+            .is_some_and(|window| window.zoomed_pane().ptr_eq(&Rc::downgrade(self)));
+        if self.is_floating() && !zoomed {
+            let border = i32::from(self.pane_lines() != PANE_LINES_NONE);
+            (
+                x - border,
+                y - border,
+                width + 2 * border as u32,
+                height + 2 * border as u32,
+            )
+        } else {
+            (x, y, width, height)
+        }
     }
     fn pane_lines(&self) -> pane_lines {
         window_pane_get_pane_lines(&self.borrow())
@@ -937,7 +986,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn is_visible(&self) -> bool {
         self.window_observer().upgrade().is_some_and(|window| {
             let zoomed = window.zoomed_pane();
-            zoomed.strong_count() == 0 || zoomed.ptr_eq(&Rc::downgrade(self))
+            zoomed.strong_count() == 0 || zoomed.ptr_eq(&Rc::downgrade(self)) || self.is_floating()
         })
     }
     fn unzoomed_size(&self) -> Option<(u32, u32)> {
@@ -956,7 +1005,13 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         Some((sx, sy))
     }
     fn reparent(&self, window: &WindowRef) {
-        self.borrow_mut().window = WindowRef::downgrade(window);
+        {
+            let mut pane = self.borrow_mut();
+            if !pane.window.ptr_eq(&WindowRef::downgrade(window)) {
+                pane.flags &= !crate::shared::pane::PANE_MODAL;
+            }
+            pane.window = WindowRef::downgrade(window);
+        }
         self.borrow_options_mut().parent = Some(crate::options::OptionsScope::Window(
             WindowRef::downgrade(window),
         ));
@@ -1272,11 +1327,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         super::format::format_value(self, key, context)
     }
 
-    fn pipe(
-        &self,
-        command: &cmd,
-        item: &Rc<std::cell::RefCell<cmdq_item>>,
-    ) -> CmdOutcome {
+    fn pipe(&self, command: &cmd, item: &Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
         process::pipe_pane(self, command, item)
     }
     fn process_id(&self) -> pid_t {

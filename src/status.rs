@@ -533,7 +533,6 @@ pub fn status_prompt_set(
 ) {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let mut pd = prompt_create_data::default();
-    c_owner.clear_overlay();
     status_message_clear(c_owner);
     status_prompt_clear(c_owner);
     status_push_screen(c.as_ref().expect("live client"));

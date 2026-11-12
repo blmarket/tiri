@@ -93,6 +93,7 @@ fn cmd_split_window_exec(
     let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {
+        geometry: None,
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
@@ -323,7 +324,7 @@ fn cmd_split_window_exec(
                     }
                     if args_has(args, 'W' as i32 as u_char) != 0 {
                         let (waiter, retval) = cmdq_wait(item_handle);
-                        new_pane.wait_until_close(waiter);
+                        new_pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
                         drop(window_owner);
                         return retval;
                     }

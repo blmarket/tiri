@@ -38,13 +38,19 @@ static options_table_cursor_style_list: [&std::ffi::CStr; 7] = [
 static options_table_pane_scrollbars_list: [&std::ffi::CStr; 4] =
     [c"off", c"modal", c"on", c"auto-hide"];
 static options_table_pane_scrollbars_position_list: [&std::ffi::CStr; 2] = [c"right", c"left"];
-static options_table_pane_status_list: [&std::ffi::CStr; 3] = [c"off", c"top", c"bottom"];
+static options_table_pane_status_list: [&std::ffi::CStr; 5] = [
+    c"off",
+    c"top",
+    c"bottom",
+    c"top-floating",
+    c"bottom-floating",
+];
 static options_table_pane_border_indicators_list: [&std::ffi::CStr; 4] =
     [c"off", c"colour", c"arrows", c"both"];
 static options_table_pane_border_lines_list: [&std::ffi::CStr; 8] = [
     c"single", c"double", c"heavy", c"simple", c"number", c"spaces", c"none", c"rounded",
 ];
-static options_table_popup_border_lines_list: [&std::ffi::CStr; 7] = [
+static options_table_box_lines_list: [&std::ffi::CStr; 7] = [
     c"single", c"double", c"heavy", c"simple", c"rounded", c"padded", c"none",
 ];
 static options_table_set_clipboard_list: [&std::ffi::CStr; 3] = [c"off", c"external", c"on"];
@@ -88,7 +94,7 @@ pub static options_other_names: [(&std::ffi::CStr, &std::ffi::CStr); 7] = [
 pub const TMUX_LOCK_CMD: &std::ffi::CStr = c"lock -np";
 pub const TMUX_TERM: &std::ffi::CStr = c"tmux-256color";
 pub const TMUX_MOUSE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static options_table: [options_table_entry; 267 + cfg!(target_os = "linux") as usize] = [
+pub static options_table: [options_table_entry; 264 + cfg!(target_os = "linux") as usize] = [
         options_table_entry {
             name: Some(c"backspace"),
             alternative_name: None,
@@ -488,7 +494,7 @@ pub static options_table: [options_table_entry; 267 + cfg!(target_os = "linux") 
             flags: 0,
             minimum: 0,
             maximum: 0,
-            choices: &options_table_popup_border_lines_list,
+            choices: &options_table_box_lines_list,
             default_str: None,
             default_num: BOX_LINES_SINGLE as ::core::ffi::c_int
                 as ::core::ffi::c_longlong,
@@ -2675,58 +2681,6 @@ pub static options_table: [options_table_entry; 267 + cfg!(target_os = "linux") 
             separator: None,
             pattern: None,
             text: Some(c"Pane scrollbar position."),
-            unit: None,
-        },
-        options_table_entry {
-            name: Some(c"popup-style"),
-            alternative_name: None,
-            type_0: OPTIONS_TABLE_STRING,
-            scope: OPTIONS_TABLE_WINDOW,
-            flags: OPTIONS_TABLE_IS_STYLE,
-            minimum: 0,
-            maximum: 0,
-            choices: &[],
-            default_str: Some(c"bg=themedarkgrey,fg=themewhite"),
-            default_num: 0,
-            default_arr: None,
-            separator: Some(c","),
-            pattern: None,
-            text: Some(c"Default style of popups."),
-            unit: None,
-        },
-        options_table_entry {
-            name: Some(c"popup-border-style"),
-            alternative_name: None,
-            type_0: OPTIONS_TABLE_STRING,
-            scope: OPTIONS_TABLE_WINDOW,
-            flags: OPTIONS_TABLE_IS_STYLE,
-            minimum: 0,
-            maximum: 0,
-            choices: &[],
-            default_str: Some(c"bg=themedarkgrey,fg=themelightgrey"),
-            default_num: 0,
-            default_arr: None,
-            separator: Some(c","),
-            pattern: None,
-            text: Some(c"Default style of popup borders."),
-            unit: None,
-        },
-        options_table_entry {
-            name: Some(c"popup-border-lines"),
-            alternative_name: None,
-            type_0: OPTIONS_TABLE_CHOICE,
-            scope: OPTIONS_TABLE_WINDOW,
-            flags: 0,
-            minimum: 0,
-            maximum: 0,
-            choices: &options_table_popup_border_lines_list,
-            default_str: None,
-            default_num: BOX_LINES_SINGLE as ::core::ffi::c_int
-                as ::core::ffi::c_longlong,
-            default_arr: None,
-            separator: None,
-            pattern: None,
-            text: Some(c"Type of characters used to draw popup border lines. Some of these are only supported on terminals with UTF-8 support."),
             unit: None,
         },
         options_table_entry {

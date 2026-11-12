@@ -3,18 +3,16 @@ use crate::arguments::{
     args_percentage_result, args_string, args_strtonum_result, args_to_vector, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
-use crate::cmd::{cmd_append_argv, cmd_get_args};
 use crate::environ::{environ_create, environ_put};
 use crate::format::bytes::write_cstr;
 use crate::format::{
     format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
 };
 use crate::key_string::key_string_parse_cstr;
-use crate::log::{log_cstr, log_debug};
 use crate::menu::{menu_add_item, menu_create, menu_display};
-use crate::options::{options_find_choice, options_get_number, options_get_string};
-use crate::popup::{popup_display, popup_modify, popup_present};
+use crate::options::{options_find_choice, options_get_number};
 use crate::text::numbers::strtol_prefix;
 use std::ffi::CStr;
 
@@ -26,19 +24,12 @@ use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
-use crate::shared::environment::environ;
 use crate::shared::key::*;
 use crate::shared::layout::*;
 use crate::shared::limits::UINT_MAX;
 use crate::shared::menu::{menu_item, MENU_NOMOUSE, MENU_STAYOPEN};
-use crate::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
-use crate::shared::posix_io::_PATH_BSHELL;
-use crate::shared::session::SessionRef;
 use crate::shared::style::*;
-use crate::shared::tty::tty_window_view;
-use crate::shared::window::winlink;
 use crate::status::{status_at_line, status_line_size};
-use crate::tmux::checkshell;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 pub static cmd_display_menu_entry: cmd_entry = {
@@ -73,12 +64,12 @@ pub static cmd_display_popup_entry: cmd_entry = {
         name: c"display-popup",
         alias: Some(c"popup"),
         args: args_parse {
-            template: c"Bb:Cc:d:e:Eh:kNs:S:t:T:w:x:y:",
+            template: c"Bb:Cc:d:e:Eh:ks:S:t:T:w:x:y:",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: c"[-BCEkN] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane] [-T title] [-w width] [-x position] [-y position] [shell-command [argument ...]]",
+        usage: c"[-BCEk] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane] [-T title] [-w width] [-x position] [-y position] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -141,578 +132,131 @@ fn cmd_display_menu_status_position(
         })
 }
 
-fn cmd_display_menu_get_popup_pos(
-    tc_owner: &ClientRef,
-    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    args: &args,
-    px: &mut u_int,
-    py: &mut u_int,
-    mut w: u_int,
-    mut h: u_int,
-) -> ::core::ffi::c_int {
-    let item = item_handle.borrow();
-    let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let event = cmdq_get_event(&(item));
-    let mut s: Option<SessionRef> = tc
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade();
-    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-    let pane = target.pane_handle().expect("menu target pane");
-    let mut xp: &CStr = c"";
-    let mut yp: &CStr = c"";
-    let mut top: ::core::ffi::c_int = 0;
-    let _line: u_int = 0;
-    let mut lines: u_int = 0;
-    let mut position: u_int = 0;
-    let mut n: ::core::ffi::c_long = 0;
-    if w > tc.as_ref().expect("live client").terminal_size().0
-        || h > tc.as_ref().expect("live client").terminal_size().1
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    let mut ft_owner = format_create_from_target(item_handle);
-    let ft = &mut *ft_owner;
-    if event.m.valid != 0 {
-        format_add(ft, c"popup_mouse_x", |out| write!(out, "{}", { event.m.x }));
-        format_add(ft, c"popup_mouse_y", |out| write!(out, "{}", { event.m.y }));
-    }
-    let (last_x, last_y) = target
-        .window_handle()
-        .expect("popup target window")
-        .last_menu_position();
-    format_add(ft, c"popup_last_x", |out| write!(out, "{}", last_x));
-    format_add(ft, c"popup_last_y", |out| {
-        write!(out, "{}", last_y.wrapping_add(h))
-    });
-    top = status_at_line(tc.as_ref().expect("live client"));
-    if top != -(1 as ::core::ffi::c_int) {
-        lines = status_line_size(tc.as_ref().expect("live client"));
-        if top == 0 as ::core::ffi::c_int {
-            top = lines as ::core::ffi::c_int;
-        } else {
-            top = 0 as ::core::ffi::c_int;
-        }
-        position = options_get_number(
-            &s.as_ref().expect("live session").borrow_options_mut(),
-            c"status-position",
-        ) as u_int;
-        let index = wl.try_borrow().expect("live winlink").idx as u_int;
-        if let Some((line, start)) =
-            cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
-        {
-            format_add(ft, c"popup_window_status_line_x", |out| {
-                write!(out, "{}", { start })
-            });
-            if position == 0 as u_int {
-                format_add(ft, c"popup_window_status_line_y", |out| {
-                    write!(out, "{}", { line.wrapping_add(1 as u_int).wrapping_add(h) })
-                });
-            } else {
-                format_add(ft, c"popup_window_status_line_y", |out| {
-                    write!(
-                        out,
-                        "{}",
-                        (tc.as_ref()
-                            .expect("live client")
-                            .terminal_size()
-                            .1
-                            .wrapping_sub(lines)
-                            .wrapping_add(line)) as u32
-                    )
-                });
-            }
-        }
-        if position == 0 as u_int {
-            format_add(ft, c"popup_status_line_y", |out| {
-                write!(out, "{}", (lines.wrapping_add(h)) as u32)
-            });
-        } else {
-            format_add(ft, c"popup_status_line_y", |out| {
-                write!(
-                    out,
-                    "{}",
-                    (tc.as_ref()
-                        .expect("live client")
-                        .terminal_size()
-                        .1
-                        .wrapping_sub(lines)) as u32
-                )
-            });
-        }
-    } else {
-        top = 0 as ::core::ffi::c_int;
-    }
-    format_add(ft, c"popup_width", |out| write!(out, "{}", { w }));
-    format_add(ft, c"popup_height", |out| write!(out, "{}", { h }));
-    n = tc
-        .as_ref()
-        .expect("live client")
-        .terminal_size()
-        .0
-        .wrapping_sub(1 as u_int) as ::core::ffi::c_long
-        / 2 as ::core::ffi::c_long
-        - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-    if n < 0 as ::core::ffi::c_long {
-        format_add(ft, c"popup_centre_x", |out| {
-            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-        });
-    } else {
-        format_add(ft, c"popup_centre_x", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
-        });
-    }
-    n = tc
-        .as_ref()
-        .expect("live client")
-        .terminal_size()
-        .1
-        .wrapping_sub(1 as u_int)
-        .wrapping_div(2 as u_int)
-        .wrapping_add(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
-    if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
-        format_add(ft, c"popup_centre_y", |out| {
-            write!(out, "{}", {
-                tc.as_ref()
-                    .expect("live client")
-                    .terminal_size()
-                    .1
-                    .wrapping_sub(h)
-            })
-        });
-    } else {
-        format_add(ft, c"popup_centre_y", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
-        });
-    }
-    if event.m.valid != 0 {
-        n = event.m.x as ::core::ffi::c_long - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-        if n < 0 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_centre_x", |out| {
-                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-            });
-        } else {
-            format_add(ft, c"popup_mouse_centre_x", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-        n = event.m.y.wrapping_sub(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
-        if n + h as ::core::ffi::c_long
-            >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long
-        {
-            format_add(ft, c"popup_mouse_centre_y", |out| {
-                write!(out, "{}", {
-                    tc.as_ref()
-                        .expect("live client")
-                        .terminal_size()
-                        .1
-                        .wrapping_sub(h)
-                })
-            });
-        } else {
-            format_add(ft, c"popup_mouse_centre_y", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-        n = event.m.y as ::core::ffi::c_long + h as ::core::ffi::c_long;
-        if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_top", |out| {
-                write!(out, "{}", {
-                    tc.as_ref()
-                        .expect("live client")
-                        .terminal_size()
-                        .1
-                        .wrapping_sub(1 as u_int)
-                })
-            });
-        } else {
-            format_add(ft, c"popup_mouse_top", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-        n = event.m.y.wrapping_sub(h) as ::core::ffi::c_long;
-        if n < 0 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_bottom", |out| {
-                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-            });
-        } else {
-            format_add(ft, c"popup_mouse_bottom", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-    }
-    let tty_window_view { ox, oy, .. } = tc.as_ref().expect("live client").terminal_view();
-    let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
-    n = ((top + pane_y) as u_int).wrapping_sub(oy).wrapping_add(h) as ::core::ffi::c_long;
-    if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
-        format_add(ft, c"popup_pane_top", |out| {
-            write!(out, "{}", {
-                tc.as_ref()
-                    .expect("live client")
-                    .terminal_size()
-                    .1
-                    .wrapping_sub(h)
-            })
-        });
-    } else {
-        format_add(ft, c"popup_pane_top", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
-        });
-    }
-    format_add(ft, c"popup_pane_bottom", |out| {
-        write!(
-            out,
-            "{}",
-            (((top + pane_y) as u_int)
-                .wrapping_add(pane_height)
-                .wrapping_sub(oy)) as u32
-        )
-    });
-    format_add(ft, c"popup_pane_left", |out| {
-        write!(out, "{}", { (pane_x as u_int).wrapping_sub(ox) })
-    });
-    n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
-        - ox as ::core::ffi::c_long
-        - w as ::core::ffi::c_long;
-    if n < 0 as ::core::ffi::c_long {
-        format_add(ft, c"popup_pane_right", |out| {
-            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-        });
-    } else {
-        format_add(ft, c"popup_pane_right", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
-        });
-    }
-    xp = args_get(args, 'x' as i32 as u_char).unwrap_or(c"C");
-    xp = match xp.to_bytes() {
-        b"C" => c"#{popup_centre_x}",
-        b"R" => c"#{popup_pane_right}",
-        b"P" => c"#{popup_pane_left}",
-        b"M" => c"#{popup_mouse_centre_x}",
-        b"L" => c"#{popup_last_x}",
-        b"W" => c"#{popup_window_status_line_x}",
-        _ => xp,
-    };
-    let p = format_expand_cstring(ft, xp);
-    n = strtol_prefix(p.as_bytes(), 10).0;
-    if n + w as ::core::ffi::c_long
-        >= tc.as_ref().expect("live client").terminal_size().0 as ::core::ffi::c_long
-    {
-        n = tc
-            .as_ref()
-            .expect("live client")
-            .terminal_size()
-            .0
-            .wrapping_sub(w) as ::core::ffi::c_long;
-    } else if n < 0 as ::core::ffi::c_long {
-        n = 0 as ::core::ffi::c_long;
-    }
-    *px = n as u_int;
-    log_debug(format_args!(
-        "{}: -x: {} = {} = {} (-w {})",
-        "cmd_display_menu_get_popup_pos",
-        log_cstr(xp),
-        log_cstr(&p),
-        { *px },
-        { w }
-    ));
-    yp = args_get(args, 'y' as i32 as u_char).unwrap_or(c"C");
-    yp = match yp.to_bytes() {
-        b"C" => c"#{popup_centre_y}",
-        b"P" => c"#{popup_pane_bottom}",
-        b"M" => c"#{popup_mouse_top}",
-        b"L" => c"#{popup_last_y}",
-        b"S" => c"#{popup_status_line_y}",
-        b"W" => c"#{popup_window_status_line_y}",
-        _ => yp,
-    };
-    let p = format_expand_cstring(ft, yp);
-    n = strtol_prefix(p.as_bytes(), 10).0;
-    if n < h as ::core::ffi::c_long {
-        n = 0 as ::core::ffi::c_long;
-    } else {
-        n -= h as ::core::ffi::c_long;
-    }
-    if n + h as ::core::ffi::c_long
-        >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long
-    {
-        n = tc
-            .as_ref()
-            .expect("live client")
-            .terminal_size()
-            .1
-            .wrapping_sub(h) as ::core::ffi::c_long;
-    } else if n < 0 as ::core::ffi::c_long {
-        n = 0 as ::core::ffi::c_long;
-    }
-    *py = n as u_int;
-    log_debug(format_args!(
-        "{}: -y: {} = {} = {} (-h {})",
-        "cmd_display_menu_get_popup_pos",
-        log_cstr(yp),
-        log_cstr(&p),
-        { *py },
-        { h }
-    ));
-    drop(ft_owner);
-    1 as ::core::ffi::c_int
-}
 fn cmd_display_menu_get_menu_pos(
-    tc_owner: &ClientRef,
-    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
+    client: &ClientRef,
+    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     args: &args,
     px: &mut u_int,
     py: &mut u_int,
-    mut w: u_int,
-    mut h: u_int,
-) -> ::core::ffi::c_int {
-    let item = item_handle.borrow();
-    let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let event = cmdq_get_event(&(item));
-    let mut s: Option<SessionRef> = tc
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade();
-    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-    let window = target.window_handle().expect("menu target window");
+    width: u_int,
+    height: u_int,
+) -> i32 {
+    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let event = cmdq_get_event(&item.borrow()).metadata_snapshot();
+    let window = if event.m.valid != 0 {
+        client
+            .attached_session()
+            .upgrade()
+            .and_then(|session| crate::winlink::winlink_window(&session.current_winlink()))
+    } else {
+        target.window_handle()
+    }
+    .expect("menu window");
+    let (sx, sy) = window.size();
     let pane = target.pane_handle().expect("menu target pane");
-    let mut xp: &CStr = c"";
-    let mut yp: &CStr = c"";
-    let _line: u_int = 0;
-    let mut lines: u_int = 0;
-    let mut position: u_int = 0;
-    let mut n: ::core::ffi::c_long = 0;
-    let mut max_x: ::core::ffi::c_long = 0;
-    let mut max_y: ::core::ffi::c_long = 0;
-    let mut mouse_x: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
-    let mut mouse_y: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
-    let tty_window_view { ox, oy, sx, sy, .. } = tc.as_ref().expect("live client").terminal_view();
-    let logical = (ox.wrapping_add(sx), oy.wrapping_add(sy));
-    max_x = ox.wrapping_add(sx.saturating_sub(w)) as ::core::ffi::c_long;
-    max_y = oy.wrapping_add(sy.saturating_sub(h)) as ::core::ffi::c_long;
-    let mut ft_owner = format_create_from_target(item_handle);
-    let ft = &mut *ft_owner;
-    if event.m.valid != 0 {
-        mouse_x = event.m.x.wrapping_add(ox) as ::core::ffi::c_long;
-        if event.m.statusat == 0 as ::core::ffi::c_int {
-            if event.m.y >= event.m.statuslines {
-                mouse_y = event.m.y.wrapping_sub(event.m.statuslines).wrapping_add(oy)
-                    as ::core::ffi::c_long;
-            } else {
-                mouse_y = oy as ::core::ffi::c_long;
-            }
-        } else if event.m.statusat > 0 as ::core::ffi::c_int
-            && event.m.y >= event.m.statusat as u_int
-        {
-            mouse_y = oy.wrapping_add(sy).wrapping_sub(1 as u_int) as ::core::ffi::c_long;
-        } else {
-            mouse_y = event.m.y.wrapping_add(oy) as ::core::ffi::c_long;
-        }
-        format_add(ft, c"popup_mouse_x", |out| {
-            write!(out, "{}", (mouse_x) as ::core::ffi::c_long)
-        });
-        format_add(ft, c"popup_mouse_y", |out| {
-            write!(out, "{}", (mouse_y) as ::core::ffi::c_long)
-        });
-    }
-    format_add(ft, c"popup_last_x", |out| {
-        write!(out, "{}", { window.last_menu_position().0 })
-    });
-    format_add(ft, c"popup_last_y", |out| {
-        write!(out, "{}", { window.last_menu_position().1.wrapping_add(h) })
-    });
-    lines = status_line_size(tc.as_ref().expect("live client"));
-    position = options_get_number(
-        &s.as_ref().expect("live session").borrow_options_mut(),
-        c"status-position",
-    ) as u_int;
-    if status_at_line(tc.as_ref().expect("live client")) != -(1 as ::core::ffi::c_int)
-        && lines != 0 as u_int
-    {
-        let index = wl.try_borrow().expect("live winlink").idx as u_int;
-        if let Some((_line, start)) =
-            cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
-        {
-            format_add(ft, c"popup_window_status_line_x", |out| {
-                write!(out, "{}", { start.wrapping_add(ox) })
-            });
-            if position == 0 as u_int {
-                format_add(ft, c"popup_window_status_line_y", |out| {
-                    write!(out, "{}", { h })
-                });
-            } else {
-                format_add(ft, c"popup_window_status_line_y", |out| {
-                    write!(out, "{}", { logical.1 })
-                });
-            }
-        }
-        if position == 0 as u_int {
-            format_add(ft, c"popup_status_line_y", |out| write!(out, "{}", { h }));
-        } else {
-            format_add(ft, c"popup_status_line_y", |out| {
-                write!(out, "{}", { logical.1 })
-            });
-        }
-    }
-    format_add(ft, c"popup_width", |out| write!(out, "{}", { w }));
-    format_add(ft, c"popup_height", |out| write!(out, "{}", { h }));
-    n = (sx as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
-        - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-    if n < 0 as ::core::ffi::c_long {
-        format_add(ft, c"popup_centre_x", |out| write!(out, "{}", ox));
-    } else {
-        format_add(ft, c"popup_centre_x", |out| {
-            write!(out, "{}", n + ox as ::core::ffi::c_long)
-        });
-    }
-    n = oy as ::core::ffi::c_long
-        + (sy as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
-        + h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-    if n >= logical.1 as ::core::ffi::c_long {
-        format_add(ft, c"popup_centre_y", |out| {
-            write!(out, "{}", (max_y) as ::core::ffi::c_long)
-        });
-    } else {
-        format_add(ft, c"popup_centre_y", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
-        });
-    }
-    if event.m.valid != 0 {
-        n = mouse_x - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-        if n < 0 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_centre_x", |out| {
-                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-            });
-        } else {
-            format_add(ft, c"popup_mouse_centre_x", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-        n = mouse_y - h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-        if n + h as ::core::ffi::c_long >= logical.1 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_centre_y", |out| {
-                write!(out, "{}", (max_y) as ::core::ffi::c_long)
-            });
-        } else {
-            format_add(ft, c"popup_mouse_centre_y", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-        n = mouse_y + h as ::core::ffi::c_long;
-        if n >= logical.1 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_top", |out| {
-                write!(out, "{}", { logical.1.wrapping_sub(1 as u_int) })
-            });
-        } else {
-            format_add(ft, c"popup_mouse_top", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-        n = mouse_y - h as ::core::ffi::c_long;
-        if n < 0 as ::core::ffi::c_long {
-            format_add(ft, c"popup_mouse_bottom", |out| {
-                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-            });
-        } else {
-            format_add(ft, c"popup_mouse_bottom", |out| {
-                write!(out, "{}", (n) as ::core::ffi::c_long)
-            });
-        }
-    }
     let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
-    n = (pane_y as u_int).wrapping_add(h) as ::core::ffi::c_long;
-    if n >= logical.1 as ::core::ffi::c_long {
-        format_add(ft, c"popup_pane_top", |out| {
-            write!(out, "{}", (max_y) as ::core::ffi::c_long)
-        });
+    let view = client.terminal_view();
+    let ox = view.ox as i64;
+    let oy = view.oy as i64;
+    let mouse_x = event.m.x as i64 + ox;
+    let status_at = status_at_line(client);
+    let lines = status_line_size(client);
+    let mouse_y = if status_at == 0 {
+        (event.m.y as i64 - lines as i64).max(0) + oy
+    } else if status_at > 0 && event.m.y >= status_at as u32 {
+        oy + view.sy.saturating_sub(1) as i64
     } else {
-        format_add(ft, c"popup_pane_top", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
+        event.m.y as i64 + oy
+    };
+    let mut format = format_create_from_target(item);
+    let (last_x, last_y) = window.last_menu_position();
+    for (name, value) in [
+        (c"popup_mouse_x", mouse_x),
+        (c"popup_mouse_y", mouse_y),
+        (c"popup_last_x", last_x as i64),
+        (c"popup_last_y", last_y as i64 + height as i64),
+        (c"popup_width", width as i64),
+        (c"popup_height", height as i64),
+        (
+            c"popup_centre_x",
+            ((sx.saturating_sub(1) / 2) as i64 - (width / 2) as i64).max(0),
+        ),
+        (
+            c"popup_centre_y",
+            (sy.saturating_sub(1) / 2 + height / 2) as i64,
+        ),
+        (
+            c"popup_mouse_centre_x",
+            (mouse_x - (width / 2) as i64).max(0),
+        ),
+        (
+            c"popup_mouse_centre_y",
+            (mouse_y + (height / 2) as i64).min(sy.saturating_sub(height) as i64),
+        ),
+        (
+            c"popup_mouse_top",
+            (mouse_y + height as i64).min(sy.saturating_sub(height) as i64),
+        ),
+        (c"popup_mouse_bottom", (mouse_y - height as i64).max(0)),
+        (
+            c"popup_pane_top",
+            (pane_y as i64 + height as i64).min(sy.saturating_sub(height) as i64),
+        ),
+        (c"popup_pane_bottom", pane_y as i64 + pane_height as i64),
+        (c"popup_pane_left", pane_x as i64),
+        (
+            c"popup_pane_right",
+            (pane_x as i64 + pane_width as i64 - width as i64).max(0),
+        ),
+    ] {
+        format_add(&mut format, name, |out| write!(out, "{value}"));
+    }
+    if status_at != -1 && lines != 0 {
+        let session = client.attached_session().upgrade().expect("menu session");
+        let link = target.winlink_handle();
+        let index = link.try_borrow().expect("menu winlink").idx as u32;
+        let top = options_get_number(&session.borrow_options_mut(), c"status-position") == 0;
+        let y = if top { height } else { sy };
+        if let Some((_, start)) = cmd_display_menu_status_position(client, lines, index) {
+            format_add(&mut format, c"popup_window_status_line_x", |out| {
+                write!(out, "{}", start as i64 + ox)
+            });
+            format_add(&mut format, c"popup_window_status_line_y", |out| {
+                write!(out, "{y}")
+            });
+        }
+        format_add(&mut format, c"popup_status_line_y", |out| {
+            write!(out, "{y}")
         });
     }
-    format_add(ft, c"popup_pane_bottom", |out| {
-        write!(out, "{}", { (pane_y as u_int).wrapping_add(pane_height) })
-    });
-    format_add(ft, c"popup_pane_left", |out| {
-        write!(out, "{}", (pane_x) as u32)
-    });
-    n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
-        - w as ::core::ffi::c_long;
-    if n < 0 as ::core::ffi::c_long {
-        format_add(ft, c"popup_pane_right", |out| {
-            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
-        });
-    } else {
-        format_add(ft, c"popup_pane_right", |out| {
-            write!(out, "{}", (n) as ::core::ffi::c_long)
-        });
-    }
-    xp = args_get(args, 'x' as i32 as u_char).unwrap_or(c"C");
-    xp = match xp.to_bytes() {
+    let x = args_get(args, b'x').unwrap_or(c"C");
+    let x = match x.to_bytes() {
         b"C" => c"#{popup_centre_x}",
         b"R" => c"#{popup_pane_right}",
         b"P" => c"#{popup_pane_left}",
         b"M" => c"#{popup_mouse_centre_x}",
         b"L" => c"#{popup_last_x}",
         b"W" => c"#{popup_window_status_line_x}",
-        _ => xp,
+        _ => x,
     };
-    let p = format_expand_cstring(ft, xp);
-    n = strtol_prefix(p.as_bytes(), 10).0;
-    if n < ox as ::core::ffi::c_long {
-        n = ox as ::core::ffi::c_long;
-    }
-    if n > max_x {
-        n = max_x;
-    }
-    *px = n as u_int;
-    log_debug(format_args!(
-        "{}: -x: {} = {} = {} (-w {})",
-        "cmd_display_menu_get_menu_pos",
-        log_cstr(xp),
-        log_cstr(&p),
-        { *px },
-        { w }
-    ));
-    yp = args_get(args, 'y' as i32 as u_char).unwrap_or(c"C");
-    yp = match yp.to_bytes() {
+    let x = strtol_prefix(format_expand_cstring(&mut format, x).as_bytes(), 10).0;
+    *px = x.max(0).min(sx.saturating_sub(width) as _) as u32;
+    let y = args_get(args, b'y').unwrap_or(c"C");
+    let y = match y.to_bytes() {
         b"C" => c"#{popup_centre_y}",
         b"P" => c"#{popup_pane_bottom}",
         b"M" => c"#{popup_mouse_top}",
         b"L" => c"#{popup_last_y}",
         b"S" => c"#{popup_status_line_y}",
         b"W" => c"#{popup_window_status_line_y}",
-        _ => yp,
+        _ => y,
     };
-    let p = format_expand_cstring(ft, yp);
-    n = strtol_prefix(p.as_bytes(), 10).0;
-    if n < h as ::core::ffi::c_long {
-        n = 0 as ::core::ffi::c_long;
-    } else {
-        n -= h as ::core::ffi::c_long;
-    }
-    if n < oy as ::core::ffi::c_long {
-        n = oy as ::core::ffi::c_long;
-    }
-    if n > max_y {
-        n = max_y;
-    }
-    *py = n as u_int;
-    log_debug(format_args!(
-        "{}: -y: {} = {} = {} (-h {})",
-        "cmd_display_menu_get_menu_pos",
-        log_cstr(yp),
-        log_cstr(&p),
-        { *py },
-        { h }
-    ));
-    drop(ft_owner);
-    drop(window);
-    1 as ::core::ffi::c_int
+    let y = strtol_prefix(format_expand_cstring(&mut format, y).as_bytes(), 10).0;
+    *py = y
+        .saturating_sub(height as _)
+        .max(0)
+        .min(sy.saturating_sub(height) as _) as u32;
+    1
 }
 fn cmd_display_menu_exec(
     self_0: &cmd,
@@ -852,337 +396,191 @@ fn cmd_display_menu_exec(
     CmdOutcome::Normal
 }
 fn cmd_display_popup_exec(
-    self_0: &cmd,
-    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
+    command: &cmd,
+    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut shellcmd_session_value: Option<std::ffi::CString> = None;
-    let mut shell_session_value: Option<std::ffi::CString> = None;
-
-    let item = item_handle.borrow();
-    let mut current_block: u64;
-    let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut s: Option<SessionRef> = target.session_handle();
-    let tc_owner = cmdq_get_target_client(Some(&*item));
-    let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut value: Option<&CStr> = None;
-    let mut shellcmd: Option<&CStr> = None;
-    let style = args_get(args, 's' as i32 as u_char);
-    let border_style = args_get(args, 'S' as i32 as u_char);
-    let mut cwd: Option<&CStr> = None;
-    let mut formatted_cwd: Option<std::ffi::CString> = None;
-    let mut default_cwd: Option<std::ffi::CString> = None;
-    let mut argv_owner = Vec::new();
-    let title: &CStr;
-    let mut formatted_title: Option<std::ffi::CString> = None;
-    let mut modify: ::core::ffi::c_int = popup_present(&tc.clone().expect("live client"));
-    let mut flags: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    let mut lines: box_lines = BOX_LINES_DEFAULT;
-    let mut px: u_int = 0;
-    let mut py: u_int = 0;
-    let mut w: u_int = 0;
-    let mut h: u_int = 0;
-    let mut count: u_int = args_count(args);
-    let mut env: Option<Box<environ>> = None;
-    if args_has(args, 'C' as i32 as u_char) != 0 {
-        tc.as_ref().expect("live client").clear_overlay();
-        return CmdOutcome::Normal;
-    }
-    if tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
-        return CmdOutcome::Normal;
-    }
-    if modify == 0 && tc.as_ref().expect("live client").has_overlay() {
-        return CmdOutcome::Normal;
-    }
-    if modify == 0 {
-        h = tc
-            .as_ref()
-            .expect("live client")
-            .terminal_size()
-            .1
-            .wrapping_div(2 as u_int);
-        if args_has(args, 'h' as i32 as u_char) != 0 {
-            match args_percentage_result(
-                args,
-                'h' as i32 as u_char,
-                1 as ::core::ffi::c_longlong,
-                tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_longlong,
-                tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_longlong,
-            ) {
-                Ok(value) => {
-                    h = value as u_int;
-                    current_block = 17833034027772472439;
-                }
-                Err(error) => {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"height ")?;
-                        write_cstr(out, error.message())
-                    });
-                    current_block = 1988999557336856620;
-                }
-            }
-        } else {
-            current_block = 17833034027772472439;
-        }
-        match current_block {
-            1988999557336856620 => {}
-            _ => {
-                w = tc
-                    .as_ref()
-                    .expect("live client")
-                    .terminal_size()
-                    .0
-                    .wrapping_div(2 as u_int);
-                if args_has(args, 'w' as i32 as u_char) != 0 {
-                    match args_percentage_result(
-                        args,
-                        'w' as i32 as u_char,
-                        1 as ::core::ffi::c_longlong,
-                        tc.as_ref().expect("live client").terminal_size().0
-                            as ::core::ffi::c_longlong,
-                        tc.as_ref().expect("live client").terminal_size().0
-                            as ::core::ffi::c_longlong,
-                    ) {
-                        Ok(value) => {
-                            w = value as u_int;
-                            current_block = 11042950489265723346;
-                        }
-                        Err(error) => {
-                            cmdq_error(item_handle, |out| {
-                                out.write_all(b"width ")?;
-                                write_cstr(out, error.message())
-                            });
-                            current_block = 1988999557336856620;
-                        }
-                    }
-                } else {
-                    current_block = 11042950489265723346;
-                }
-                match current_block {
-                    1988999557336856620 => {}
-                    _ => {
-                        if w > tc.as_ref().expect("live client").terminal_size().0 {
-                            w = tc.as_ref().expect("live client").terminal_size().0;
-                        }
-                        if h > tc.as_ref().expect("live client").terminal_size().1 {
-                            h = tc.as_ref().expect("live client").terminal_size().1;
-                        }
-                        if cmd_display_menu_get_popup_pos(
-                            &tc.clone().expect("live client"),
-                            item_handle,
-                            args,
-                            &mut px,
-                            &mut py,
-                            w,
-                            h,
-                        ) == 0
-                        {
-                            current_block = 6589043366517631393;
-                        } else {
-                            value = args_get(args, 'd' as i32 as u_char);
-                            if let Some(value) = value {
-                                formatted_cwd =
-                                    Some(format_single_from_target_cstring(item_handle, value));
-                                cwd = formatted_cwd.as_deref();
-                            } else {
-                                default_cwd = ClientRef::working_directory(tc.as_ref(), s.as_ref());
-                                cwd = Some(default_cwd.as_deref().expect("default cwd was copied"));
-                            }
-                            if count == 0 as u_int {
-                                shellcmd_session_value = Some(options_get_string(
-                                    &s.as_ref().expect("live session").borrow_options_mut(),
-                                    c"default-command",
-                                ));
-                                shellcmd = shellcmd_session_value.as_deref();
-                            } else if count == 1 as u_int {
-                                shellcmd = args_string(args, 0 as u_int);
-                            }
-                            if count <= 1 as u_int && shellcmd.is_none_or(CStr::is_empty) {
-                                shellcmd = None;
-                                shell_session_value = Some(options_get_string(
-                                    &s.as_ref().expect("live session").borrow_options_mut(),
-                                    c"default-shell",
-                                ));
-                                let mut shell: &CStr =
-                                    shell_session_value.as_deref().expect("option snapshot");
-                                if checkshell(Some(shell)) == 0 {
-                                    shell = _PATH_BSHELL;
-                                }
-                                cmd_append_argv(&mut argv_owner, shell);
-                            } else {
-                                argv_owner = args_to_vector(args);
-                            }
-                            if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
-                                env = Some(environ_create());
-                                for av in args_flag_values(args, 'e' as i32 as u_char) {
-                                    environ_put(
-                                        env.as_deref_mut().expect("environment"),
-                                        av.as_string().expect("string argument"),
-                                        0 as ::core::ffi::c_int,
-                                    );
-                                }
-                            }
-                            current_block = 1345366029464561491;
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        current_block = 1345366029464561491;
-    }
-    if current_block == 1345366029464561491 {
-        value = args_get(args, 'b' as i32 as u_char);
-        if args_has(args, 'B' as i32 as u_char) != 0 {
-            lines = BOX_LINES_NONE;
-            current_block = 8151474771948790331;
-        } else if let Some(value) = value {
-            match options_find_choice(
-                crate::options::options_table
-                    .iter()
-                    .find(|entry| entry.name == Some(c"popup-border-lines"))
-                    .expect("built-in border choice"),
-                value,
-            ) {
-                Ok(choice) => {
-                    lines = choice as box_lines;
-                    current_block = 8151474771948790331;
-                }
-                Err(cause) => {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"popup-border-lines ")?;
-                        write_cstr(out, cause.as_c_str())
-                    });
-                    current_block = 1988999557336856620;
-                }
-            }
-        } else {
-            current_block = 8151474771948790331;
-        }
-        match current_block {
-            1988999557336856620 => {}
-            _ => {
-                if args_has(args, 'T' as i32 as u_char) != 0 {
-                    formatted_title = Some(format_single_from_target_cstring(
-                        item_handle,
-                        args_get(args, 'T' as i32 as u_char).unwrap_or(c""),
-                    ));
-                    title = formatted_title.as_deref().expect("formatted title was set");
-                } else {
-                    title = c"";
-                }
-                if args_has(args, 'N' as i32 as u_char) != 0 || modify == 0 {
-                    flags = 0 as ::core::ffi::c_int;
-                }
-                if args_has(args, 'E' as i32 as u_char) > 1 as ::core::ffi::c_int {
-                    if flags == -(1 as ::core::ffi::c_int) {
-                        flags = 0 as ::core::ffi::c_int;
-                    }
-                    flags |= POPUP_CLOSEEXITZERO;
-                } else if args_has(args, 'E' as i32 as u_char) != 0 {
-                    if flags == -(1 as ::core::ffi::c_int) {
-                        flags = 0 as ::core::ffi::c_int;
-                    }
-                    flags |= POPUP_CLOSEEXIT;
-                }
-                if args_has(args, 'k' as i32 as u_char) != 0 {
-                    if flags == -(1 as ::core::ffi::c_int) {
-                        flags = 0 as ::core::ffi::c_int;
-                    }
-                    flags |= POPUP_CLOSEANYKEY;
-                }
-                if modify != 0 {
-                    popup_modify(
-                        &tc.clone().expect("live client"),
-                        Some(title),
-                        style,
-                        border_style,
-                        lines,
-                        flags,
-                    );
-                } else {
-                    if let Some(popup) = popup_display(
-                        flags,
-                        lines,
-                        px,
-                        py,
-                        w,
-                        h,
-                        env.as_deref(),
-                        shellcmd,
-                        &argv_owner,
-                        cwd,
-                        Some(title),
-                        &tc.clone().expect("live client"),
-                        s.as_ref(),
-                        style,
-                        border_style,
-                    ) {
-                        drop(env.take());
-                        let client = item_handle.borrow().owning_client();
-                        return CmdOutcome::Suspend(Box::pin(cmd_display_popup_run(client, popup)));
-                    }
-                }
-                current_block = 6589043366517631393;
-            }
-        }
-    }
-    match current_block {
-        1988999557336856620 => {
-            drop(env.take());
-            CmdOutcome::Error
-        }
-        _ => {
-            drop(env.take());
-            CmdOutcome::Normal
-        }
-    }
-}
-
-async fn cmd_display_popup_run(
-    client: crate::shared::client::ClientWeak,
-    popup: impl std::future::Future<Output = i32>,
-) {
-    let status = popup.await;
-    if let Some(client) = client.upgrade() {
-        if client.attached_session().upgrade().is_none() {
-            client.set_return_value(status);
-        }
-    }
-}
-
-#[cfg(test)]
-mod popup_execution_tests {
-    use super::*;
-    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::server_client::queue_test_clients as clients;
-    use crate::session::session_new_for_test;
+    use crate::cmd::queue::cmdq_wait;
+    use crate::options::{options_set_number, options_set_string};
+    use crate::shared::pane::{window_pane, PaneWaitFor};
+    use crate::shared::spawn::{spawn_context, SPAWN_MODAL};
     use std::rc::Rc;
 
-    #[test]
-    fn status_is_reported_only_when_the_invoking_client_is_sessionless_at_close() {
-        let owner = clients::with_queue();
-        let session = session_new_for_test();
-        for (attached, status, expected) in [(false, 5, 5), (true, 9, 5), (false, 3, 3)] {
-            let (closed, completion) = tiri_rt::oneshot::channel();
-            let client = Rc::downgrade(&owner);
-            let head = cmdq_append(
-                Some(&owner),
-                cmdq_get_callback_owned(
-                    c"popup completion",
-                    Some(Box::new(move |_| {
-                        CmdOutcome::Suspend(Box::pin(cmd_display_popup_run(client, async move {
-                            completion.await.unwrap()
-                        })))
-                    })),
-                ),
-            );
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(head.upgrade().is_some());
-            clients::attach(&owner, attached.then_some(&session));
-            closed.send(status).unwrap();
-            assert_eq!(clients::return_value(&owner), expected);
-            assert!(head.upgrade().is_none());
+    let args = cmd_get_args(command);
+    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let client = cmdq_get_target_client(Some(&item.borrow())).expect("popup target client");
+    let session = target.session_handle().expect("popup session");
+    let window = target.window_handle().expect("popup window");
+    if args_has(args, b'C') != 0 {
+        if let Some(pane) = window.modal_pane().upgrade() {
+            pane.kill_process();
+        }
+        return CmdOutcome::Normal;
+    }
+    if client.flags() & CLIENT_CONTROL as u64 != 0 || window.modal_pane().upgrade().is_some() {
+        return CmdOutcome::Normal;
+    }
+    for flag in [b's', b'S'] {
+        if let Some(value) = args_get(args, flag) {
+            let mut style = crate::shared::style::style::default();
+            crate::style::style_set(&mut style, &crate::grid::grid_default_cell);
+            if crate::style::style_parse(&mut style, &crate::grid::grid_default_cell, value) != 0 {
+                cmdq_error(item, |out| {
+                    out.write_all(b"bad style: ")?;
+                    write_cstr(out, value)
+                });
+                return CmdOutcome::Error;
+            }
         }
     }
+    let lines = if args_has(args, b'B') != 0 {
+        PANE_LINES_NONE
+    } else {
+        let value = match args_get(args, b'b').unwrap_or(c"single").to_bytes() {
+            b"rounded" => c"single",
+            b"padded" => c"spaces",
+            _ => args_get(args, b'b').unwrap_or(c"single"),
+        };
+        let entry = crate::options::options_table
+            .iter()
+            .find(|entry| entry.name == Some(c"pane-border-lines"))
+            .expect("pane border option");
+        match options_find_choice(entry, value) {
+            Ok(value) => value as pane_lines,
+            Err(error) => {
+                cmdq_error(item, |out| {
+                    out.write_all(b"pane-border-lines ")?;
+                    write_cstr(out, error.as_c_str())
+                });
+                return CmdOutcome::Error;
+            }
+        }
+    };
+    let (sx, sy) = window.size();
+    let mut dimensions = [sx / 2, sy / 2];
+    for (index, flag, limit, label) in [
+        (0, b'w', sx, b"width ".as_slice()),
+        (1, b'h', sy, b"height ".as_slice()),
+    ] {
+        if args_has(args, flag) != 0 {
+            match args_percentage_result(args, flag, 1, limit as i64, limit as i64) {
+                Ok(value) => dimensions[index] = value as u32,
+                Err(error) => {
+                    cmdq_error(item, |out| {
+                        out.write_all(label)?;
+                        write_cstr(out, error.message())
+                    });
+                    return CmdOutcome::Error;
+                }
+            }
+        }
+    }
+    let [width, height] = dimensions;
+    if width < 1 || height < 1 || lines != PANE_LINES_NONE && (width < 3 || height < 3) {
+        return CmdOutcome::Normal;
+    }
+    let mut x = 0;
+    let mut y = 0;
+    cmd_display_menu_get_menu_pos(&client, item, args, &mut x, &mut y, width, height);
+    let mut environment = environ_create();
+    for value in args_flag_values(args, b'e') {
+        environ_put(
+            &mut environment,
+            value.as_string().expect("environment argument"),
+            0,
+        );
+    }
+    let source = target.pane_handle().expect("popup source pane");
+    let mut context = spawn_context {
+        geometry: Some(layout_geometry {
+            sx: width,
+            sy: height,
+            xoff: x as i32,
+            yoff: y as i32,
+        }),
+        item: Rc::downgrade(item),
+        s: Rc::downgrade(&session),
+        wl: target.winlink_handle(),
+        tc: Rc::downgrade(&client),
+        wp0: Rc::downgrade(&source),
+        name: None,
+        argv: if args_count(args) == 1 && args_string(args, 0).is_some_and(CStr::is_empty) {
+            Vec::new()
+        } else {
+            args_to_vector(args)
+        },
+        environ: Some(environment),
+        idx: -1,
+        cwd: args_get(args, b'd').map(CStr::to_owned),
+        flags: SPAWN_MODAL,
+    };
+    let pane =
+        match <Rc<std::cell::RefCell<window_pane>> as crate::window_pane::WindowPane>::spawn_process(
+            &mut context,
+        ) {
+            Ok(pane) => pane,
+            Err(error) => {
+                cmdq_error(item, |out| {
+                    out.write_all(b"create pane failed: ")?;
+                    write_cstr(out, error.as_c_str())
+                });
+                return CmdOutcome::Error;
+            }
+        };
+    pane.set_modal(args_has(args, b'E') == 0);
+    {
+        let mut options = pane.borrow_options_mut();
+        options_set_number(&mut options, c"pane-border-lines", lines as i64);
+        let remain = match (args_has(args, b'E'), args_has(args, b'k') != 0) {
+            (2.., true) => 4,
+            (2.., false) => 2,
+            (1, _) => 0,
+            (_, true) => 3,
+            _ => 1,
+        };
+        options_set_number(&mut options, c"remain-on-exit", remain);
+        options_set_string(&mut options, c"remain-on-exit-format", 0, |_| Ok(()));
+        for (flag, names) in [
+            (b's', [c"window-style", c"window-active-style"]),
+            (b'S', [c"pane-border-style", c"pane-active-border-style"]),
+        ] {
+            if let Some(style) = args_get(args, flag) {
+                for name in names {
+                    options_set_string(&mut options, name, 0, |out| write_cstr(out, style));
+                }
+            }
+        }
+        if args_has(args, b'T') != 0 {
+            options_set_number(
+                &mut options,
+                c"pane-border-status",
+                crate::shared::pane::PANE_STATUS_TOP as i64,
+            );
+            options_set_string(&mut options, c"pane-border-format", 0, |out| {
+                out.write_all(b"#{pane_title}")
+            });
+        }
+    }
+    if let Some(title) = args_get(args, b'T') {
+        use crate::events_payload::{
+            event_payload_create, event_payload_set_pane, event_payload_set_string,
+            event_payload_set_target, event_payload_set_window,
+        };
+        let title = format_single_from_target_cstring(item, title);
+        pane.set_title(&title);
+        let mut event = event_payload_create();
+        let target = cmd_find_state::find_from_winlink_pane(context.winlink_handle(), &pane, 0);
+        event_payload_set_target(&mut event, &target);
+        event_payload_set_pane(&mut event, c"pane", pane.clone());
+        event_payload_set_window(&mut event, c"window", window.clone());
+        event_payload_set_string(&mut event, c"new_title", |out| {
+            write_cstr(out, title.as_c_str())
+        });
+        crate::events::events_fire(c"pane-title-changed", event);
+    }
+    pane.invalidate_style();
+    window.refit();
+    crate::server_fn::server_redraw_session(&session);
+    let (waiter, outcome) = cmdq_wait(item);
+    pane.wait_for(PaneWaitFor::Closed, waiter);
+    outcome
 }

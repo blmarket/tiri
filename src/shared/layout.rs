@@ -9,6 +9,7 @@ pub const BOX_LINES_SINGLE: box_lines = 0;
 
 pub type pane_lines = ::core::ffi::c_uint;
 pub const PANE_LINES_SINGLE: pane_lines = 0;
+pub const PANE_LINES_NONE: pane_lines = 6;
 
 /// A pane's rectangle in window coordinates, before pane border status and
 /// scrollbar adjustments.

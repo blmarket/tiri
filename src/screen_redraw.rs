@@ -14,8 +14,8 @@ use crate::shared::borders::{
 };
 use crate::shared::client::ClientRef;
 use crate::shared::client::{
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSTATUS,
-    CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED, CLIENT_UTF8,
+    CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW,
+    CLIENT_SUSPENDED, CLIENT_UTF8,
 };
 use crate::shared::grid::*;
 use crate::shared::layout::*;
@@ -37,10 +37,7 @@ use crate::status::{status_line_size, status_message_redraw, status_prompt_redra
 use crate::style::style_apply_with_options;
 use crate::text::utf8::utf8_set;
 use crate::tty::tty_draw_line;
-use crate::tty::{
-    tty_cell, tty_check_overlay_range, tty_cursor, tty_puts, tty_reset, tty_sync_start,
-    tty_update_mode,
-};
+use crate::tty::{tty_cell, tty_cursor, tty_puts, tty_reset, tty_sync_start, tty_update_mode};
 use crate::window::windows;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
@@ -95,7 +92,6 @@ pub const REDRAW_PANE_STATUS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const REDRAW_PANE_SCROLLBAR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const REDRAW_STATUS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const REDRAW_MENU: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const REDRAW_OVERLAY: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 pub const REDRAW_ALL: ::core::ffi::c_int = 0x7fffffff as ::core::ffi::c_int;
 pub const REDRAW_START_ISOLATE: &std::ffi::CStr = c"\u{2066}";
 pub const REDRAW_END_ISOLATE: &std::ffi::CStr = c"\u{2069}";
@@ -134,7 +130,6 @@ fn redraw_flags_to_string(flags: ::core::ffi::c_int) -> std::ffi::CString {
         (REDRAW_PANE_STATUS, "pane-status"),
         (REDRAW_PANE_SCROLLBAR, "scrollbar"),
         (REDRAW_MENU, "menu"),
-        (REDRAW_OVERLAY, "overlay"),
     ] {
         if flags & flag != 0 {
             names.push(name);
@@ -233,7 +228,13 @@ fn redraw_pane_to_scene(
 /// Whether the window's layout splits the colour of a separator between two
 /// panes.
 fn redraw_check_split_colours(w: &WindowRef) -> bool {
-    w.layout().splits_separator_colours(w.pane_snapshot().len())
+    w.layout().splits_separator_colours(
+        w.pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+            .filter(|pane| !pane.is_floating())
+            .count(),
+    )
 }
 
 fn redraw_mark_pane_inside(
@@ -347,6 +348,10 @@ fn redraw_mark_border_cell(
         return;
     }
     let bc = redraw_get_build_cell(bctx, x, y);
+    if wp.is_floating() {
+        bc.data = redraw_span_data::Border(Default::default());
+        bc.data.border_mut().style_wp = std::rc::Rc::downgrade(wp);
+    }
     match bc.data.kind() {
         REDRAW_SPAN_OUTSIDE | REDRAW_SPAN_EMPTY => {
             bc.data = redraw_span_data::Border(Default::default())
@@ -400,6 +405,9 @@ fn redraw_mark_pane_borders(
     mut sb_left: ::core::ffi::c_int,
 ) {
     let wp = wp_owner;
+    if wp.is_floating() && wp.pane_lines() == crate::shared::layout::PANE_LINES_NONE {
+        return;
+    }
     let (sx, sy, xoff, yoff) = wp.geometry();
     let mut left = xoff - 1;
     let mut right = xoff + sx as ::core::ffi::c_int;
@@ -503,6 +511,29 @@ fn redraw_set_border_types(bctx: &mut redraw_build_ctx) {
     for y in 0..bctx.sy {
         for x in 0..bctx.sx {
             if !redraw_is_border(bctx, x, y) {
+                continue;
+            }
+            let pane = redraw_get_build_cell(bctx, x, y)
+                .data
+                .border()
+                .style_wp
+                .upgrade();
+            if let Some(pane) = pane.filter(|pane| pane.is_floating()) {
+                let (left, top, width, height) = pane.outer_geometry();
+                let wx = x as i32 + bctx.ox as i32;
+                let wy = y as i32 + bctx.oy as i32;
+                let right = left + width as i32 - 1;
+                let bottom = top + height as i32 - 1;
+                let cell_type = redraw_border_type(
+                    wy > top && (wx == left || wx == right),
+                    wy < bottom && (wx == left || wx == right),
+                    wx > left && (wy == top || wy == bottom),
+                    wx < right && (wy == top || wy == bottom),
+                );
+                redraw_get_build_cell(bctx, x, y)
+                    .data
+                    .border_mut()
+                    .cell_type = cell_type;
                 continue;
             }
             let cell_type = redraw_border_type(
@@ -717,14 +748,16 @@ fn redraw_build_cells<'a>(bctx: &mut redraw_build_ctx<'a>, cells: &'a mut Vec<re
         }
         y = y.wrapping_add(1);
     }
-    for pane_owner in bctx
+    let mut panes = bctx
         .w
         .pane_snapshot()
         .iter()
         .filter_map(std::rc::Weak::upgrade)
         .filter(|pane| pane.is_visible())
         .rev()
-    {
+        .collect::<Vec<_>>();
+    panes.sort_by_key(|pane| pane.is_floating());
+    for pane_owner in panes {
         redraw_mark_pane(bctx, &pane_owner);
     }
     redraw_set_border_types(bctx);
@@ -1161,9 +1194,9 @@ fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u
     let scene = dctx.scene;
     let data = &span.data;
     let type_0: redraw_span_type = data.kind();
-    let Some(client_owner) = scene.c.upgrade() else {
+    if scene.c.upgrade().is_none() {
         return;
-    };
+    }
     if type_0 == REDRAW_SPAN_STATUS
         && data
             .status()
@@ -1176,12 +1209,8 @@ fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u
     if span.width == 0 {
         return;
     }
-    let ranges = tty_check_overlay_range(&client_owner, span.x, y, span.width);
-    for range in ranges.storage.iter().take(ranges.used as usize) {
-        if range.nx == 0 {
-            continue;
-        }
-        let (x, n) = (range.px, range.nx);
+    {
+        let (x, n) = (span.x, span.width);
         match type_0 as ::core::ffi::c_uint {
             REDRAW_SPAN_PANE => {
                 redraw_draw_pane_span(dctx, span, x, y, n);
@@ -1592,17 +1621,9 @@ fn redraw_draw_scene(
         i = 0;
         while i < lines {
             let width = client_owner.terminal_size().0;
-            let ranges = tty_check_overlay_range(client_owner, 0, y.wrapping_add(i), width);
-            for range in ranges.storage.iter().take(ranges.used as usize) {
-                if range.nx != 0 {
-                    client_owner.draw_status_line(i, range.px, range.nx, y.wrapping_add(i));
-                }
-            }
+            client_owner.draw_status_line(i, 0, width, y.wrapping_add(i));
             i = i.wrapping_add(1);
         }
-    }
-    if flags & REDRAW_OVERLAY != 0 {
-        client_owner.draw_overlay();
     }
     {
         let terminal = &(client_owner);
@@ -1623,20 +1644,13 @@ pub fn redraw_screen(client_owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if c.as_ref().expect("live client").flags() & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
-            redraw_draw(client_owner, None, REDRAW_ALL);
-        } else {
-            redraw_draw(client_owner, None, REDRAW_ALL & !REDRAW_OVERLAY);
-        }
+        redraw_draw(client_owner, None, REDRAW_ALL);
     } else {
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWBORDERS as uint64_t != 0 {
             flags |= REDRAW_PANE_BORDER | REDRAW_PANE_STATUS;
         }
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWSTATUS as uint64_t != 0 {
             flags |= REDRAW_STATUS | REDRAW_PANE_STATUS;
-        }
-        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
-            flags |= REDRAW_OVERLAY;
         }
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;

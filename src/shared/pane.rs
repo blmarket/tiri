@@ -61,6 +61,8 @@ pub const PANE_MINIMUM: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const PANE_REDRAW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP: ::core::ffi::c_int = 1;
 pub const PANE_STATUS_BOTTOM: ::core::ffi::c_int = 2;
+pub const PANE_STATUS_TOP_FLOATING: i32 = 3;
+pub const PANE_STATUS_BOTTOM_FLOATING: i32 = 4;
 pub const PANE_SCROLLBARS_RIGHT: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_LEFT: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const PANE_STATUSDRAWN: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
@@ -85,6 +87,15 @@ pub const PANE_SCROLLBARS_DEFAULT_WIDTH: ::core::ffi::c_int = 1 as ::core::ffi::
 pub const PANE_SCROLLBARS_CHARACTER: ::core::ffi::c_int = ' ' as i32;
 pub const PANE_FOCUSED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
+pub const PANE_MODAL: i32 = 0x80000;
+pub const PANE_CAPTUREALLKEYS: i32 = 0x100000;
+pub const PANE_CLOSEONCANCEL: i32 = 0x200000;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PaneWaitFor {
+    ProcessExit,
+    Closed,
+}
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
 pub struct window_pane_prompt {

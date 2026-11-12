@@ -10,7 +10,6 @@ use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
 use std::{cell::RefCell, rc::Rc};
 mod api;
-mod client_overlay;
 mod format;
 mod model;
 use crate::cfg::{cfg_client, cfg_finished, cfg_forget_client, start_cfg};
@@ -61,14 +60,12 @@ use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
 pub use api::Client;
-pub use client_overlay::Overlay;
 pub use model::client;
 
 use crate::compat::imsg::imsg;
 use crate::compat::imsg::*;
 use crate::shared::abi::ssize_t;
 use crate::shared::abi::*;
-pub use crate::shared::client::overlay_check_cb;
 use crate::shared::client::*;
 use crate::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
@@ -76,9 +73,9 @@ use crate::shared::client::{
     CLIENT_CONTROL_WAITEXIT, CLIENT_DEAD, CLIENT_DOUBLECLICK, CLIENT_EXIT, CLIENT_EXITED,
     CLIENT_FOCUSED, CLIENT_IDENTIFIED, CLIENT_IGNORESIZE, CLIENT_NODETACHFLAGS,
     CLIENT_NO_DETACH_ON_DESTROY, CLIENT_PASTE_TIME_LIMIT, CLIENT_READONLY, CLIENT_REDRAWBORDERS,
-    CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS,
-    CLIENT_REDRAWWINDOW, CLIENT_REPEAT, CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL,
-    CLIENT_TRIPLECLICK, CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
+    CLIENT_REDRAWMENU, CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW,
+    CLIENT_REPEAT, CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL, CLIENT_TRIPLECLICK,
+    CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
 };
 use crate::shared::colour::{
     client_theme, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN,
@@ -86,7 +83,6 @@ use crate::shared::colour::{
 use crate::shared::command::unpack_argv;
 use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmdq_item};
-use crate::shared::display::visible_ranges;
 use crate::shared::environment::environ_entry;
 use crate::shared::event::*;
 use crate::shared::format::format_tree;
@@ -281,146 +277,6 @@ fn server_client_how_many() -> u_int {
     }
     n
 }
-fn server_client_update_overlay_focus(owner: &ClientRef) {
-    use crate::session::Session;
-    use crate::window::Window;
-    let Some(session) = owner.attached_session().upgrade() else {
-        return;
-    };
-    let link = session.current_winlink();
-    let window = winlink_window(&link);
-    if let Some(window) = window {
-        window.update_focus();
-        drop(window);
-    }
-}
-
-fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
-    while c_owner.borrow().overlay.is_some() {
-        server_client_clear_overlay(c_owner);
-    }
-    {
-        let mut c = c_owner.borrow_mut();
-        c.overlay_generation = c
-            .overlay_generation
-            .checked_add(1)
-            .expect("overlay generation exhausted");
-        if overlay.check.is_none() {
-            c.tty.set_frozen(true);
-        }
-        if overlay.mode.is_none() {
-            c.tty.set_cursor_hidden(true);
-        }
-        c.overlay = Some(overlay);
-    }
-    server_client_update_overlay_focus(c_owner);
-    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
-}
-fn server_client_clear_overlay(c_owner: &ClientRef) {
-    let (overlay, generation) = {
-        let mut c = c_owner.borrow_mut();
-        let Some(overlay) = c.overlay.take() else {
-            return;
-        };
-        c.overlay_generation = c
-            .overlay_generation
-            .checked_add(1)
-            .expect("overlay generation exhausted");
-        (overlay, c.overlay_generation)
-    };
-    drop(overlay);
-    {
-        let mut c = c_owner.borrow_mut();
-        if c.overlay_generation == generation {
-            c.tty.set_frozen(false);
-            c.tty.set_cursor_hidden(false);
-        }
-    }
-    server_client_update_overlay_focus(c_owner);
-    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
-}
-fn server_client_overlay_draw(c_owner: &ClientRef) {
-    let generation = c_owner.borrow().overlay_generation;
-    let Some(mut callback) = c_owner
-        .borrow_mut()
-        .overlay
-        .as_mut()
-        .and_then(|overlay| overlay.draw.take())
-    else {
-        return;
-    };
-    callback(c_owner);
-    let mut c = c_owner.borrow_mut();
-    if c.overlay_generation == generation {
-        if let Some(overlay) = c.overlay.as_mut() {
-            if overlay.draw.is_none() {
-                overlay.draw = Some(callback);
-            }
-        }
-    }
-}
-
-fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> bool {
-    let events = c_owner
-        .borrow()
-        .overlay
-        .as_ref()
-        .map(|overlay| overlay.events.clone());
-    let Some(events) = events else { return false };
-    let mut input = event.metadata_snapshot();
-    input.bytes = event.bytes.clone();
-    let _ = events.send(crate::popup::PopupEvent::Key(Box::new(input)));
-    true
-}
-
-fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int, u_int)> {
-    let generation = c_owner.borrow().overlay_generation;
-    let mut callback = c_owner.borrow_mut().overlay.as_mut()?.mode.take()?;
-    let result = callback(c_owner);
-    let mut c = c_owner.borrow_mut();
-    if c.overlay_generation != generation {
-        return None;
-    }
-    if let Some(overlay) = c.overlay.as_mut() {
-        if overlay.mode.is_none() {
-            overlay.mode = Some(callback);
-        }
-    }
-    result
-}
-
-fn server_client_overlay_resize(c_owner: &ClientRef) {
-    let events = c_owner
-        .borrow()
-        .overlay
-        .as_ref()
-        .map(|overlay| overlay.events.clone());
-    if let Some(events) = events {
-        let _ = events.send(crate::popup::PopupEvent::Resize);
-    }
-}
-
-fn server_client_overlay_check(
-    c_owner: &ClientRef,
-    px: u_int,
-    py: u_int,
-    nx: u_int,
-) -> Option<visible_ranges> {
-    let generation = c_owner.borrow().overlay_generation;
-    let mut callback = c_owner.borrow_mut().overlay.as_mut()?.check.take()?;
-    let result = callback(c_owner, px, py, nx);
-    let mut c = c_owner.borrow_mut();
-    if c.overlay_generation != generation {
-        return None;
-    }
-    if let Some(overlay) = c.overlay.as_mut() {
-        if overlay.check.is_none() {
-            overlay.check = Some(callback);
-        }
-    }
-    Some(result)
-}
-
 fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     let mut envent: Option<&environ_entry> = None;
     envent = environ_find(c.environ.as_deref().expect("environment"), c"TMUX");
@@ -783,7 +639,6 @@ fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) 
 fn server_client_lost(client_owner: &ClientRef) {
     cfg_forget_client(client_owner);
     client_owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
-    server_client_clear_overlay(client_owner);
     status_prompt_clear(client_owner);
     status_message_clear(client_owner);
     let files = client_owner.file_handles();
@@ -1219,6 +1074,9 @@ fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_event) ->
             } else {
                 loc = KEYC_MOUSE_LOCATION_STATUS_DEFAULT;
             }
+        }
+        if loc != KEYC_MOUSE_LOCATION_NOWHERE && window_owner.modal_pane().upgrade().is_some() {
+            return KEYC_UNKNOWN;
         }
         if loc as ::core::ffi::c_uint
             == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2175,10 +2033,6 @@ fn server_client_handle_key0(
             }
             status_message_clear(owner);
         }
-        if server_client_overlay_key(owner, event) {
-            return 0;
-        }
-        server_client_clear_overlay(owner);
         let active_pane_owner =
             ((winlink_window(&s.as_ref().expect("live session").current_winlink()).as_ref())
                 .expect("live window"))
@@ -2186,6 +2040,33 @@ fn server_client_handle_key0(
             .upgrade();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), event.key) != 0 {
             return 0 as ::core::ffi::c_int;
+        }
+        if let Some(pane) = active_pane_owner.as_ref() {
+            if pane.is_modal()
+                && pane.closes_on_cancel()
+                && (event.key == 0x1b || event.key == b'c' as key_code | KEYC_CTRL)
+            {
+                pane.kill_process();
+                return 0;
+            }
+            if pane.captures_all_keys() {
+                let mut key = event.key;
+                if key == KEYC_MOUSE || key == KEYC_DOUBLECLICK {
+                    key = server_client_check_mouse(owner, event);
+                    if key == KEYC_UNKNOWN || event.m.wp != pane.id() as i32 {
+                        return 0;
+                    }
+                    event.m.valid = 1;
+                    event.m.key = key;
+                }
+                pane.key(
+                    Some(owner),
+                    s.as_ref().expect("live session").current_winlink(),
+                    key,
+                    Some(&mut event.m),
+                );
+                return 0;
+            }
         }
         if server_client_handle_menu_key(owner, event) != 0 {
             return 0 as ::core::ffi::c_int;
@@ -2424,20 +2305,7 @@ fn server_client_reset_state(client_owner: &ClientRef) {
         }
         let blocked = client_owner.borrow_mut().tty.suspend_block();
         let menu_owner = window_owner.menu_observer();
-        if client_owner
-            .borrow()
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.draw.is_some())
-        {
-            if let Some((overlay_screen, overlay_cx, overlay_cy)) =
-                server_client_overlay_mode(client_owner)
-            {
-                s = Some(overlay_screen);
-                cx = overlay_cx;
-                cy = overlay_cy;
-            }
-        } else if let Some(menu) = menu_owner.as_ref() {
+        if let Some(menu) = menu_owner.as_ref() {
             let menu_borrow = menu.try_borrow_mut().expect("live unborrowed menu");
             let md = &*menu_borrow;
             (cx, cy) = menu_get_cursor(md);
@@ -2471,13 +2339,7 @@ fn server_client_reset_state(client_owner: &ClientRef) {
         if client_owner.borrow().prompt.is_some() {
             prompt = 1 as u_int;
             (cx, cy) = status_prompt_cursor(client_owner);
-        } else if active_owner.is_some()
-            && !client_owner
-                .borrow()
-                .overlay
-                .as_ref()
-                .is_some_and(|overlay| overlay.draw.is_some())
-        {
+        } else if active_owner.is_some() {
             if window_owner.menu_observer().is_some() {
                 let tty_window_view { ox, oy, sx, sy, .. } =
                     tty_window_offset(&client_owner.borrow().tty);
@@ -2555,13 +2417,7 @@ fn server_client_reset_state(client_owner: &ClientRef) {
                     mode &= !MODE_CURSOR;
                 }
             }
-        } else if !client_owner
-            .borrow()
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.mode.is_some())
-            || s.is_none()
-        {
+        } else {
             mode &= !MODE_CURSOR;
         }
         if !pane_mode & MODE_SYNC != 0 {
@@ -2581,13 +2437,7 @@ fn server_client_reset_state(client_owner: &ClientRef) {
             s = None;
         }
         if options_get_number(&session_owner.borrow_options_mut(), c"mouse") != 0 {
-            if !client_owner
-                .borrow()
-                .overlay
-                .as_ref()
-                .is_some_and(|overlay| overlay.draw.is_some())
-                && window_owner.menu_observer().is_none()
-            {
+            if window_owner.menu_observer().is_none() {
                 mode &= !ALL_MOUSE_MODES;
                 for pane_owner in window_owner
                     .pane_snapshot()
@@ -2614,13 +2464,7 @@ fn server_client_reset_state(client_owner: &ClientRef) {
                 mode |= MODE_MOUSE_BUTTON;
             }
         }
-        if !client_owner
-            .borrow()
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.draw.is_some())
-            && prompt != 0
-        {
+        if prompt != 0 {
             mode &= !MODE_BRACKETPASTE;
         }
         {
@@ -2831,7 +2675,7 @@ fn server_client_check_redraw(client_owner: &ClientRef) {
         }
         if client_owner.borrow().flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
             log_debug(format_args!(
-                "{}: redraw{}{}{}{}{}",
+                "{}: redraw{}{}{}{}",
                 log_cstr(client_owner.borrow().name.as_deref().unwrap_or(c"(null)")),
                 log_cstr(
                     if client_owner.borrow().flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
@@ -2850,13 +2694,6 @@ fn server_client_check_redraw(client_owner: &ClientRef) {
                 log_cstr(
                     if client_owner.borrow().flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
                         c" borders"
-                    } else {
-                        c""
-                    }
-                ),
-                log_cstr(
-                    if client_owner.borrow().flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
-                        c" overlay"
                     } else {
                         c""
                     }
@@ -3130,7 +2967,6 @@ fn server_client_dispatch(owner: &ClientRef, message: crate::shared::process::Pe
                     tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
                 };
                 recalculate_sizes();
-                server_client_overlay_resize(owner);
                 owner.borrow_mut().flags |= CLIENT_ALLREDRAWFLAGS as u64;
                 if !owner.borrow().session_handle().is_none() {
                     server_client_fire_resized(owner, old_sx, old_sy);
@@ -3236,8 +3072,7 @@ fn server_client_default_command(
     let c_owner = cmdq_get_client(Some(&*item)).expect("live client");
     let new_item_allocation;
     let cmdlist = OptionsScope::GlobalServer.with_local(|oo| options_get_command(oo));
-    if c_owner.borrow().flags & CLIENT_READONLY as uint64_t != 0
-        && cmd_list_all_have(&cmdlist) == 0
+    if c_owner.borrow().flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(&cmdlist) == 0
     {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",

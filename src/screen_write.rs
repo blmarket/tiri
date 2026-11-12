@@ -171,6 +171,7 @@ pub(crate) fn screen_write_initctx(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     *ttyctx = tty_ctx::default();
+    ttyctx.pane = ctx.wp.clone();
     ttyctx.sx = ctx.with_screen(|s| s.grid().sx);
     ttyctx.sy = ctx.with_screen(|s| s.grid().sy);
     ttyctx.ocx = ctx.with_screen(|s| s.cx);
@@ -3404,18 +3405,15 @@ mod write_ctx_tests {
     fn callback_defaults_and_palette_fallback_share_the_owned_style_cell() {
         let mut s = screen::empty();
         s.grid = Some(crate::grid::grid_create(8, 2, 0));
-        let palette = refbox::RefBox::new(colour_palette {
-            fg: 3,
-            bg: 4,
-            ..Default::default()
-        });
-        let palette_observer = palette.downgrade();
+        let pane = std::rc::Rc::new(std::cell::RefCell::new(window_pane::default()));
+        *pane.borrow_palette_mut() = colour_palette { fg: 3, bg: 4, ..Default::default() };
+        let palette_observer = std::rc::Rc::downgrade(&pane);
         let mut ctx = screen_write_start_callback(
             &mut s,
             Some(Box::new(move |ttyctx| {
                 ttyctx.style_ctx.defaults.fg = 7;
                 ttyctx.style_ctx.palette =
-                    crate::shared::tty::PaletteSource::Popup(palette_observer.clone());
+                    crate::shared::tty::PaletteSource::Pane(palette_observer.clone());
             })),
         );
         ctx.flags = SCREEN_WRITE_SYNC;
@@ -3426,7 +3424,7 @@ mod write_ctx_tests {
             (7, 4)
         );
         let previous = std::hint::black_box(ttyctx);
-        palette.try_borrow_mut().unwrap().bg = 6;
+        pane.borrow_palette_mut().bg = 6;
         ttyctx = tty_ctx::default();
         screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
         assert_eq!(

@@ -41,6 +41,17 @@ pub(crate) fn format_without_pane(key: &CStr, context: &mut format_tree) -> Opti
 
 fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue> {
     match key.to_bytes() {
+        b"pane_floating_flag" | b"pane_modal_flag" => {
+            let pane = context.wp.upgrade()?;
+            let enabled = if key.to_bytes() == b"pane_floating_flag" {
+                pane.is_floating()
+            } else {
+                pane.is_modal()
+            };
+            Some(FormatValue::String(
+                if enabled { c"1" } else { c"0" }.to_owned(),
+            ))
+        }
         b"pane_format" => Some(FormatValue::String(
             if context.type_0 == FORMAT_TYPE_PANE {
                 c"1"

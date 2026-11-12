@@ -262,6 +262,7 @@ pub struct tty_window_view {
 /// Command metadata; screen and cell borrows are supplied only at dispatch.
 #[derive(Default)]
 pub struct tty_ctx<'a> {
+    pub pane: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
     pub flags: ::core::ffi::c_int,
@@ -298,8 +299,6 @@ pub enum PaletteSource {
     #[default]
     None,
     Pane(std::rc::Weak<std::cell::RefCell<window_pane>>),
-    Popup(refbox::Weak<colour_palette>),
-    Snapshot(Box<colour_palette>),
 }
 
 impl PaletteSource {
@@ -314,12 +313,6 @@ impl PaletteSource {
                 let palette = owner.as_ref().map(|pane| pane.borrow_palette());
                 read(palette.as_deref())
             }
-            Self::Popup(palette) => match palette.try_borrow_mut() {
-                Ok(borrowed) => read(Some(&borrowed)),
-                Err(refbox::BorrowError::Dropped) => read(None),
-                Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
-            },
-            Self::Snapshot(palette) => read(Some(palette)),
         }
     }
 }

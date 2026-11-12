@@ -74,6 +74,8 @@ pub trait Window {
     /// The layout's rectangles in pane order, before pane border and
     /// scrollbar adjustments. Pane identities and copied geometry only.
     fn pane_cells(&self) -> Vec<(Weak<RefCell<window_pane>>, layout_geometry)>;
+    fn set_floating_geometry(&self, pane: &Rc<RefCell<window_pane>>, geometry: layout_geometry);
+    fn modal_pane(&self) -> Weak<RefCell<window_pane>>;
     /// The area clients clip and pan across, as the layout computes it from
     /// the panes and the window size. A strip's width is its last pane's
     /// first column plus the window width; a zoomed window is its size.
@@ -227,9 +229,18 @@ impl Window for WindowRef {
         pane: &Rc<RefCell<window_pane>>,
         action: LayoutAction,
     ) -> Result<(), &'static CStr> {
+        if pane.is_floating() {
+            return Err(c"this layout action is not supported for floating panes");
+        }
         let layout = self.layout();
         let meta = layout.apply(action, pane.borrow_layout_meta().as_deref())?;
-        let panes = self.borrow().panes.snapshot();
+        let panes = self
+            .borrow()
+            .panes
+            .snapshot()
+            .into_iter()
+            .filter(|pane| !pane.is_floating())
+            .collect::<Vec<_>>();
         let admitted = layout.admits(&panes, self.size()).is_ok();
         let old = std::mem::replace(&mut *pane.borrow_layout_meta(), meta);
         if let Err(reason) = layout.admits(&panes, self.size()) {
@@ -267,7 +278,9 @@ impl Window for WindowRef {
             let mut state = self.borrow_mut();
             if state.layout != kind {
                 for pane in state.panes.snapshot() {
-                    *pane.borrow_layout_meta() = None;
+                    if !pane.is_floating() {
+                        *pane.borrow_layout_meta() = None;
+                    }
                 }
             }
             state.layout = kind;
@@ -295,6 +308,18 @@ impl Window for WindowRef {
     fn pane_cells(&self) -> Vec<(Weak<RefCell<window_pane>>, layout_geometry)> {
         window_pane_cells(self)
     }
+    fn set_floating_geometry(&self, pane: &Rc<RefCell<window_pane>>, geometry: layout_geometry) {
+        *pane.borrow_layout_meta() = Some(Box::new(FloatingPane { geometry }));
+        self.borrow_mut().invalidate_scene();
+        window_arrange(self);
+        server_redraw_window(self);
+    }
+    fn modal_pane(&self) -> Weak<RefCell<window_pane>> {
+        self.pane_snapshot()
+            .into_iter()
+            .find(|pane| pane.upgrade().is_some_and(|pane| pane.is_modal()))
+            .unwrap_or_default()
+    }
     fn logical_size(&self) -> (u32, u32) {
         let state = self.borrow();
         if state.zoomed.strong_count() != 0 {
@@ -305,7 +330,8 @@ impl Window for WindowRef {
                 .panes
                 .storage
                 .iter()
-                .map(|pane| pane.upgrade().expect("live pane in ordering")),
+                .map(|pane| pane.upgrade().expect("live pane in ordering"))
+                .filter(|pane| !pane.is_floating()),
             (state.sx, state.sy),
         )
     }
@@ -314,38 +340,99 @@ impl Window for WindowRef {
         let zoomed = self.zoomed_pane();
         let (sx, sy) = self.size();
         let zoomed_view = visible && zoomed.strong_count() != 0;
-        let cells = if zoomed_view {
-            let window = layout_geometry {
-                sx,
-                sy,
-                xoff: 0,
-                yoff: 0,
-            };
-            vec![(zoomed, window)]
-        } else {
-            self.pane_cells()
-        };
-        let entries = cells
+        let mut cells = self
+            .pane_cells()
             .into_iter()
-            .map(|(observer, geometry)| {
+            .filter(|(observer, _)| {
                 let pane = observer.upgrade().expect("laid out pane is live");
-                layout::LayoutEntry {
-                    geometry,
-                    id: pane.id(),
-                    index: self
-                        .pane_index(&observer)
-                        .expect("laid out pane has an index"),
-                    active: active.ptr_eq(&observer),
-                    last: self.pane_history_index(&observer),
+                if pane.is_floating() {
+                    !legacy || zoomed_view && zoomed.ptr_eq(observer)
+                } else {
+                    !zoomed_view || zoomed.ptr_eq(observer)
                 }
             })
             .collect::<Vec<_>>();
-        let tree = if zoomed_view {
+        cells.sort_by_key(|(observer, _)| {
+            observer
+                .upgrade()
+                .expect("laid out pane is live")
+                .is_floating()
+        });
+        let entries = cells
+            .iter()
+            .map(|(observer, geometry)| {
+                let pane = observer.upgrade().expect("laid out pane is live");
+                let floating = pane.is_floating() && !(zoomed_view && zoomed.ptr_eq(observer));
+                let geometry = if floating && zoomed.ptr_eq(observer) {
+                    let geometry = pane
+                        .borrow_layout_meta()
+                        .as_deref()
+                        .and_then(|meta| meta.downcast_ref::<FloatingPane>())
+                        .expect("floating pane placement")
+                        .fit((sx, sy));
+                    let border = u32::from(
+                        options_get_number(&pane.borrow_options_mut(), c"pane-border-lines")
+                            as pane_lines
+                            != PANE_LINES_NONE,
+                    );
+                    layout_geometry {
+                        sx: geometry.sx.saturating_sub(border * 2).max(1),
+                        sy: geometry.sy.saturating_sub(border * 2).max(1),
+                        xoff: geometry.xoff + border as i32,
+                        yoff: geometry.yoff + border as i32,
+                    }
+                } else if floating {
+                    let (sx, sy, xoff, yoff) = pane.geometry();
+                    layout_geometry { sx, sy, xoff, yoff }
+                } else if zoomed_view {
+                    layout_geometry {
+                        sx,
+                        sy,
+                        xoff: 0,
+                        yoff: 0,
+                    }
+                } else {
+                    *geometry
+                };
+                layout::LayoutEntry {
+                    geometry,
+                    id: pane.id(),
+                    index: self.pane_index(observer).expect("pane index"),
+                    active: active.ptr_eq(observer),
+                    last: self.pane_history_index(observer),
+                    z: floating.then_some(0),
+                }
+            })
+            .collect::<Vec<_>>();
+        let tiled = cells
+            .iter()
+            .filter_map(|(pane, _)| pane.upgrade())
+            .filter(|pane| !pane.is_floating())
+            .collect::<Vec<_>>();
+        let mut tree = if zoomed_view {
             Some(layout::LayoutNode::Pane(0))
         } else {
-            let state = self.borrow();
-            state.layout.tree(&state.panes.snapshot(), (sx, sy))
+            self.layout().tree(&tiled, (sx, sy))
         };
+        let floats = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.z.is_some())
+            .map(|(index, _)| (0, layout::LayoutNode::Pane(index)))
+            .collect::<Vec<_>>();
+        if !floats.is_empty() {
+            match tree.as_mut() {
+                Some(layout::LayoutNode::Split { children, .. }) => children.extend(floats),
+                _ => {
+                    let mut children = tree.take().map(|tree| vec![(1, tree)]).unwrap_or_default();
+                    children.extend(floats);
+                    tree = Some(layout::LayoutNode::Split {
+                        across: false,
+                        children,
+                    });
+                }
+            }
+        }
         layout::layout_string(tree.as_ref(), &entries, legacy)
     }
 

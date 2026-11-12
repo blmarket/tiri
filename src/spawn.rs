@@ -168,6 +168,7 @@ pub(crate) fn spawn_editor(
 ) -> Option<crate::shared::spawn::EditorHandle> {
     let session_owner = client_owner.attached_session().upgrade()?;
     let mut sc: spawn_context = spawn_context {
+        geometry: None,
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),

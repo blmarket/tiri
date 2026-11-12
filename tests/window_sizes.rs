@@ -493,7 +493,7 @@ fn menus_and_popups_are_available() {
     server.start(80, 24, 1);
     for args in [
         &["set", "-w", "menu-style", "fg=red"][..],
-        &["set", "-w", "popup-border-lines", "double"],
+        &["set", "-w", "pane-border-lines", "double"],
     ] {
         server.success(args);
     }

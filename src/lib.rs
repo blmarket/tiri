@@ -60,7 +60,6 @@ pub mod options;
 pub mod osdep;
 pub mod paste;
 pub mod plugin;
-pub mod popup;
 pub mod r#proc;
 pub mod prompt;
 pub mod prompt_history;

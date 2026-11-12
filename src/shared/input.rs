@@ -16,15 +16,14 @@ pub const INPUT_REQUEST_CLIPBOARD: input_request_type = 1;
 
 pub const INPUT_REQUEST_PALETTE: input_request_type = 0;
 
-pub use tiri_vt::INPUT_BUF_DEFAULT_SIZE;
 pub use tiri_vt::InputEndType as input_end_type;
+pub use tiri_vt::INPUT_BUF_DEFAULT_SIZE;
 
 #[derive(Default)]
 pub enum InputPalette {
     #[default]
     None,
     Pane(std::rc::Weak<std::cell::RefCell<window_pane>>),
-    Popup(refbox::Weak<colour_palette>),
 }
 
 impl InputPalette {
@@ -35,14 +34,6 @@ impl InputPalette {
             Self::Pane(observer) => {
                 let owner = observer.upgrade()?;
                 let mut palette = owner.borrow_palette_mut();
-                Some(access(&mut palette))
-            }
-            Self::Popup(observer) => {
-                let mut palette = match observer.try_borrow_mut() {
-                    Ok(palette) => palette,
-                    Err(refbox::BorrowError::Dropped) => return None,
-                    Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
-                };
                 Some(access(&mut palette))
             }
         }

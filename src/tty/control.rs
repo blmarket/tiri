@@ -39,7 +39,6 @@ use crate::shared::tty::{
 use crate::shared::utf8::UTF8_SIZE;
 use crate::shared::window::WindowRef;
 use crate::status::status_line_size;
-use tiri_vt::base64;
 use crate::text::utf8::utf8_set;
 use crate::tmux::setblocking;
 use crate::tty::features::tty_apply_features;
@@ -50,6 +49,7 @@ use crate::tty::term::{
 };
 use crate::window::{Window, WindowPane};
 use std::time::Duration;
+use tiri_vt::base64;
 
 use std::ffi::CStr;
 use std::os::fd::AsFd;
@@ -365,7 +365,9 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
                         let mut terminal = owner.borrow_terminal_mut();
                         let out = terminal.out.as_deref().expect("open TTY buffer");
                         if evbuffer_get_length(out) != 0 {
-                            return std::task::Poll::Ready(Some(reactor::buffer_prefix(out, 65536)));
+                            return std::task::Poll::Ready(Some(reactor::buffer_prefix(
+                                out, 65536,
+                            )));
                         }
                         terminal.write_wake = Some(cx.local_waker().clone());
                         std::task::Poll::Pending
@@ -1161,17 +1163,8 @@ fn tty_clear_line(
     if complete {
         return;
     }
-    let ranges = tty_check_overlay_range(owner, px, py, nx);
-    {
-        let terminal = owner;
-
-        for range in ranges.storage.iter().take(ranges.used as usize) {
-            if range.nx != 0 {
-                tty_cursor(terminal, range.px, py);
-                tty_repeat_space(terminal, range.nx);
-            }
-        }
-    };
+    tty_cursor(owner, px, py);
+    tty_repeat_space(owner, nx);
 }
 fn tty_clear_pane_line(
     owner: &ClientRef,
@@ -1190,7 +1183,7 @@ fn tty_clear_pane_line(
         py
     ));
     if let Some(line) = tty_clamp_line(ctx, px, py, nx) {
-        let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
+        let ranges = tty_visible_ranges(ctx, line.x, line.y, line.width);
         for range in ranges.storage.iter().take(ranges.used as usize) {
             if range.nx != 0 {
                 tty_clear_line(
@@ -1347,7 +1340,12 @@ fn tty_clear_area(
     }
     let mut yy = py;
     while yy < py.wrapping_add(ny) {
-        tty_clear_line(owner, defaults, yy, px, nx, bg);
+        let ranges = tty_visible_ranges(ctx, px, yy, nx);
+        for range in &ranges.storage[..ranges.used as usize] {
+            if range.nx != 0 {
+                tty_clear_line(owner, defaults, yy, range.px, range.nx, bg);
+            }
+        }
         yy = yy.wrapping_add(1);
     }
 }
@@ -1384,7 +1382,7 @@ fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, write: &screen_write_ctx, py:
         };
         line
     };
-    let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
+    let ranges = tty_visible_ranges(ctx, line.x, line.y, line.width);
     {
         let terminal = owner;
 
@@ -1408,7 +1406,7 @@ fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, write: &screen_write_ctx, py:
 }
 fn tty_cmd_redrawline(owner: &ClientRef, ctx: &tty_ctx, write: &screen_write_ctx) {
     if let Some(line) = tty_clamp_line(ctx, ctx.ocx, ctx.ocy, ctx.data.count()) {
-        let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
+        let ranges = tty_visible_ranges(ctx, line.x, line.y, line.width);
         {
             let terminal = owner;
 
@@ -1463,28 +1461,27 @@ pub(super) fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
     new.data.data[..new.data.size as usize].fill(b'_');
     new
 }
-fn tty_check_overlay(owner: &ClientRef, px: u_int, py: u_int) -> bool {
-    let mut ranges = tty_check_overlay_range(owner, px, py, 1);
-    !ranges.is_empty()
-}
-
-/// Return owned clipping geometry. Overlay callbacks run without a terminal
-/// borrow, and nested output cannot replace the caller's ranges in place.
-pub fn tty_check_overlay_range(
-    owner: &ClientRef,
-    px: u_int,
-    py: u_int,
-    nx: u_int,
-) -> visible_ranges {
-    if let Some(ranges) = owner.overlay_ranges(px, py, nx) {
-        ranges
-    } else {
-        let mut ranges = visible_ranges::default();
+fn tty_visible_ranges(ctx: &tty_ctx, px: u_int, py: u_int, nx: u_int) -> visible_ranges {
+    let mut ranges = visible_ranges::default();
+    let Some(pane) = ctx.pane.upgrade() else {
         ranges.ensure(1);
         ranges.storage[0] = visible_range { px, nx };
         ranges.used = 1;
-        ranges
+        return ranges;
+    };
+    let x = px as i32 + ctx.wox as i32;
+    let y = py as i32 + ctx.woy as i32 - (ctx.yoff - ctx.ryoff);
+    let mut visible = Vec::new();
+    crate::window_visible::window_visible_ranges(Some(&pane), x, y, nx, &mut visible);
+    ranges.ensure(visible.len() as u32);
+    for (index, range) in visible.into_iter().enumerate() {
+        ranges.storage[index] = visible_range {
+            px: range.px - ctx.wox,
+            nx: range.nx,
+        };
+        ranges.used += 1;
     }
+    ranges
 }
 
 fn tty_client_ready(ctx: &tty_ctx, owner: &ClientRef) -> bool {
@@ -1888,11 +1885,11 @@ fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, write: &screen_write_ctx, gc: 
     if tty_is_visible(ctx, ctx.ocx, ctx.ocy, 1, 1) == 0 {
         return;
     }
-    if gc.data.width == 1 && !tty_check_overlay(owner, px, py) {
+    if gc.data.width == 1 && tty_visible_ranges(ctx, px, py, 1).is_empty() {
         return;
     }
     if gc.data.width > 1 {
-        let ranges = tty_check_overlay_range(owner, px, py, gc.data.width as u_int);
+        let ranges = tty_visible_ranges(ctx, px, py, gc.data.width as u_int);
         let visible = ranges
             .storage
             .iter()
@@ -1984,7 +1981,7 @@ fn tty_cmd_cells(owner: &ClientRef, ctx: &tty_ctx, write: &screen_write_ctx, gc:
     let py = (ctx.yoff as u_int)
         .wrapping_add(ctx.ocy)
         .wrapping_sub(ctx.woy);
-    let ranges = tty_check_overlay_range(owner, px, py, n as u_int);
+    let ranges = tty_visible_ranges(ctx, px, py, n as u_int);
     {
         let terminal = owner;
 
@@ -2049,7 +2046,7 @@ fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
     let sync = if ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 {
         ctx.flags & TTY_CTX_SYNC != 0
     } else {
-        ctx.flags & TTY_CTX_SYNC != 0 || owner.has_overlay()
+        ctx.flags & TTY_CTX_SYNC != 0 || owner.clips_terminal_output()
     };
     if sync {
         tty_sync_start(owner);
@@ -2057,7 +2054,7 @@ fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
 }
 
 pub fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
-    let cursor = {
+    {
         let terminal = owner.borrow_terminal();
         if terminal
             .term
@@ -2068,9 +2065,8 @@ pub fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_
         {
             return;
         }
-        (terminal.cx, terminal.cy)
     };
-    if gc.flags as i32 & GRID_FLAG_PADDING != 0 || !tty_check_overlay(owner, cursor.0, cursor.1) {
+    if gc.flags as i32 & GRID_FLAG_PADDING != 0 {
         return;
     }
     (|terminal: &ClientRef| {

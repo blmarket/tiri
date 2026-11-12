@@ -14,6 +14,7 @@ pub const SPAWN_DETACHED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const SPAWN_EMPTY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const SPAWN_RESPAWN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const SPAWN_NONOTIFY: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+pub const SPAWN_MODAL: i32 = 0x80;
 
 pub struct spawn_editor_state {
     pub id: EditorId,
@@ -70,6 +71,7 @@ pub type spawn_finish_edit_cb = Option<Box<dyn FnOnce(&spawn_editor_state, Optio
 
 #[repr(C)]
 pub struct spawn_context {
+    pub geometry: Option<crate::shared::layout::layout_geometry>,
     pub item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,

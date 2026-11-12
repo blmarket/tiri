@@ -258,6 +258,12 @@ fn format_cb_pane_tabs(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_fg(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_fg", ft)
 }
+fn format_cb_pane_floating_flag(ft: &mut format_tree) -> Option<CString> {
+    pane_format_string(c"pane_floating_flag", ft)
+}
+fn format_cb_pane_modal_flag(ft: &mut format_tree) -> Option<CString> {
+    pane_format_string(c"pane_modal_flag", ft)
+}
 fn format_cb_pane_flags(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_flags", ft)
 }
@@ -1529,7 +1535,7 @@ pub(crate) fn window_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 216] = [
     FormatTableEntry {
         key: c"active_window_index",
         callback: FormatCallback::String(format_cb_active_window_index),
@@ -1923,6 +1929,10 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
         callback: FormatCallback::String(format_cb_pane_flags),
     },
     FormatTableEntry {
+        key: c"pane_floating_flag",
+        callback: FormatCallback::String(format_cb_pane_floating_flag),
+    },
+    FormatTableEntry {
         key: c"pane_format",
         callback: FormatCallback::String(format_cb_pane_format),
     },
@@ -1973,6 +1983,10 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
     FormatTableEntry {
         key: c"pane_marked_set",
         callback: FormatCallback::String(format_cb_pane_marked_set),
+    },
+    FormatTableEntry {
+        key: c"pane_modal_flag",
+        callback: FormatCallback::String(format_cb_pane_modal_flag),
     },
     FormatTableEntry {
         key: c"pane_mode",

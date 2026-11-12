@@ -17,6 +17,32 @@ use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
+#[derive(Clone, Copy)]
+pub(crate) struct FloatingPane {
+    pub geometry: layout_geometry,
+}
+
+impl FloatingPane {
+    pub(crate) fn fit(self, (sx, sy): (u32, u32)) -> layout_geometry {
+        let width = self.geometry.sx.min(sx);
+        let height = self.geometry.sy.min(sy);
+        layout_geometry {
+            sx: width,
+            sy: height,
+            xoff: self
+                .geometry
+                .xoff
+                .max(0)
+                .min(sx.saturating_sub(width) as i32),
+            yoff: self
+                .geometry
+                .yoff
+                .max(0)
+                .min(sy.saturating_sub(height) as i32),
+        }
+    }
+}
+
 /// What a user can ask a layout to do to one pane. Layouts that can't do it
 /// refuse.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -395,6 +421,7 @@ impl LayoutNode {
 
 /// One pane's entry in a layout string, copied before serialization.
 pub(super) struct LayoutEntry {
+    pub(super) z: Option<u32>,
     pub(super) geometry: layout_geometry,
     pub(super) id: u32,
     pub(super) index: u32,
@@ -533,8 +560,11 @@ fn append_pane(output: &mut Vec<u8>, entry: &LayoutEntry) {
     } else if let Some(last) = entry.last {
         output.extend_from_slice(format!(",\"l\":{last}").as_bytes());
     }
-    output
-        .extend_from_slice(format!(",\"i\":{},\"I\":\"%{}\"}}", entry.index, entry.id).as_bytes());
+    output.extend_from_slice(format!(",\"i\":{}", entry.index).as_bytes());
+    if let Some(z) = entry.z {
+        output.extend_from_slice(format!(",\"z\":{z}").as_bytes());
+    }
+    output.extend_from_slice(format!(",\"I\":\"%{}\"}}", entry.id).as_bytes());
 }
 
 #[cfg(test)]
@@ -543,6 +573,7 @@ mod tests {
 
     fn entry(xoff: i32, id: u32, index: u32, active: bool, last: Option<u32>) -> LayoutEntry {
         LayoutEntry {
+            z: None,
             geometry: layout_geometry {
                 sx: 39,
                 sy: 24,

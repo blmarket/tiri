@@ -10,10 +10,8 @@ use crate::reactor::BufferEvent;
 use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::control::control_state;
-use crate::shared::display::visible_ranges;
 use crate::shared::environment::environ;
 use crate::shared::layout::Direction;
-use crate::shared::screen::screen;
 use crate::shared::session::{SessionRef, SessionWeak};
 use crate::shared::terminal::termios;
 use crate::shared::window::WindowRef;
@@ -231,24 +229,7 @@ pub trait Client {
         no_freeze: i32,
     );
     fn status_message_text(&self) -> (Option<CString>, bool);
-    /// Install callbacks and typed payload as one owned overlay. Callback
-    /// retirement remains explicit and runs without a live client borrow.
-    fn set_overlay(&self, overlay: Overlay);
-    fn clear_overlay(&self);
-    fn has_overlay(&self) -> bool;
     fn clips_terminal_output(&self) -> bool;
-    fn draw_overlay(&self);
-    fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges>;
-    /// Return only the popup's nonowning identity; acquire its state afterwards.
-    fn popup_overlay(&self) -> Option<crate::popup::PopupHandle>;
-    /// Temporarily remove clipping for an overlay's own output. Restore only if
-    /// callbacks did not retire/replace the overlay during `draw`; no model
-    /// borrow spans that closure. The supplied callback replaces the old one.
-    fn with_overlay_check_disabled<R>(
-        &self,
-        restore: overlay_check_cb,
-        draw: impl FnOnce() -> R,
-    ) -> R;
     fn terminal_size(&self) -> (u32, u32);
     fn terminal_started(&self) -> bool;
     fn terminal_view(&self) -> crate::shared::tty::tty_window_view;
@@ -260,21 +241,9 @@ pub trait Client {
     fn refresh_terminal_size(&self);
     /// Query the owned descriptor without exposing it to terminal consumers.
     fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize>;
-    fn draw_overlay_screen(
-        &self,
-        screen: &screen,
-        x: u32,
-        y: u32,
-        sx: u32,
-        sy: u32,
-        style: &tty_style_ctx,
-    );
     /// Draw from the current status screen and terminal under one Client borrow.
     /// Clipping/overlay callbacks must have completed before calling this.
     fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32);
-    /// Prepare direct overlay output, deferring it when a full overlay redraw
-    /// is already pending. Coordinates refer to the complete terminal.
-    fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool;
     /// Select this client's view of a pane for a terminal command: 0 skips it,
     /// -1 defers to full redraw, and 1 permits immediate output.
     fn prepare_pane_render(&self, context: &mut tty_ctx, pane: &Rc<RefCell<window_pane>>) -> i32;
@@ -871,13 +840,7 @@ impl Client for ClientRef {
 
     fn focuses_window(&self, window: &WindowRef) -> bool {
         let flags = self.flags();
-        if flags & CLIENT_FOCUSED as u64 == 0
-            || self
-                .borrow()
-                .overlay
-                .as_ref()
-                .is_some_and(|overlay| overlay.draw.is_some())
-        {
+        if flags & CLIENT_FOCUSED as u64 == 0 {
             return false;
         }
         let Some(session) = self.attached_session().upgrade() else {
@@ -1185,59 +1148,17 @@ impl Client for ClientRef {
         drop(replaced);
     }
 
-    fn set_overlay(&self, overlay: Overlay) {
-        server_client_set_overlay(self, overlay);
-    }
-
-    fn clear_overlay(&self) {
-        server_client_clear_overlay(self);
-    }
-    fn has_overlay(&self) -> bool {
-        self.borrow()
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.draw.is_some())
-    }
     fn clips_terminal_output(&self) -> bool {
-        self.borrow()
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.check.is_some())
-    }
-
-    fn draw_overlay(&self) {
-        server_client_overlay_draw(self);
-    }
-    fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges> {
-        server_client_overlay_check(self, px, py, nx)
-    }
-
-    fn popup_overlay(&self) -> Option<crate::popup::PopupHandle> {
-        self.borrow().overlay.as_ref()?.popup_handle()
-    }
-
-    fn with_overlay_check_disabled<R>(
-        &self,
-        restore: overlay_check_cb,
-        draw: impl FnOnce() -> R,
-    ) -> R {
-        let generation = self.borrow().overlay_generation;
-        let displaced = self
-            .borrow_mut()
-            .overlay
-            .as_mut()
-            .and_then(|overlay| overlay.check.take());
-        drop(displaced);
-        let result = draw();
-        let mut state = self.borrow_mut();
-        if state.overlay_generation == generation {
-            if let Some(overlay) = state.overlay.as_mut() {
-                let displaced = std::mem::replace(&mut overlay.check, restore);
-                drop(state);
-                drop(displaced);
-            }
-        }
-        result
+        self.attached_session()
+            .upgrade()
+            .and_then(|session| crate::winlink::winlink_window(&session.current_winlink()))
+            .is_some_and(|window| {
+                window
+                    .pane_snapshot()
+                    .iter()
+                    .filter_map(std::rc::Weak::upgrade)
+                    .any(|pane| pane.is_floating())
+            })
     }
 
     fn terminal_size(&self) -> (u32, u32) {
@@ -1251,29 +1172,6 @@ impl Client for ClientRef {
 
     fn refresh_terminal_size(&self) {
         tty_resize(self);
-    }
-
-    fn draw_overlay_screen(
-        &self,
-        source: &screen,
-        x: u32,
-        y: u32,
-        sx: u32,
-        sy: u32,
-        style: &tty_style_ctx,
-    ) {
-        for row in 0..sy {
-            crate::tty::tty_draw_line(
-                self,
-                source,
-                0,
-                row,
-                sx,
-                x,
-                y.wrapping_add(row),
-                Some(style),
-            );
-        }
     }
 
     fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32) {
@@ -1292,20 +1190,6 @@ impl Client for ClientRef {
         } else {
             status.screen = source;
         }
-    }
-
-    fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool {
-        if self.flags() & CLIENT_REDRAWOVERLAY as u64 != 0 {
-            return false;
-        }
-        context.wox = 0;
-        context.woy = 0;
-        (context.wsx, context.wsy) = self.terminal_size();
-        context.rxoff = x as i32;
-        context.xoff = context.rxoff;
-        context.ryoff = y as i32;
-        context.yoff = context.ryoff;
-        true
     }
 
     fn prepare_pane_render(&self, context: &mut tty_ctx, pane: &Rc<RefCell<window_pane>>) -> i32 {
