@@ -5,10 +5,13 @@ which does not align with Rust safety semantics. Specificaly,
 
 1. some raw pointer lifetimes are manually reasoned. e.g. it's possible some
    Weak pointer is always guaranteed to be alive.
-2. destruction should be kept logically reasoned. e.g. if there's some
-   dedicated free function, we should keep the guarantee it being called until
-   we migrate everything to drop function. Also while such manual Drop exists,
-   we should not rely on Drop for resource management.
+2. destruction should be kept logically reasoned. Each free operation must have
+   exactly one responsible entity: either a dedicated free function or Drop,
+   never both for the same resource. Drop is the long-term goal. While a
+   resource still has a dedicated free function, keep the guarantee that it is
+   called and do not also release that resource in Drop. Migrating a resource
+   to Drop is welcome, as long as the migration is complete: move the whole
+   release into Drop and remove the free function in the same change.
 
 ## Coding conventions
 
