@@ -416,8 +416,8 @@ mod cfg_wait_tests {
         assert!(matches!(cfg_done(), CmdOutcome::Normal));
         assert!(cfg_finished());
         assert!(CFG_WAITER.with_borrow(Option::is_none));
-        assert!(!ran.get());
-        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(ran.get());
+        assert_eq!(cmdq_next(Some(&owner)), 0);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
     }

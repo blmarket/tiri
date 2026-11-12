@@ -2182,8 +2182,8 @@ mod wait_close_tests {
         assert!(pane.process_exited(pid, ExitStatus::from_raw(status)));
         assert!(pane.borrow().wait_close.is_none());
         let retval = clients::return_value(owner);
-        assert!(!ran.get());
-        assert_eq!(cmdq_next(Some(owner)), 1);
+        assert!(ran.get());
+        assert_eq!(cmdq_next(Some(owner)), 0);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
         pane.destroy();
@@ -2210,7 +2210,8 @@ mod wait_close_tests {
         pane.wait_until_close(waiter);
         pane.destroy();
         assert_eq!(clients::return_value(&owner), 128 + SIGHUP);
-        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(ran.get());
+        assert_eq!(cmdq_next(Some(&owner)), 0);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
     }

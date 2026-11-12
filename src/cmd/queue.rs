@@ -92,44 +92,10 @@ enum DrainSlot {
 enum HeadState {
     /// No head has started, or the last one was removed.
     Idle,
-    /// Inside its command or callback, or finished until `cmdq_next` removes it.
+    /// Inside its command or callback.
     Running,
     /// Blocks its queue on a continuation, including while it is polled.
     Suspended,
-}
-
-thread_local! {
-    /// Open while `cmdq_next` polls a drain, closed while a wake does: only
-    /// `cmdq_next` moves a queue past its head (tmux runs a continuation's
-    /// completion before the next item only on a later `cmdq_next`).
-    static CMDQ_LOOP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Set the loop gate for one poll, restoring it when the poll returns or unwinds.
-struct LoopGate(bool);
-
-impl LoopGate {
-    fn enter(open: bool) -> Self {
-        Self(CMDQ_LOOP.replace(open))
-    }
-}
-
-impl Drop for LoopGate {
-    fn drop(&mut self) {
-        CMDQ_LOOP.set(self.0);
-    }
-}
-
-/// Pending until a `cmdq_next` polls the drain. `server_loop` polls every
-/// queue on each pass, so the gate needs no waker.
-fn loop_turn() -> impl std::future::Future<Output = ()> {
-    std::future::poll_fn(|_| {
-        if CMDQ_LOOP.get() {
-            std::task::Poll::Ready(())
-        } else {
-            std::task::Poll::Pending
-        }
-    })
 }
 
 /// Polls a queue's suspended head on wake. It never touches the runtime, so a
@@ -155,7 +121,7 @@ impl std::task::LocalWake for QueueWake {
             }
         });
         if let Some(Some(drain)) = drain {
-            cmdq_poll(&self.0, drain, false);
+            cmdq_poll(&self.0, drain);
         }
     }
 }
@@ -194,7 +160,6 @@ pub struct cmdq_list {
     /// Dropped first, so pending continuations are cancelled before items go.
     drain: DrainSlot,
     head: HeadState,
-    /// Items finished inside `cmdq_next`, read and reset by it.
     ran: u_int,
     /// Current execution position, observed without retaining the item.
     item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,
@@ -575,22 +540,13 @@ pub(crate) fn cmdq_resumed(
     assert!(polled, "command item resumed outside its poll");
     owner
 }
-/// The head once a `cmdq_next` polls the drain; new items start only there.
 async fn cmdq_next_head(queue: &QueueTarget) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
-    std::future::poll_fn(|_| {
-        if !CMDQ_LOOP.get() {
-            return std::task::Poll::Pending;
-        }
-        match queue.try_with_queue(|queue| queue.first()) {
-            Some(Some(item)) => std::task::Poll::Ready(item),
-            _ => std::task::Poll::Pending,
-        }
+    std::future::poll_fn(|_| match queue.try_with_queue(|queue| queue.first()) {
+        Some(Some(item)) => std::task::Poll::Ready(item),
+        _ => std::task::Poll::Pending,
     })
     .await
 }
-/// Start each head in turn. A suspended head's continuation is awaited here,
-/// so a wake polls it at once; its completion waits for a `cmdq_next` before
-/// the item is removed. No strong item handle is held across an `.await`.
 async fn cmdq_drain(queue: QueueTarget) {
     thread_local! {
         static NUMBER: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
@@ -617,48 +573,35 @@ async fn cmdq_drain(queue: QueueTarget) {
             item.time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
             item.number = number;
         }
-        let counted = match start(&item_owner) {
+        match start(&item_owner) {
             CmdOutcome::Suspend(continuation) => {
                 queue.with_queue(|queue| queue.head = HeadState::Suspended);
                 drop(item_owner);
                 continuation.await;
-                // Only a completion inside `cmdq_next` counts toward its result.
-                let counted = CMDQ_LOOP.get();
-                if queue
-                    .try_with_queue(|queue| queue.head = HeadState::Running)
-                    .is_none()
-                {
-                    return std::future::pending().await;
-                }
-                loop_turn().await;
-                counted
             }
             outcome => {
                 if matches!(outcome, CmdOutcome::Error) {
                     cmdq_remove_group(&item_owner);
                 }
                 drop(item_owner);
-                true
             }
         };
-        let owner = queue
-            .with_queue(|queue| {
-                queue.head = HeadState::Idle;
-                queue.item = std::rc::Weak::new();
-                if counted {
-                    queue.ran += 1;
-                }
-                queue.list.pop_front()
-            })
-            .expect("executed queue item");
+        let owner = queue.try_with_queue(|queue| {
+            queue.head = HeadState::Idle;
+            queue.item = std::rc::Weak::new();
+            queue.ran += 1;
+            queue.list.pop_front().expect("executed queue item")
+        });
+        let Some(owner) = owner else {
+            return std::future::pending().await;
+        };
         cmdq_remove(owner);
     }
 }
 /// Poll `queue`'s drain outside any queue borrow, again while it is woken
-/// during the poll, then park it. `open` opens the loop gate (`cmdq_next`).
+/// during the poll, then park it.
 /// A continuation may free its own client queue; the drain is then dropped.
-fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
-    let _gate = LoopGate::enter(open);
+fn cmdq_poll(queue: &QueueTarget, mut drain: Drain) -> u_int {
     let waker = std::task::LocalWaker::from(std::rc::Rc::new(QueueWake(queue.clone())));
     let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
         .local_waker(&waker)
@@ -683,7 +626,7 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
         });
         let Some((head, rewoken)) = polled else {
             drop(drain);
-            return;
+            return 0;
         };
         if let Some(head) = head.upgrade() {
             assert!(
@@ -698,6 +641,9 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
     let mut drain = Some(drain);
     queue.try_with_queue(|queue| queue.drain = DrainSlot::Parked(drain.take().unwrap()));
     drop(drain);
+    queue
+        .try_with_queue(|queue| std::mem::take(&mut queue.ran))
+        .unwrap_or(0)
 }
 /// The resuming end of a plain wait. Dropping it never resumes the item.
 pub struct CmdqWaiter {
@@ -1125,12 +1071,11 @@ pub fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let Some(drain) = drain else {
         return 0;
     };
-    cmdq_poll(&queue, drain, true);
-    queue.with_queue(|queue| std::mem::take(&mut queue.ran))
+    cmdq_poll(&queue, drain)
 }
 
-/// The global queue's current item while its command or callback runs, or
-/// after it completed until it is removed. None while it is suspended,
+/// The global queue's current item while its command or callback runs.
+/// None while it is suspended,
 /// including while its continuation runs, as tmux hides a waiting item.
 pub fn cmdq_running() -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     QueueTarget::Global.with_queue(|queue| match queue.head {
@@ -1395,7 +1340,7 @@ mod suspend_tests {
     }
 
     #[test]
-    fn send_runs_the_body_inside_send_and_the_next_pass_moves_on() {
+    fn send_runs_the_body_and_following_commands_inside_send() {
         let trace: Trace = Default::default();
         let (tx, rx) = channel::<()>();
         let body = trace.clone();
@@ -1408,9 +1353,9 @@ mod suspend_tests {
         assert_eq!(cmdq_next(None), 0, "a suspended head blocks its queue");
         assert!(trace.borrow().is_empty());
         tx.send(()).unwrap();
-        assert_eq!(*trace.borrow(), ["body"], "the body runs inside send");
-        assert!(head.upgrade().is_some(), "removal waits for cmdq_next");
-        assert_eq!(cmdq_next(None), 1);
+        assert_eq!(*trace.borrow(), ["body", "next"]);
+        assert!(head.upgrade().is_none());
+        assert_eq!(cmdq_next(None), 0);
         assert!(head.upgrade().is_none());
         assert!(next.upgrade().is_none());
         assert_eq!(*trace.borrow(), ["body", "next"]);
@@ -1445,7 +1390,7 @@ mod suspend_tests {
     }
 
     #[test]
-    fn running_is_none_inside_the_body_and_the_head_once_ready() {
+    fn running_is_none_inside_the_body_and_after_completion() {
         let (tx, rx) = channel::<()>();
         let ran = Rc::new(Cell::new(false));
         let body = ran.clone();
@@ -1471,7 +1416,7 @@ mod suspend_tests {
         assert!(cmdq_running().upgrade().is_none());
         tx.send(()).unwrap();
         assert!(ran.get());
-        assert!(cmdq_running().ptr_eq(&head), "completed until removed");
+        assert!(head.upgrade().is_none());
         assert_eq!(cmdq_next(None), 0);
         assert!(head.upgrade().is_none());
         assert!(cmdq_running().upgrade().is_none());
@@ -1540,9 +1485,9 @@ mod suspend_tests {
         assert_eq!(cmdq_next(None), 0);
         tx.send(()).unwrap();
         assert_eq!(*reentered.borrow(), [0, 0]);
-        assert!(trace.borrow().is_empty());
-        assert!(head.upgrade().is_some());
-        assert_eq!(cmdq_next(None), 1);
+        assert_eq!(*trace.borrow(), ["next"]);
+        assert!(head.upgrade().is_none());
+        assert_eq!(cmdq_next(None), 0);
         assert!(head.upgrade().is_none());
         assert!(next.upgrade().is_none());
         assert_eq!(*trace.borrow(), ["next"]);
@@ -1574,15 +1519,12 @@ mod suspend_tests {
         );
         assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(sender.upgrade().is_none());
-        assert_eq!(*trace.borrow(), ["body", "sent"]);
-        assert!(
-            head.upgrade().is_some(),
-            "the global queue moves on at its pass"
-        );
-        assert_eq!(cmdq_next(None), 1);
+        assert_eq!(*trace.borrow(), ["body", "next", "sent"]);
+        assert!(head.upgrade().is_none());
+        assert_eq!(cmdq_next(None), 0);
         assert!(head.upgrade().is_none());
         assert!(next.upgrade().is_none());
-        assert_eq!(*trace.borrow(), ["body", "sent", "next"]);
+        assert_eq!(*trace.borrow(), ["body", "next", "sent"]);
     }
 
     #[test]
@@ -1604,9 +1546,9 @@ mod suspend_tests {
             assert_eq!(cmdq_next(None), 0);
             crate::reactor::shutdown_runtime(runtime);
             tx.send(()).unwrap();
-            assert_eq!(*trace.borrow(), ["body"]);
+            assert_eq!(*trace.borrow(), ["body", "next"]);
             assert!(released.get());
-            assert_eq!(cmdq_next(None), 1);
+            assert_eq!(cmdq_next(None), 0);
             assert!(head.upgrade().is_none());
             assert!(next.upgrade().is_none());
             assert_eq!(*trace.borrow(), ["body", "next"]);

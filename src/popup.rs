@@ -195,12 +195,7 @@ pub const LEFT: C2RustUnnamed_40 = 1;
 
 impl Drop for popup_data {
     fn drop(&mut self) {
-        if let Some(waiter) = self.waiter.take() {
-            waiter.finish(self.status);
-        }
-        if let Some(client) = self.c.take() {
-            drop(client);
-        }
+        let client = self.c.take();
         if !self.job.is_empty() {
             job_free(&self.job);
         }
@@ -214,6 +209,10 @@ impl Drop for popup_data {
             palette.palette = None;
             palette.default_palette = None;
         }
+        if let Some(waiter) = self.waiter.take() {
+            waiter.finish(self.status);
+        }
+        drop(client);
     }
 }
 fn popup_reapply_styles(popup: &PopupGuard) {
@@ -1158,14 +1157,53 @@ mod waiter_tests {
     }
 
     #[test]
+    fn popup_cleanup_finishes_before_its_continuation_runs() {
+        let owner = clients::with_queue();
+        let mut data = popup_data::empty();
+        {
+            let mut palette = data.palette.try_borrow_mut().unwrap();
+            palette.palette = Some(Box::new([0; 256]));
+            palette.default_palette = Some(Box::new([0; 256]));
+        }
+        let palette = data.palette.downgrade();
+        let (waiter, closed) = CmdqWaiter::detached(Rc::downgrade(&owner));
+        data.waiter = Some(waiter);
+        data.status = 7;
+        let completed = Rc::new(Cell::new(false));
+        let observed = completed.clone();
+        let client = Rc::downgrade(&owner);
+        cmdq_append(
+            Some(&owner),
+            cmdq_get_callback_owned(
+                c"popup closure",
+                Some(Box::new(move |_| {
+                    CmdOutcome::Suspend(Box::pin(async move {
+                        assert_eq!(closed.await, Some(()));
+                        let palette = palette.try_borrow().unwrap();
+                        assert!(palette.palette.is_none());
+                        assert!(palette.default_palette.is_none());
+                        assert_eq!(clients::return_value(&client.upgrade().unwrap()), 7);
+                        observed.set(true);
+                    }))
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(!completed.get());
+        drop(data);
+        assert!(completed.get());
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+    }
+
+    #[test]
     fn freeing_a_published_popup_reports_its_status_to_a_sessionless_waiter_only() {
         let owner = clients::with_queue();
         let ran = Rc::new(Cell::new(false));
         let (waiter, head) = waiting_head(&owner, &ran);
         drop(published(waiter, 5));
         assert_eq!(clients::return_value(&owner), 5);
-        assert!(!ran.get());
-        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(ran.get());
+        assert_eq!(cmdq_next(Some(&owner)), 0);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
 
@@ -1175,7 +1213,7 @@ mod waiter_tests {
         ran.set(false);
         drop(published(waiter, 9));
         assert_eq!(clients::return_value(&owner), 5);
-        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
         clients::attach(&owner, None);
@@ -1209,7 +1247,7 @@ mod waiter_tests {
         drop(data);
         assert!(client.upgrade().is_none());
         assert!(head.upgrade().is_none());
-        assert!(!ran.get());
+        assert!(ran.get());
     }
 
     #[test]

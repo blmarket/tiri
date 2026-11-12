@@ -111,3 +111,39 @@ fn a_source_line_failure_preserves_the_following_line() {
     assert_eq!(server.display("#{@skipped}"), "");
     assert_eq!(server.display("#{@following}"), "1");
 }
+
+#[test]
+fn closing_a_popup_can_open_another_and_finish_the_command_sequence() {
+    for close_from_command in [false, true] {
+        let server = Server::new();
+        server.start(80, 24, 1);
+        server.success(&[
+            "bind-key", "-n", "x",
+            "display-popup -E 'printf FIRST_POPUP; read answer'; display-popup -E 'printf SECOND_POPUP; read answer'; set -g @popup-chain done",
+        ]);
+        let mut terminal = server.attach_terminal(80, 24);
+        terminal.send(b"x");
+        terminal.wait_screen(|screen| (0..24).any(|row| screen.row(row).contains("FIRST_POPUP")));
+        assert_eq!(server.display("#{@popup-chain}"), "");
+        if close_from_command {
+            server.success(&["display-popup", "-C"]);
+        } else {
+            terminal.send(b"\r");
+        }
+        terminal.wait_screen(|screen| (0..24).any(|row| screen.row(row).contains("SECOND_POPUP")));
+        assert_eq!(server.display("#{@popup-chain}"), "");
+        if close_from_command {
+            server.success(&["display-popup", "-C"]);
+        } else {
+            terminal.send(b"\r");
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while server.display("#{@popup-chain}") != "done" {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "popup sequence did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
