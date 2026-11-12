@@ -535,9 +535,9 @@ mod tests {
             assert_eq!(cmdq_next(None), 0, "the delay does not end in its dispatch");
             assert!(cmdq_running().upgrade().is_none(), "the head is suspended");
             runtime.poll(Some(Duration::ZERO)).unwrap();
-            assert!(cmdq_running().upgrade().is_none());
-            assert!(ran.get());
-            assert_eq!(cmdq_next(None), 0);
+            assert!(cmdq_running().ptr_eq(&head));
+            assert!(!ran.get());
+            assert_eq!(cmdq_next(None), 2);
             assert!(head.upgrade().is_none());
             assert!(ran.get());
         }
@@ -559,6 +559,7 @@ mod tests {
             while head.upgrade().is_some() {
                 assert!(start.elapsed() < Duration::from_secs(5));
                 runtime.poll(Some(Duration::from_millis(100))).unwrap();
+                cmdq_next(None);
             }
             assert!(start.elapsed() >= delay);
             assert!(cmdq_running().upgrade().is_none());
@@ -599,8 +600,8 @@ mod tests {
         assert!(head.upgrade().is_some());
         assert!(done.send(exited(0)).is_ok());
         assert_eq!(clients::return_value(&owner), 0);
-        assert!(head.upgrade().is_none() && ran.get());
-        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(head.upgrade().is_some() && !ran.get());
+        assert_eq!(cmdq_next(Some(&owner)), 2);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
     }

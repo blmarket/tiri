@@ -240,7 +240,8 @@ fn cmd_display_menu_get_menu_pos(
         _ => x,
     };
     let x = strtol_prefix(format_expand_cstring(&mut format, x).as_bytes(), 10).0;
-    *px = x.max(0).min(sx.saturating_sub(width) as _) as u32;
+    let right = sx.min(view.ox.saturating_add(view.sx));
+    *px = x.max(0).min(right.saturating_sub(width) as _) as u32;
     let y = args_get(args, b'y').unwrap_or(c"C");
     let y = match y.to_bytes() {
         b"C" => c"#{popup_centre_y}",
@@ -252,10 +253,11 @@ fn cmd_display_menu_get_menu_pos(
         _ => y,
     };
     let y = strtol_prefix(format_expand_cstring(&mut format, y).as_bytes(), 10).0;
+    let bottom = sy.min(view.oy.saturating_add(view.sy));
     *py = y
         .saturating_sub(height as _)
         .max(0)
-        .min(sy.saturating_sub(height) as _) as u32;
+        .min(bottom.saturating_sub(height) as _) as u32;
     1
 }
 fn cmd_display_menu_exec(
@@ -526,7 +528,7 @@ fn cmd_display_popup_exec(
                 return CmdOutcome::Error;
             }
         };
-    pane.set_modal(args_has(args, b'E') == 0);
+    pane.set_modal(args_has(args, b'E') != 1);
     {
         let mut options = pane.borrow_options_mut();
         options_set_number(&mut options, c"pane-border-lines", lines as i64);

@@ -282,8 +282,8 @@ mod tests {
             );
             assert_eq!(clients::return_value(&owner), (!confirmed).into());
             assert!(list.upgrade().is_none(), "the continuation finished");
-            assert!(head.upgrade().is_none() && ran.get());
-            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some() && !ran.get());
+            assert_eq!(cmdq_next(Some(&owner)), if confirmed { 3 } else { 2 });
             assert!(head.upgrade().is_none() && ran.get());
             cmd_confirm_before_callback(&owner, &mut cdata, Some(c"y"));
             assert_eq!(cmdq_next(Some(&owner)), 0);

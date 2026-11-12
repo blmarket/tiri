@@ -96,6 +96,7 @@ enum HeadState {
     Running,
     /// Blocks its queue on a continuation, including while it is polled.
     Suspended,
+    Resumed,
 }
 
 /// Polls a queue's suspended head on wake. It never touches the runtime, so a
@@ -582,10 +583,32 @@ async fn cmdq_drain(queue: QueueTarget) {
             item.number = number;
         }
         match start(&item_owner) {
-            CmdOutcome::Suspend(continuation) => {
+            CmdOutcome::Suspend(mut continuation) => {
                 queue.with_queue(|queue| queue.head = HeadState::Suspended);
                 drop(item_owner);
-                continuation.await;
+                let mut suspended = false;
+                std::future::poll_fn(|context| {
+                    let result = continuation.as_mut().poll(context);
+                    suspended |= result.is_pending();
+                    result
+                })
+                .await;
+                drop(continuation);
+                if suspended {
+                    std::future::poll_fn(|_| {
+                        queue
+                            .try_with_queue(|queue| {
+                                if queue.head == HeadState::Suspended {
+                                    queue.head = HeadState::Resumed;
+                                    std::task::Poll::Pending
+                                } else {
+                                    std::task::Poll::Ready(())
+                                }
+                            })
+                            .unwrap_or(std::task::Poll::Pending)
+                    })
+                    .await;
+                }
             }
             outcome => {
                 if matches!(outcome, CmdOutcome::Error) {
@@ -620,7 +643,7 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain) -> u_int {
             "a queue drain never completes"
         );
         let polled = queue.try_with_queue(|queue| {
-            let head = if queue.head == HeadState::Suspended {
+            let head = if matches!(queue.head, HeadState::Suspended | HeadState::Resumed) {
                 queue.item.clone()
             } else {
                 Default::default()
@@ -630,7 +653,7 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain) -> u_int {
             else {
                 panic!("a polled drain stays out until its poll returns");
             };
-            (head, rewoken)
+            (head, rewoken && queue.head != HeadState::Resumed)
         });
         let Some((head, rewoken)) = polled else {
             drop(drain);
@@ -682,7 +705,7 @@ impl CmdqWaiter {
     pub(crate) fn is_cancelled(&self) -> bool {
         self.done.is_closed()
     }
-    /// Complete the wait; a wake outside exec completes the item at once.
+    /// Complete the wait; dispatch resumes the queue on the next sweep.
     pub(crate) fn resume(self) {
         let _ = self.done.send(());
     }
@@ -1075,13 +1098,13 @@ pub fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     cmdq_poll(&queue, drain)
 }
 
-/// The global queue's current item while its command or callback runs.
+/// The global queue's current item while it runs or awaits resumed dispatch.
 /// None while it is suspended,
 /// including while its continuation runs, as tmux hides a waiting item.
 pub fn cmdq_running() -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     QueueTarget::Global.with_queue(|queue| match queue.head {
         HeadState::Suspended => std::rc::Weak::new(),
-        HeadState::Idle | HeadState::Running => queue.item.clone(),
+        HeadState::Idle | HeadState::Running | HeadState::Resumed => queue.item.clone(),
     })
 }
 pub fn cmdq_guard(
@@ -1341,7 +1364,7 @@ mod suspend_tests {
     }
 
     #[test]
-    fn send_runs_the_body_and_following_commands_inside_send() {
+    fn send_runs_the_body_and_defers_following_commands_to_dispatch() {
         let trace: Trace = Default::default();
         let (tx, rx) = channel::<()>();
         let body = trace.clone();
@@ -1354,9 +1377,10 @@ mod suspend_tests {
         assert_eq!(cmdq_next(None), 0, "a suspended head blocks its queue");
         assert!(trace.borrow().is_empty());
         tx.send(()).unwrap();
-        assert_eq!(*trace.borrow(), ["body", "next"]);
-        assert!(head.upgrade().is_none());
-        assert_eq!(cmdq_next(None), 0);
+        assert_eq!(*trace.borrow(), ["body"]);
+        assert!(head.upgrade().is_some());
+        assert!(cmdq_running().ptr_eq(&head));
+        assert_eq!(cmdq_next(None), 2);
         assert!(head.upgrade().is_none());
         assert!(next.upgrade().is_none());
         assert_eq!(*trace.borrow(), ["body", "next"]);
@@ -1391,7 +1415,7 @@ mod suspend_tests {
     }
 
     #[test]
-    fn running_is_none_inside_the_body_and_after_completion() {
+    fn running_hides_the_suspended_body_and_exposes_the_resumed_item() {
         let (tx, rx) = channel::<()>();
         let ran = Rc::new(Cell::new(false));
         let body = ran.clone();
@@ -1417,8 +1441,9 @@ mod suspend_tests {
         assert!(cmdq_running().upgrade().is_none());
         tx.send(()).unwrap();
         assert!(ran.get());
-        assert!(head.upgrade().is_none());
-        assert_eq!(cmdq_next(None), 0);
+        assert!(head.upgrade().is_some());
+        assert!(cmdq_running().ptr_eq(&head));
+        assert_eq!(cmdq_next(None), 1);
         assert!(head.upgrade().is_none());
         assert!(cmdq_running().upgrade().is_none());
     }
@@ -1486,9 +1511,9 @@ mod suspend_tests {
         assert_eq!(cmdq_next(None), 0);
         tx.send(()).unwrap();
         assert_eq!(*reentered.borrow(), [0, 0]);
-        assert_eq!(*trace.borrow(), ["next"]);
-        assert!(head.upgrade().is_none());
-        assert_eq!(cmdq_next(None), 0);
+        assert!(trace.borrow().is_empty());
+        assert!(head.upgrade().is_some());
+        assert_eq!(cmdq_next(None), 2);
         assert!(head.upgrade().is_none());
         assert!(next.upgrade().is_none());
         assert_eq!(*trace.borrow(), ["next"]);
@@ -1520,16 +1545,16 @@ mod suspend_tests {
         );
         assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(sender.upgrade().is_none());
-        assert_eq!(*trace.borrow(), ["body", "next", "sent"]);
-        assert!(head.upgrade().is_none());
-        assert_eq!(cmdq_next(None), 0);
+        assert_eq!(*trace.borrow(), ["body", "sent"]);
+        assert!(head.upgrade().is_some());
+        assert_eq!(cmdq_next(None), 2);
         assert!(head.upgrade().is_none());
         assert!(next.upgrade().is_none());
-        assert_eq!(*trace.borrow(), ["body", "next", "sent"]);
+        assert_eq!(*trace.borrow(), ["body", "sent", "next"]);
     }
 
     #[test]
-    fn send_after_runtime_shutdown_completes_the_item() {
+    fn send_after_runtime_shutdown_runs_the_body_and_leaves_dispatch_pending() {
         use tiri_rt::Runtime as _;
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
         {
@@ -1547,9 +1572,9 @@ mod suspend_tests {
             assert_eq!(cmdq_next(None), 0);
             crate::reactor::shutdown_runtime(runtime);
             tx.send(()).unwrap();
-            assert_eq!(*trace.borrow(), ["body", "next"]);
+            assert_eq!(*trace.borrow(), ["body"]);
             assert!(released.get());
-            assert_eq!(cmdq_next(None), 0);
+            assert_eq!(cmdq_next(None), 2);
             assert!(head.upgrade().is_none());
             assert!(next.upgrade().is_none());
             assert_eq!(*trace.borrow(), ["body", "next"]);
@@ -1624,7 +1649,7 @@ mod wait_tests {
         assert!(waiter.client().is_none());
         waiter.finish(5);
         assert_eq!(clients::return_value(&lent), 0);
-        assert_eq!(cmdq_next(None), 0);
+        assert_eq!(cmdq_next(None), 1);
         assert!(head.upgrade().is_none());
     }
 
@@ -1637,7 +1662,7 @@ mod wait_tests {
         let waiter = slot.take().unwrap();
         assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &owner)));
         waiter.resume();
-        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(head.upgrade().is_none());
     }
 
@@ -1664,7 +1689,7 @@ mod wait_tests {
         assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &lent)));
         waiter.finish(3);
         assert_eq!(clients::return_value(&lent), 3);
-        assert_eq!(cmdq_next(None), 0);
+        assert_eq!(cmdq_next(None), 1);
     }
 
     #[test]
@@ -1679,12 +1704,12 @@ mod wait_tests {
         clients::attach(&owner, None);
         first.take().unwrap().finish(7);
         assert_eq!(clients::return_value(&owner), 7);
-        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(first_item.upgrade().is_none());
         clients::attach(&owner, Some(&session));
         second.take().unwrap().finish(9);
         assert_eq!(clients::return_value(&owner), 7);
-        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(second_item.upgrade().is_none());
         clients::attach(&owner, None);
     }
