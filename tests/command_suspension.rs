@@ -147,3 +147,41 @@ fn closing_a_popup_can_open_another_and_finish_the_command_sequence() {
         }
     }
 }
+
+#[test]
+fn popup_returns_its_process_status_to_the_awaiting_command_client() {
+    let server = Server::new();
+    server.start(80, 24, 1);
+    let _terminal = server.attach_terminal(80, 24);
+    let output = server.run(&["display-popup", "-E", "exit 7"]);
+    assert_eq!(output.status.code(), Some(7));
+}
+
+#[test]
+fn popup_with_close_exit_zero_waits_for_a_key_after_an_unsuccessful_exit() {
+    let server = Server::new();
+    server.start(80, 24, 1);
+    let mut terminal = server.attach_terminal(80, 24);
+    let mut command = server
+        .command()
+        .args(["display-popup", "-EE", "printf POPUP_RETAINED; exit 7"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    terminal.wait_screen(|screen| (0..24).any(|row| screen.row(row).contains("POPUP_RETAINED")));
+    assert!(command.try_wait().unwrap().is_none());
+    terminal.send(b"\x1b");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = command.try_wait().unwrap() {
+            assert_eq!(status.code(), Some(7));
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "popup command did not return"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

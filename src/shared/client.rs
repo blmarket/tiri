@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use super::abi::u_int;
 use super::display::visible_ranges;
-use super::key::key_event;
 use super::screen::ScreenMode;
 
 pub type client_exit_type = ::core::ffi::c_uint;
@@ -93,10 +92,6 @@ pub type ClientRef = Rc<RefCell<client>>;
 pub type ClientWeak = std::rc::Weak<RefCell<client>>;
 
 pub use crate::file::{client_file, client_file_cb, client_files};
-
-pub type overlay_resize_cb = Option<Box<dyn FnMut(&ClientRef)>>;
-
-pub type overlay_key_cb = Option<Box<dyn FnMut(&ClientRef, &mut key_event) -> i32>>;
 
 pub type overlay_draw_cb = Option<Box<dyn FnMut(&ClientRef)>>;
 

@@ -3,7 +3,7 @@ use crate::arguments::{
     args_percentage_result, args_string, args_strtonum_result, args_to_vector, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client, cmdq_wait};
+use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
 use crate::cmd::{cmd_append_argv, cmd_get_args};
 use crate::environ::{environ_create, environ_put};
 use crate::format::bytes::write_cstr;
@@ -1101,16 +1101,9 @@ fn cmd_display_popup_exec(
                         flags,
                     );
                 } else {
-                    let mut retval = CmdOutcome::Normal;
-                    let wait = || {
-                        let (waiter, wait_retval) = cmdq_wait(item_handle);
-                        retval = wait_retval;
-                        waiter
-                    };
-                    if popup_display(
+                    if let Some(popup) = popup_display(
                         flags,
                         lines,
-                        wait,
                         px,
                         py,
                         w,
@@ -1124,10 +1117,10 @@ fn cmd_display_popup_exec(
                         s.as_ref(),
                         style,
                         border_style,
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    ) {
                         drop(env.take());
-                        return retval;
+                        let client = item_handle.borrow().owning_client();
+                        return CmdOutcome::Suspend(Box::pin(cmd_display_popup_run(client, popup)));
                     }
                 }
                 current_block = 6589043366517631393;
@@ -1142,6 +1135,54 @@ fn cmd_display_popup_exec(
         _ => {
             drop(env.take());
             CmdOutcome::Normal
+        }
+    }
+}
+
+async fn cmd_display_popup_run(
+    client: crate::shared::client::ClientWeak,
+    popup: impl std::future::Future<Output = i32>,
+) {
+    let status = popup.await;
+    if let Some(client) = client.upgrade() {
+        if client.attached_session().upgrade().is_none() {
+            client.set_return_value(status);
+        }
+    }
+}
+
+#[cfg(test)]
+mod popup_execution_tests {
+    use super::*;
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::server_client::queue_test_clients as clients;
+    use crate::session::session_new_for_test;
+    use std::rc::Rc;
+
+    #[test]
+    fn status_is_reported_only_when_the_invoking_client_is_sessionless_at_close() {
+        let owner = clients::with_queue();
+        let session = session_new_for_test();
+        for (attached, status, expected) in [(false, 5, 5), (true, 9, 5), (false, 3, 3)] {
+            let (closed, completion) = tiri_rt::oneshot::channel();
+            let client = Rc::downgrade(&owner);
+            let head = cmdq_append(
+                Some(&owner),
+                cmdq_get_callback_owned(
+                    c"popup completion",
+                    Some(Box::new(move |_| {
+                        CmdOutcome::Suspend(Box::pin(cmd_display_popup_run(client, async move {
+                            completion.await.unwrap()
+                        })))
+                    })),
+                ),
+            );
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some());
+            clients::attach(&owner, attached.then_some(&session));
+            closed.send(status).unwrap();
+            assert_eq!(clients::return_value(&owner), expected);
+            assert!(head.upgrade().is_none());
         }
     }
 }

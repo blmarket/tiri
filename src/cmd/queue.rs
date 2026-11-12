@@ -127,6 +127,14 @@ impl std::task::LocalWake for QueueWake {
 }
 
 impl cmdq_item {
+    pub(crate) fn owning_client(&self) -> ClientWeak {
+        if self.client_lent {
+            std::rc::Weak::new()
+        } else {
+            self.client.clone()
+        }
+    }
+
     fn empty() -> Self {
         Self {
             name: Default::default(),
@@ -657,14 +665,7 @@ pub struct CmdqWaiter {
 pub(crate) fn cmdq_wait(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> (CmdqWaiter, CmdOutcome) {
-    let client = {
-        let item = item_handle.borrow();
-        if item.client_lent {
-            std::rc::Weak::new()
-        } else {
-            item.client.clone()
-        }
-    };
+    let client = item_handle.borrow().owning_client();
     let (done, resumed) = tiri_rt::oneshot::channel();
     let outcome = CmdOutcome::Suspend(Box::pin(async move {
         if resumed.await.is_none() {
@@ -686,7 +687,7 @@ impl CmdqWaiter {
         let _ = self.done.send(());
     }
     /// Report `status` as the return value of a client without a session at
-    /// this moment, then resume (tmux's popup_free_cb, window_pane_wait_finish).
+    /// this moment, then resume (tmux's window_pane_wait_finish).
     pub(crate) fn finish(self, status: i32) {
         if let Some(client) = self.client() {
             if client.attached_session().upgrade().is_none() {

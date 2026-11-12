@@ -1,4 +1,3 @@
-use crate::cmd::queue::CmdqWaiter;
 use crate::format::format_create_defaults;
 use crate::grid::grid_default_cell;
 use crate::input::{input_init, input_parse_screen};
@@ -21,9 +20,7 @@ use crate::winlink::winlink_window;
 use crate::server_client::{Client, Overlay};
 use crate::session::Session;
 use crate::shared::abi::*;
-use crate::shared::client::{
-    overlay_check_cb, overlay_draw_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
-};
+use crate::shared::client::{overlay_check_cb, overlay_draw_cb, overlay_mode_cb};
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::client::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWOVERLAY};
 use crate::shared::colour::*;
@@ -57,8 +54,6 @@ use std::rc::Rc;
 use std::rc::Weak;
 
 pub struct popup_data {
-    /// The waiting command, stored only once the overlay is published.
-    waiter: Option<CmdqWaiter>,
     pub c: Option<ClientRef>,
     pub flags: ::core::ffi::c_int,
     pub title: Option<std::ffi::CString>,
@@ -91,7 +86,6 @@ pub struct popup_data {
 impl popup_data {
     pub fn empty() -> Self {
         Self {
-            waiter: None,
             c: Default::default(),
             flags: Default::default(),
             title: Default::default(),
@@ -127,6 +121,80 @@ pub(crate) struct PopupState {
     data: RefCell<Box<popup_data>>,
 }
 
+pub(crate) enum PopupEvent {
+    Output(Vec<u8>),
+    Exited(JobCompletion),
+    Key(Box<key_event>),
+    Resize,
+    Close,
+}
+
+struct Popup {
+    owner: refbox::RefBox<PopupState>,
+    client: ClientWeak,
+}
+
+impl Popup {
+    async fn run(self, mut events: tiri_rt::channel::Receiver<PopupEvent>) -> i32 {
+        let handle = PopupHandle(self.owner.downgrade());
+        while let Some(event) = events.recv().await {
+            let popup = handle.upgrade().expect("owned popup");
+            let client = self.client.upgrade().expect("popup client");
+            let close = match event {
+                PopupEvent::Output(bytes) => {
+                    if popup.is_current(&client) {
+                        popup_output(&bytes, &popup);
+                    }
+                    false
+                }
+                PopupEvent::Exited(completion) => {
+                    if popup.is_current(&client) {
+                        popup_output(&completion.output, &popup);
+                    }
+                    let mut data = popup.data();
+                    data.status = completion
+                        .status
+                        .code()
+                        .or(completion.status.signal())
+                        .unwrap_or(0);
+                    data.job = refbox::Weak::new();
+                    data.flags & POPUP_CLOSEEXIT != 0
+                        || data.flags & POPUP_CLOSEEXITZERO != 0 && data.status == 0
+                }
+                PopupEvent::Key(mut event) => {
+                    popup.is_current(&client) && popup_key(&client, &popup, &mut event) != 0
+                }
+                PopupEvent::Resize => {
+                    if popup.is_current(&client) {
+                        popup_resize(&client, &popup);
+                    }
+                    false
+                }
+                PopupEvent::Close => true,
+            };
+            if close {
+                return popup.data().status;
+            }
+        }
+        let popup = handle.upgrade().expect("owned popup");
+        let status = popup.data().status;
+        status
+    }
+}
+
+impl Drop for Popup {
+    fn drop(&mut self) {
+        if let Some(client) = self.client.upgrade() {
+            if client
+                .popup_overlay()
+                .is_some_and(|handle| self.owner == handle.0)
+            {
+                client.clear_overlay();
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct PopupHandle(refbox::Weak<PopupState>);
 
@@ -136,10 +204,6 @@ struct PopupGuard<'a> {
 }
 
 impl PopupHandle {
-    pub(crate) fn new(observer: refbox::Weak<PopupState>) -> Self {
-        Self(observer)
-    }
-
     fn upgrade(&self) -> Option<PopupGuard<'_>> {
         match self.0.try_borrow_mut() {
             Ok(state) => Some(PopupGuard {
@@ -162,10 +226,9 @@ impl PopupGuard<'_> {
     }
 
     fn is_current(&self, client: &ClientRef) -> bool {
-        self.handle.0.is_alive()
-            && client
-                .popup_overlay()
-                .is_some_and(|handle| self.handle.0 == handle.0)
+        client
+            .popup_overlay()
+            .is_some_and(|handle| self.handle.0 == handle.0)
     }
 }
 
@@ -208,9 +271,6 @@ impl Drop for popup_data {
                 .expect("unborrowed popup palette");
             palette.palette = None;
             palette.default_palette = None;
-        }
-        if let Some(waiter) = self.waiter.take() {
-            waiter.finish(self.status);
         }
         drop(client);
     }
@@ -502,7 +562,7 @@ fn popup_resize(c_owner: &ClientRef, popup: &PopupGuard) {
     }
     if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_resize(&mut pd.s, pd.sx, pd.sy, 0 as ::core::ffi::c_int);
-        if !pd.job.is_empty() {
+        if pd.job.is_alive() {
             job_resize(&pd.job, pd.sx, pd.sy);
         }
     } else if pd.sx > 2 as u_int && pd.sy > 2 as u_int {
@@ -512,7 +572,7 @@ fn popup_resize(c_owner: &ClientRef, popup: &PopupGuard) {
             pd.sy.wrapping_sub(2 as u_int),
             0 as ::core::ffi::c_int,
         );
-        if !pd.job.is_empty() {
+        if pd.job.is_alive() {
             job_resize(
                 &pd.job,
                 pd.sx.wrapping_sub(2 as u_int),
@@ -575,7 +635,7 @@ fn popup_handle_drag(c_owner: &ClientRef, pd: &mut popup_data, m: &mouse_event) 
         pd.psy = pd.sy;
         if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
             screen_resize(&mut pd.s, pd.sx, pd.sy, 0 as ::core::ffi::c_int);
-            if !pd.job.is_empty() {
+            if pd.job.is_alive() {
                 job_resize(&pd.job, pd.sx, pd.sy);
             }
         } else {
@@ -585,7 +645,7 @@ fn popup_handle_drag(c_owner: &ClientRef, pd: &mut popup_data, m: &mouse_event) 
                 pd.sy.wrapping_sub(2 as u_int),
                 0 as ::core::ffi::c_int,
             );
-            if !pd.job.is_empty() {
+            if pd.job.is_alive() {
                 job_resize(
                     &pd.job,
                     pd.sx.wrapping_sub(2 as u_int),
@@ -701,7 +761,7 @@ fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_event) -> 
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !pd.job.is_empty() {
+    if pd.job.is_alive() {
         if event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -729,16 +789,9 @@ fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_event) -> 
     }
     0 as ::core::ffi::c_int
 }
-fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
+fn popup_output(data: &[u8], popup: &PopupGuard) {
     let mut data_guard = popup.data();
     let pd: &mut popup_data = &mut data_guard;
-    let stream = job_get_event(job);
-    let data = stream
-        .with_stream(|stream| {
-            evbuffer_pullup(bufferevent_get_input(stream), -1)
-                .map_or_else(Vec::new, |bytes| bytes.to_vec())
-        })
-        .unwrap_or_default();
     if data.is_empty() {
         return;
     }
@@ -754,29 +807,9 @@ fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
                 .expect("input context not already borrowed"),
             &mut pd.s,
             Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
-            &data,
+            data,
         )
     });
-    let _ = stream.with_stream(|stream| evbuffer_drain(bufferevent_get_input(stream), data.len()));
-}
-fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
-    let mut data_guard = popup.data();
-    let pd: &mut popup_data = &mut data_guard;
-    pd.status = completion
-        .status
-        .code()
-        .or(completion.status.signal())
-        .unwrap_or(0);
-    pd.job = refbox::Weak::new();
-    if pd.flags & POPUP_CLOSEEXIT != 0
-        || pd.flags & POPUP_CLOSEEXITZERO != 0 && pd.status == 0 as ::core::ffi::c_int
-    {
-        let client = pd.c.clone().expect("popup client");
-        drop(data_guard);
-        if popup.is_current(&client) {
-            client.clear_overlay();
-        }
-    }
 }
 pub fn popup_present(client: &ClientRef) -> i32 {
     client.popup_overlay().is_some() as i32
@@ -890,12 +923,10 @@ pub fn popup_modify(
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     0 as ::core::ffi::c_int
 }
-/// Show a popup on `c_owner`. `wait` is called only once the popup is
-/// published, and its waiter is finished with the popup's status when freed.
+/// Show a popup and return a future yielding its status after cleanup.
 pub(crate) fn popup_display(
     mut flags: ::core::ffi::c_int,
     mut lines: box_lines,
-    wait: impl FnOnce() -> CmdqWaiter,
     mut px: u_int,
     mut py: u_int,
     mut sx: u_int,
@@ -909,7 +940,7 @@ pub(crate) fn popup_display(
     s_owner: Option<&SessionRef>,
     style: Option<&CStr>,
     border_style: Option<&CStr>,
-) -> ::core::ffi::c_int {
+) -> Option<impl std::future::Future<Output = i32>> {
     let mut jx: u_int = 0;
     let mut jy: u_int = 0;
     let mut sytmp: style = style {
@@ -954,21 +985,21 @@ pub(crate) fn popup_display(
     if lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         if sx < 1 as u_int || sy < 1 as u_int {
             drop(window);
-            return -(1 as ::core::ffi::c_int);
+            return None;
         }
         jx = sx;
         jy = sy;
     } else {
         if sx < 3 as u_int || sy < 3 as u_int {
             drop(window);
-            return -(1 as ::core::ffi::c_int);
+            return None;
         }
         jx = sx.wrapping_sub(2 as u_int);
         jy = sy.wrapping_sub(2 as u_int);
     }
     if c_owner.terminal_size().0 < sx || c_owner.terminal_size().1 < sy {
         drop(window);
-        return -(1 as ::core::ffi::c_int);
+        return None;
     }
     let mut data = Box::new(popup_data::empty());
     data.title = popup_optional_string(title);
@@ -1044,8 +1075,9 @@ pub(crate) fn popup_display(
     pd.ppy = py;
     pd.psx = sx;
     pd.psy = sy;
-    let update = PopupHandle(owner.downgrade());
-    let complete = PopupHandle(owner.downgrade());
+    let (events, incoming) = tiri_rt::channel::channel();
+    let output = events.clone();
+    let exited = events.clone();
     pd.job = job_run(
         shellcmd,
         argv,
@@ -1053,14 +1085,20 @@ pub(crate) fn popup_display(
         s_owner,
         cwd,
         job_update_callback(move |job| {
-            if let Some(popup) = update.upgrade() {
-                popup_job_update_cb(job, &popup);
+            let bytes = job_get_event(job)
+                .with_stream(|stream| {
+                    let input = bufferevent_get_input(stream);
+                    let bytes = evbuffer_pullup(input, -1).unwrap_or_default().to_vec();
+                    evbuffer_drain(input, bytes.len());
+                    bytes
+                })
+                .unwrap_or_default();
+            if !bytes.is_empty() {
+                let _ = output.send(PopupEvent::Output(bytes));
             }
         }),
         Some(Box::new(move |completion| {
-            if let Some(popup) = complete.upgrade() {
-                popup_job_complete_cb(completion, &popup);
-            }
+            let _ = exited.send(PopupEvent::Exited(completion));
         })),
         None,
         JOB_NOWAIT | JOB_PTY | JOB_KEEPWRITE | JOB_DEFAULTSHELL,
@@ -1068,7 +1106,7 @@ pub(crate) fn popup_display(
         jy as ::core::ffi::c_int,
     );
     if pd.job.is_empty() {
-        return -(1 as ::core::ffi::c_int);
+        return None;
     }
     pd.ictx = Some(input_init(
         None,
@@ -1076,7 +1114,6 @@ pub(crate) fn popup_display(
         crate::shared::input::InputPalette::Popup(pd.palette.downgrade()),
         pd.c.as_ref(),
     ));
-    pd.waiter = Some(wait());
     let check_cb = popup_check_callback(PopupHandle(owner.downgrade()));
     let mode = PopupHandle(owner.downgrade());
     let mode_cb: overlay_mode_cb = Some(Box::new(move |_| {
@@ -1088,180 +1125,20 @@ pub(crate) fn popup_display(
             popup_draw(c, &popup);
         }
     }));
-    let key = PopupHandle(owner.downgrade());
-    let key_cb: overlay_key_cb = Some(Box::new(move |c, event| {
-        key.upgrade().map_or(0, |popup| popup_key(c, &popup, event))
-    }));
-    let resize = PopupHandle(owner.downgrade());
-    let resize_cb: overlay_resize_cb = Some(Box::new(move |c| {
-        if let Some(popup) = resize.upgrade() {
-            popup_resize(c, &popup);
-        }
-    }));
     drop(data_guard);
     drop(popup);
     c_owner.set_overlay(Overlay::popup(
-        owner, check_cb, mode_cb, draw_cb, key_cb, resize_cb,
+        PopupHandle(owner.downgrade()),
+        events,
+        check_cb,
+        mode_cb,
+        draw_cb,
     ));
-    0 as ::core::ffi::c_int
-}
-
-#[cfg(test)]
-mod waiter_tests {
-    use super::*;
-    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
-    use crate::server_client::queue_test_clients as clients;
-    use crate::session::session_new_for_test;
-    use crate::shared::command::{cmdq_item, CmdOutcome};
-    use std::cell::{Cell, RefCell};
-
-    /// Queue on `owner` a head that waits and an item recording that it ran;
-    /// return the head's waiter once it is suspended.
-    fn waiting_head(
-        owner: &ClientRef,
-        ran: &Rc<Cell<bool>>,
-    ) -> (CmdqWaiter, Weak<std::cell::RefCell<cmdq_item>>) {
-        let slot: Rc<RefCell<Option<CmdqWaiter>>> = Default::default();
-        let stored = slot.clone();
-        let head = cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"popup waiter",
-                Some(Box::new(move |item| {
-                    let (waiter, retval) = cmdq_wait(item);
-                    *stored.borrow_mut() = Some(waiter);
-                    retval
-                })),
-            ),
-        );
-        let ran = ran.clone();
-        cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"after popup",
-                Some(Box::new(move |_| {
-                    ran.set(true);
-                    CmdOutcome::Normal
-                })),
-            ),
-        );
-        assert_eq!(cmdq_next(Some(owner)), 0);
-        (slot.take().expect("suspended head"), head)
-    }
-
-    fn published(waiter: CmdqWaiter, status: i32) -> popup_data {
-        let mut data = popup_data::empty();
-        data.waiter = Some(waiter);
-        data.status = status;
-        data
-    }
-
-    #[test]
-    fn popup_cleanup_finishes_before_its_continuation_runs() {
-        let owner = clients::with_queue();
-        let mut data = popup_data::empty();
-        {
-            let mut palette = data.palette.try_borrow_mut().unwrap();
-            palette.palette = Some(Box::new([0; 256]));
-            palette.default_palette = Some(Box::new([0; 256]));
+    Some(
+        Popup {
+            owner,
+            client: Rc::downgrade(c_owner),
         }
-        let palette = data.palette.downgrade();
-        let (waiter, closed) = CmdqWaiter::detached(Rc::downgrade(&owner));
-        data.waiter = Some(waiter);
-        data.status = 7;
-        let completed = Rc::new(Cell::new(false));
-        let observed = completed.clone();
-        let client = Rc::downgrade(&owner);
-        cmdq_append(
-            Some(&owner),
-            cmdq_get_callback_owned(
-                c"popup closure",
-                Some(Box::new(move |_| {
-                    CmdOutcome::Suspend(Box::pin(async move {
-                        assert_eq!(closed.await, Some(()));
-                        let palette = palette.try_borrow().unwrap();
-                        assert!(palette.palette.is_none());
-                        assert!(palette.default_palette.is_none());
-                        assert_eq!(clients::return_value(&client.upgrade().unwrap()), 7);
-                        observed.set(true);
-                    }))
-                })),
-            ),
-        );
-        assert_eq!(cmdq_next(Some(&owner)), 0);
-        assert!(!completed.get());
-        drop(data);
-        assert!(completed.get());
-        assert_eq!(cmdq_next(Some(&owner)), 0);
-    }
-
-    #[test]
-    fn freeing_a_published_popup_reports_its_status_to_a_sessionless_waiter_only() {
-        let owner = clients::with_queue();
-        let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(&owner, &ran);
-        drop(published(waiter, 5));
-        assert_eq!(clients::return_value(&owner), 5);
-        assert!(ran.get());
-        assert_eq!(cmdq_next(Some(&owner)), 0);
-        assert!(head.upgrade().is_none());
-        assert!(ran.get());
-
-        let (waiter, head) = waiting_head(&owner, &ran);
-        let session = session_new_for_test();
-        clients::attach(&owner, Some(&session));
-        ran.set(false);
-        drop(published(waiter, 9));
-        assert_eq!(clients::return_value(&owner), 5);
-        assert_eq!(cmdq_next(Some(&owner)), 0);
-        assert!(head.upgrade().is_none());
-        assert!(ran.get());
-        clients::attach(&owner, None);
-    }
-
-    #[test]
-    fn freeing_an_unpublished_popup_resumes_nothing() {
-        let owner = clients::with_queue();
-        let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(&owner, &ran);
-        let mut data = popup_data::empty();
-        data.status = 5;
-        drop(data);
-        assert_eq!(clients::return_value(&owner), 0);
-        assert_eq!(cmdq_next(Some(&owner)), 0);
-        assert!(head.upgrade().is_some());
-        assert!(!ran.get());
-        drop(waiter);
-    }
-
-    #[test]
-    fn a_popup_holding_its_waiting_client_frees_it_when_freed() {
-        let owner = clients::with_queue();
-        let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(&owner, &ran);
-        let mut data = published(waiter, 3);
-        data.c = Some(owner.clone());
-        let client = Rc::downgrade(&owner);
-        drop(owner);
-        assert!(client.upgrade().is_some());
-        drop(data);
-        assert!(client.upgrade().is_none());
-        assert!(head.upgrade().is_none());
-        assert!(ran.get());
-    }
-
-    #[test]
-    fn a_waiting_client_freed_before_its_popup_cancels_the_wait() {
-        let owner = clients::with_queue();
-        let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(&owner, &ran);
-        let data = published(waiter, 3);
-        let client = Rc::downgrade(&owner);
-        drop(owner);
-        assert!(client.upgrade().is_none());
-        assert!(head.upgrade().is_none());
-        assert!(data.waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled));
-        drop(data);
-        assert!(!ran.get());
-    }
+        .run(incoming),
+    )
 }

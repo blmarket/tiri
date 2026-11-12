@@ -2,6 +2,7 @@
 #![feature(local_waker)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod channel;
 pub mod mio;
 pub mod oneshot;
 pub mod stream;

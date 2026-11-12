@@ -360,20 +360,17 @@ fn server_client_overlay_draw(c_owner: &ClientRef) {
     }
 }
 
-fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> Option<i32> {
-    let generation = c_owner.borrow().overlay_generation;
-    let mut callback = c_owner.borrow_mut().overlay.as_mut()?.key.take()?;
-    let result = callback(c_owner, event);
-    let mut c = c_owner.borrow_mut();
-    if c.overlay_generation != generation {
-        return Some(0);
-    }
-    if let Some(overlay) = c.overlay.as_mut() {
-        if overlay.key.is_none() {
-            overlay.key = Some(callback);
-        }
-    }
-    Some(result)
+fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> bool {
+    let events = c_owner
+        .borrow()
+        .overlay
+        .as_ref()
+        .map(|overlay| overlay.events.clone());
+    let Some(events) = events else { return false };
+    let mut input = event.metadata_snapshot();
+    input.bytes = event.bytes.clone();
+    let _ = events.send(crate::popup::PopupEvent::Key(Box::new(input)));
+    true
 }
 
 fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int, u_int)> {
@@ -393,23 +390,13 @@ fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int,
 }
 
 fn server_client_overlay_resize(c_owner: &ClientRef) {
-    let generation = c_owner.borrow().overlay_generation;
-    let Some(mut callback) = c_owner
-        .borrow_mut()
+    let events = c_owner
+        .borrow()
         .overlay
-        .as_mut()
-        .and_then(|overlay| overlay.resize.take())
-    else {
-        return;
-    };
-    callback(c_owner);
-    let mut c = c_owner.borrow_mut();
-    if c.overlay_generation == generation {
-        if let Some(overlay) = c.overlay.as_mut() {
-            if overlay.resize.is_none() {
-                overlay.resize = Some(callback);
-            }
-        }
+        .as_ref()
+        .map(|overlay| overlay.events.clone());
+    if let Some(events) = events {
+        let _ = events.send(crate::popup::PopupEvent::Resize);
     }
 }
 
@@ -2188,15 +2175,8 @@ fn server_client_handle_key0(
             }
             status_message_clear(owner);
         }
-        if let Some(result) = server_client_overlay_key(owner, event) {
-            match result {
-                0 => return 0 as ::core::ffi::c_int,
-                1 => {
-                    server_client_clear_overlay(owner);
-                    return 0 as ::core::ffi::c_int;
-                }
-                _ => {}
-            }
+        if server_client_overlay_key(owner, event) {
+            return 0;
         }
         server_client_clear_overlay(owner);
         let active_pane_owner =
@@ -3150,16 +3130,7 @@ fn server_client_dispatch(owner: &ClientRef, message: crate::shared::process::Pe
                     tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
                 };
                 recalculate_sizes();
-                if !owner
-                    .borrow()
-                    .overlay
-                    .as_ref()
-                    .is_some_and(|overlay| overlay.resize.is_some())
-                {
-                    server_client_clear_overlay(owner);
-                } else {
-                    server_client_overlay_resize(owner);
-                }
+                server_client_overlay_resize(owner);
                 owner.borrow_mut().flags |= CLIENT_ALLREDRAWFLAGS as u64;
                 if !owner.borrow().session_handle().is_none() {
                     server_client_fire_resized(owner, old_sx, old_sy);
