@@ -2,8 +2,12 @@
 
 Status: feasibility study, nothing implemented.
 
-Constraint: tmux compatibility is a goal, control mode especially. Guard
-blocks, hook order and which follow-ups run must stay as they are today.
+Constraint: this refactor must not change any observable behavior. Existing
+control clients, including iTerm2, must work without modifications. Preserve
+guard blocks and their timing, reply flags and ordering, notifications, hook
+selection and execution order, follow-ups, group failure rules, and cancellation
+behavior, including existing edge cases. Internal mechanics remain design work;
+behavior-changing alternatives are outside this refactor.
 
 ## Verdict
 
@@ -200,13 +204,19 @@ async fn run_one(command: &cmd, invocation: &mut Invocation<'_>) -> CmdResult {
 }
 ```
 
-Suspending commands need a separate compatibility design: today after-hooks
-are collected and the closing guard is emitted when the body returns
-`Suspend`, before its continuation runs. Follow-ups inserted by that
-continuation can precede already-collected hooks. Awaiting the entire body
-before the epilogue, or always executing hooks before tails, would change
-behavior. Settle that boundary before implementing the async runner; it does
-not require shared ownership of context.
+Suspending commands must preserve today's boundary: after-hooks are collected
+and the closing guard is emitted when the body returns `Suspend`, before its
+continuation is polled, even if that continuation completes immediately.
+Follow-ups inserted by the continuation can precede already-collected hooks;
+preserve the ordering of each existing insertion path. A continuation failure
+does not emit another closing guard, fire `command-error` in place of the
+already-collected after-hook, or drop the remaining commands of its group.
+Awaiting the entire body before the epilogue, or always executing hooks before
+tails, would change behavior and is excluded. Implement an explicit internal
+boundary rather than inferring suspension from the first `Poll::Pending`.
+The phase state, hook storage and guard bookkeeping stay private to `cmd`;
+external callers only await `cmd::run`. The exact internal representation
+remains implementation work and does not require shared ownership of context.
 
 A body that used `cmdq_insert_after` returns its tail instead of awaiting it:
 
@@ -276,7 +286,7 @@ src/reactor/lane.rs   Lane
 | `cmdq_get_*`, `cmdq_print`, `cmdq_error`, `cmdq_guard` | `Invocation` methods |
 | `cmdq_background`, `cmdq_cancel_background` | a server-owned task set (`reactor::task_start`) |
 
-## Risks and open questions
+## Implementation risks and audits
 
 1. **One owner per free operation.** Dropping a command future is the
    cancellation path, which fits the project's direction (Drop over explicit
@@ -295,7 +305,7 @@ src/reactor/lane.rs   Lane
 2. **Parked-forever continuations.** Several continuations do
    `pending().await` when their source is freed without completing, to match
    tmux never resuming the item. That blocks the lane until the client dies.
-   Decide whether to keep it or resolve to `Err(CmdFailed)`.
+   Preserve this behavior; resolving to `Err(CmdFailed)` would change it.
 3. **Reference cycles.** `if-shell`, `run-shell`, `load-buffer` and
    `source-file` keep a strong `ClientRef` in data owned by the continuation,
    which the client's own queue owns. The same shape carries over. Rule to
@@ -306,16 +316,19 @@ src/reactor/lane.rs   Lane
    `spawn_context.item` store a `Weak<RefCell<cmdq_item>>`. If every use is
    inside one sync call they become `Option<&Invocation>`; `format_tree` needs
    checking since format jobs may outlive the call.
-6. **Running-command accessor only during the first poll.** Faithful to
-   today, but subtle. The alternative, valid during any poll, changes where
-   monitor hooks land for waiting commands.
+6. **Running-command visibility.** Preserve today's global-queue visibility,
+   including hiding the item while its continuation is polled. Use the explicit
+   suspension boundary rather than treating the entire first async poll as
+   visible: that poll may also execute continuation code. Preserve the resumed
+   dispatch behavior. Extending visibility to continuation polls changes where
+   monitor hooks land and is excluded.
 7. **Tests.** About 100 `cmdq_next` call sites in tests assert returned item
    counts and build callback items by hand. They need rewriting against
    `Lane::drive` or by polling `cmd::run` directly. This is the largest
    mechanical cost after the entry signature change.
-8. **Should errors carry data?** `CmdFailed` keeps side-effect reporting.
-   Returning the message would let callers decide where it goes, but that is a
-   separate, larger change.
+8. **Error reporting.** Keep `CmdFailed` as a marker and preserve side-effect
+   reporting, including its destination and timing. Redesigning error routing
+   is outside this refactor.
 9. **Context ownership audit.** Classify each existing state user as borrowing
    the enclosing run's context or owning a separately initialized context.
    Include hooks, config completion, prepared commands and detached work.
@@ -323,9 +336,10 @@ src/reactor/lane.rs   Lane
    with fresh formats or flags. Retained format/parser/spawn observers must
    borrow only for valid lifetimes or retain the specific owned data they need;
    do not reintroduce shared command-state ownership to keep them alive.
-10. **Suspension boundary.** Resolve epilogue timing and insertion order for
-    suspended bodies before replacing `Suspend`. The context ownership design
-    does not settle this execution-order question.
+10. **Suspension mechanism.** Implement the required epilogue timing and
+    insertion order for suspended bodies before replacing `Suspend`. These
+    semantics are fixed; the remaining design work is their private
+    representation and its interaction with context borrows.
 
 ## Phasing
 
