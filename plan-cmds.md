@@ -23,14 +23,15 @@ It cannot be *only* a future. Three things have to survive in some form:
    "run this after me, before the rest of the queue". Awaiting the inserted
    commands inside the body would run them before the outer command's
    after-hook and inside its control-mode `%begin`/`%end` block. Instead the
-   body returns its tail future and the runner awaits it after the epilogue,
-   so the whole sequence is one `.await` chain (see "Execution order").
+   body returns a tail that receives the context when the runner executes it
+   after the epilogue, so the whole sequence is one `.await` chain (see
+   "Execution order" for the suspension compatibility constraint).
 3. **A small ambient current command for hooks.** `hooks.rs` reads
    `cmdq_running()` for the `NOHOOKS` check and for monitor hooks.
 
-With those three kept small, every external caller reduces to
-`lane.push(cmd::run(commands, context))`, or `cmd::run(..).await` from async
-code, and dropping the future cancels.
+With those three kept small, every external caller reduces to a lane-owned
+async block awaiting `cmd::run(commands, context)`, or `cmd::run(..).await`
+from async code, and dropping the future cancels.
 
 ## How it works today
 
@@ -83,6 +84,30 @@ pub struct CmdFailed;
 `cmdq_copy_state` / `cmdq_add_format(s)`. `CmdFailed` is a marker: the error
 was already reported, as today.
 
+### Context ownership
+
+- The outer `run` future owns one `Context`. Commands in that run borrow it
+  sequentially through `Invocation<'ctx>`, which holds `&'ctx mut Context`.
+  Changes to `current` and formats remain visible to subsequent commands.
+- Follow-ups that share `item.state` today borrow that same context when they
+  execute. They neither capture an owned context nor retain an invocation.
+- Hook sequences and other paths that create or copy state today receive an
+  independently owned context with the same initialization semantics. Copying
+  must preserve today's treatment of current target, event, flags and formats;
+  it is not a blanket clone of every field. Within each such sequence, commands
+  borrow its context sequentially.
+- Detached background work owns an explicitly constructed context and holds
+  weak client handles across awaits. It does not borrow the foreground run.
+- The final design has no `cmdq_state`, `Rc<cmdq_state>` or state-sharing
+  `RefCell`. Shared access during sequential execution uses ordinary borrows;
+  independently scheduled work owns independent state. Audit existing sharing
+  and copying sites before the ownership cutover.
+
+Public `run` takes ownership to produce a `'static` future for the lane. Inside
+the runner, one private list-execution function borrows `&mut Context`; both
+`run` and tails use that implementation. This is an ownership boundary, not a
+second public command API.
+
 The sequencer is generic and lives outside `cmd`:
 
 ```rust
@@ -102,44 +127,54 @@ pending.
 Callback items disappear into ordinary code after an `.await`:
 
 ```rust
+let client_weak = ClientRef::downgrade(&client);
 client.lane().push(async move {
     let _ = cmd::run(commands, context).await;
-    server_client_command_done(&client);
+    if let Some(client) = client_weak.upgrade() {
+        server_client_command_done(&client);
+    }
 });
 ```
 
 ### What a command body sees
 
 ```rust
-pub type Tail = Pin<Box<dyn Future<Output = ()>>>;
+pub type Tail = Box<
+    dyn for<'ctx> FnOnce(&'ctx mut Context)
+        -> Pin<Box<dyn Future<Output = ()> + 'ctx>>,
+>;
 pub struct ExecOutcome {
     pub result: CmdResult,
     pub tail: Option<Tail>,
 }
 pub type cmd_exec_fn =
-    for<'a> fn(&'a cmd, &'a mut Invocation) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>>;
+    for<'a, 'ctx> fn(&'a cmd, &'a mut Invocation<'ctx>)
+        -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>>;
 
-impl Invocation {
+impl Invocation<'_> {
     pub fn client(&self) -> Option<ClientRef>;
     pub fn target_client(&self) -> Option<ClientRef>;
     pub fn source(&self) -> &cmd_find_state;
     pub fn target(&self) -> &cmd_find_state;
     pub fn context(&self) -> &Context;
+    pub fn context_mut(&mut self) -> &mut Context;
     pub fn print(&self, ...);
     pub fn error(&self, ...);
 }
 ```
 
-- `Invocation` is a plain struct owned by the runner's frame. No `Rc`, no
-  `RefCell`, no `Weak`. `cmdq_resumed` and the "do not retain the item across a
-  poll" assertion go away because the borrow checker enforces it.
+- `Invocation` is a plain struct owned by the runner's frame, borrowing its
+  context. It has no shared ownership wrapper. `cmdq_resumed` and the "do not
+  retain the item across a poll" assertion go away because the borrow checker
+  enforces it. Client and target references remain nonowning handles.
 - One signature for all 89 entries. The 78 sync ones wrap their body in
   `Box::pin(async move { .. })`. A separate sync signature would be a second API
   for the same use case.
 
 ### Execution order
 
-Today, for one command, `cmdq_fire_command` and the queue produce:
+Today, for a command that completes synchronously, `cmdq_fire_command` and the
+queue produce:
 
 1. `%begin` guard
 2. body, which may insert follow-ups F after the item
@@ -148,22 +183,30 @@ Today, for one command, `cmdq_fire_command` and the queue produce:
 4. `%end` or `%error` guard
 5. H runs, then F, then the rest of the group (skipped if the body failed)
 
-The runner keeps exactly this as one chain. Nothing is scheduled; position in
-the chain is the order:
+For a non-suspending command, the runner expresses this as one chain. The
+sketch below shows context borrowing for tails, not the suspension protocol:
 
 ```rust
-async fn run_one(command: &cmd, invocation: &mut Invocation) -> CmdResult {
+async fn run_one(command: &cmd, invocation: &mut Invocation<'_>) -> CmdResult {
     guard(invocation, c"begin");
     let outcome = (command.entry.exec)(command, invocation).await;
     let hooks = fire_epilogue_event(command, invocation, &outcome.result);
     guard(invocation, if outcome.result.is_ok() { c"end" } else { c"error" });
     hooks.await;
     if let Some(tail) = outcome.tail {
-        tail.await;
+        tail(invocation.context_mut()).await;
     }
     outcome.result
 }
 ```
+
+Suspending commands need a separate compatibility design: today after-hooks
+are collected and the closing guard is emitted when the body returns
+`Suspend`, before its continuation runs. Follow-ups inserted by that
+continuation can precede already-collected hooks. Awaiting the entire body
+before the epilogue, or always executing hooks before tails, would change
+behavior. Settle that boundary before implementing the async runner; it does
+not require shared ownership of context.
 
 A body that used `cmdq_insert_after` returns its tail instead of awaiting it:
 
@@ -172,15 +215,16 @@ let status = job.await;
 let branch = if status.success() { then_branch } else { else_branch };
 ExecOutcome {
     result: Ok(()),
-    tail: Some(Box::pin(async move {
-        let _ = cmd::run(branch, context).await;
-    })),
+    tail: Some(Box::new(move |context| Box::pin(async move {
+        let _ = run_list(branch, context).await;
+    }))),
 }
 ```
 
-- The tail is a future, not a command list, because some tails are more than
-  commands: `source-file` runs every loaded list and then its completion step.
-  Order inside a tail is plain sequential code, so the anchor threading
+- The tail is a callable that produces a future when given `&mut Context`,
+  rather than a future that owns or captures the context. It can perform more
+  than commands: `source-file` runs every loaded list and then its completion
+  step. Order inside a tail is plain sequential code, so the anchor threading
   (`cdata.after`, `new_after`) goes away.
 - A failing tail affects only its own groups, as inserted items do today. The
   outer command's result is fixed before the tail runs.
@@ -188,8 +232,11 @@ ExecOutcome {
   follow-ups (`source-file` with a bad glob) keeps those follow-ups today, so
   the runner awaits the tail on failure too; failure only skips the rest of
   the group.
-- The tail must not borrow the `Invocation`. It shares the `cmdq_state`, as
-  inserted items share `item.state` today, so that `Rc` stays.
+- A returned tail owns its captures and must not borrow the `Invocation` or
+  capture the run's context. Once the body and epilogue release their borrows,
+  the runner lends its context to the tail. The borrow lasts until the tail's
+  future completes or is dropped, then the rest of the list uses the same
+  context. No `Rc<cmdq_state>` is needed.
 
 ### Hooks
 
@@ -218,14 +265,14 @@ src/reactor/lane.rs   Lane
 | Removed | Replaced by |
 | --- | --- |
 | `cmdq_item`, `cmdq_list`, `cmdq_new` | `Invocation` (private to a run), `Lane` |
-| `cmdq_append`, `cmdq_get_command`, `cmd_parse_and_append` | `lane.push(cmd::run(..))` |
+| `cmdq_append`, `cmdq_get_command`, `cmd_parse_and_append` | lane-owned async block awaiting `cmd::run(..)` |
 | `cmdq_get_callback_owned`, `cmdq_get_error` | code after `.await`, or a plain async block on the lane |
 | `cmdq_insert_after` | the `Tail` a body returns |
 | `cmdq_next` | `Lane::drive` |
 | `cmdq_running`, `EventPayloadIdentity::QueueItem` | runner-awaited hook commands; one narrow accessor for `NOHOOKS` and monitor hooks |
 | `CmdOutcome::{Suspend, Stop}`, `cmdq_resumed` | `.await` inside the body |
 | `cmdq_wait`, `CmdqWaiter` | `tiri_rt::oneshot` awaited in the body; `pane.wait(event) -> impl Future` |
-| `cmdq_new_state`, `cmdq_copy_state`, `cmdq_add_format(s)`, `cmdq_state` | `Context` |
+| `cmdq_new_state`, `cmdq_copy_state`, `cmdq_add_format(s)`, `cmdq_state`, `Rc<cmdq_state>` | owned `Context`, borrowed sequentially by invocations and tails |
 | `cmdq_get_*`, `cmdq_print`, `cmdq_error`, `cmdq_guard` | `Invocation` methods |
 | `cmdq_background`, `cmdq_cancel_background` | a server-owned task set (`reactor::task_start`) |
 
@@ -269,6 +316,16 @@ src/reactor/lane.rs   Lane
 8. **Should errors carry data?** `CmdFailed` keeps side-effect reporting.
    Returning the message would let callers decide where it goes, but that is a
    separate, larger change.
+9. **Context ownership audit.** Classify each existing state user as borrowing
+   the enclosing run's context or owning a separately initialized context.
+   Include hooks, config completion, prepared commands and detached work.
+   Preserve which mutations reach subsequent commands and which paths start
+   with fresh formats or flags. Retained format/parser/spawn observers must
+   borrow only for valid lifetimes or retain the specific owned data they need;
+   do not reintroduce shared command-state ownership to keep them alive.
+10. **Suspension boundary.** Resolve epilogue timing and insertion order for
+    suspended bodies before replacing `Suspend`. The context ownership design
+    does not settle this execution-order question.
 
 ## Phasing
 
@@ -280,11 +337,13 @@ deletes the old API.
    holding boxed futures. `cmdq_append` becomes a thin push of a per-item
    future. No behaviour change.
 2. **Context and Invocation.** Replace `Rc<RefCell<cmdq_item>>` with
-   `&mut Invocation` in the exec signature and in the external context users
-   (`format`, `find`, `window_pane`, modes). Still sync, still `CmdOutcome`.
-   Largest diff, purely mechanical.
+   borrowed invocation/context access in the exec signature and in the external
+   context users (`format`, `find`, `window_pane`, modes). Still sync, still
+   `CmdOutcome`. Audit state sharing, copying and retained observers here;
+   this phase is not purely mechanical. Do not add a parallel public state API.
 3. **Tails.** Let a body return its tail and have the runner own the
-   epilogue chain (hook event, guard, hook commands, tail). Migrate all
+   epilogue chain, preserving the suspension boundary and insertion order.
+   Tails receive a context borrow when executed. Migrate all
    `cmdq_insert_after` users and the after-hook path; delete
    `cmdq_insert_after` and the payload identity. Waiting bodies still use
    `Suspend` here, so their continuation yields the tail.
@@ -292,9 +351,15 @@ deletes the old API.
    waiting entries to straight-line `.await`, delete `Suspend`, `cmdq_resumed`,
    `cmdq_wait`, `CmdqWaiter`. Do the cancellation audit from risk 1 here.
 5. **`cmd::run`.** Expose it, migrate external enqueue sites to
-   `lane.push(cmd::run(..))`, fold callback items into async blocks, delete the
-   remaining `cmdq_*` surface and `cmd_parse_and_append`.
+   lane-owned async blocks that await `cmd::run(..)` and discard its result,
+   and fold callback items into those blocks. Move state ownership into run
+   frames, lending contexts to invocations and tails and constructing separate
+   contexts where the audit requires them. Migrate every remaining state user
+   and delete `cmdq_state`, `Rc<cmdq_state>`, their state-management functions,
+   the remaining `cmdq_*` surface and `cmd_parse_and_append` in the same cutover.
 
-Phases 1 to 3 are low risk and independently useful. Phase 4 is where behaviour
-can change; `tests/command_suspension.rs` and the control-mode tests are the
-guard.
+The state ownership cutover must remove the old API completely; a shared-state
+adapter is not the final design. Validate the intermediate ownership boundaries
+before committing to these phase splits. Suspension compatibility is a
+prerequisite for phases 3 and 4; `tests/command_suspension.rs` and the
+control-mode tests are the guard.
