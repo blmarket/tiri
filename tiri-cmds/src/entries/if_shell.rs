@@ -1,22 +1,27 @@
-use crate::shared::command::CmdOutcome;
 use crate::arguments::{
-    args, args_command_state, args_count, args_has, args_make_commands, args_make_commands_now,
-    args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
-    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
+    args_command_state, args_make_commands, args_make_commands_now, args_make_commands_prepare,
 };
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed,
+    cmdq_append, cmdq_error, cmdq_get_command, cmdq_insert_after, cmdq_resumed,
+};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count, args_has,
+    args_parse, args_parse_type, args_string,
 };
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::job::job_run;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_CANFAIL;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::rc::{Rc, Weak};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int};
@@ -66,7 +71,7 @@ fn cmd_if_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let _tc: Option<ClientRef> = tc_owner.clone();
@@ -151,7 +156,7 @@ fn cmd_if_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
         }));
         return CmdOutcome::Normal;
     }
-    let (done, completed) = crate::tiri_rt::oneshot::channel();
+    let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
     job.try_borrow_mut()
         .expect("newly registered job")
         .completecb = Some(Box::new(move |completion| {
@@ -168,7 +173,7 @@ fn cmd_if_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
 /// freed without completing never resumes the item (tmux's cmd_if_shell_free):
 /// release the data, and the client with it, then park.
 async fn cmd_if_shell_complete(
-    completed: crate::tiri_rt::oneshot::Receiver<JobCompletion>,
+    completed: tiri_core::tiri_rt::oneshot::Receiver<JobCompletion>,
     mut cdata: Box<cmd_if_shell_data>,
     item: Weak<cmdq_item>,
 ) {

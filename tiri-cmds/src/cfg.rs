@@ -1,36 +1,40 @@
-use crate::shared::command::CmdOutcome;
 use crate::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::cmd::queue::{
-    cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_client,
-    cmdq_get_command, cmdq_get_state_owned, cmdq_insert_after, cmdq_new_state, cmdq_print,
-    cmdq_wait, CmdqWaiter,
+    cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_command,
+    cmdq_insert_after, cmdq_print, cmdq_wait,
 };
-use crate::control::control_notify_write;
-use crate::format::bytes::format_message_with;
-use crate::format::bytes::write_cstr;
-use crate::log::{log_cstr, log_debug};
-use crate::prompt_history::prompt_load_history;
-use crate::server_client::Client as _;
-use crate::server_client::ClientRegistry;
-use crate::session::sessions;
-use crate::winlink::winlink_window;
+use tiri_core::actions::Completion as CmdqWaiter;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned, new_state as cmdq_new_state,
+};
+use tiri_core::control::control_notify_write;
+use tiri_core::format::bytes::format_message_with;
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::log::{log_cstr, log_debug};
+use tiri_core::prompt_history::prompt_load_history;
+use tiri_core::server_client::Client as _;
+use tiri_core::server_client::ClientRegistry;
+use tiri_core::session::sessions;
+use tiri_core::winlink::winlink_window;
 
-use crate::session::Session as _;
-use crate::shared::abi::{u_int, uint64_t};
-use crate::shared::client::CLIENT_CONTROL;
-use crate::shared::client::{ClientRef, ClientWeak};
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::cmd_parse_input;
-use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
-use crate::shared::errno::ErrorText;
-use crate::shared::session::SessionRef;
-use crate::window::Window as _;
-use crate::window_copy::{window_copy_add, window_view_mode};
-use crate::window_pane::WindowPane as _;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::sync::{Mutex, OnceLock};
+use tiri_core::session::Session as _;
+use tiri_core::shared::abi::{u_int, uint64_t};
+use tiri_core::shared::client::CLIENT_CONTROL;
+use tiri_core::shared::client::{ClientRef, ClientWeak};
+use tiri_core::shared::errno::ErrorText;
+use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
+use tiri_core::window::Window as _;
+use tiri_core::window_copy::{window_copy_add, window_view_mode};
+use tiri_core::window_pane::WindowPane as _;
 thread_local! {
     static CFG_CLIENT: std::cell::Cell<ClientWeak> = const { std::cell::Cell::new(std::rc::Weak::new()) };
     static CFG_FINISHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -338,20 +342,20 @@ pub fn cfg_show_causes(s_owner: Option<&SessionRef>) {
 
 #[cfg(test)]
 mod cfg_wait_tests {
-    use crate::cmd::queue::CmdqWaiter;
-    use crate::shared::command::CmdOutcome;
-    use tiri_core::server_client::Client as _;
     use super::{
         CFG_FINISHED, CFG_WAITER, ClientRef, cfg_client_done, cfg_done, cfg_finished, cmdq_append,
         cmdq_get_callback_owned, cmdq_item,
     };
     use crate::cmd::queue::cmdq_next;
-    use crate::options::options_table;
-    use crate::options::OptionsScope;
-    use crate::shared::client::CLIENT_DEAD;
     use crate::test_support::clients;
     use std::cell::Cell;
     use std::rc::{Rc, Weak};
+    use tiri_core::actions::Completion as CmdqWaiter;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::options::OptionsScope;
+    use tiri_core::options::options_table;
+    use tiri_core::server_client::Client as _;
+    use tiri_core::shared::client::CLIENT_DEAD;
 
     /// An unfinished config, and server options with no history file for
     /// `cfg_done`.
@@ -416,7 +420,9 @@ mod cfg_wait_tests {
         let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
         let head = startup_queue(&owner, &ran, &released);
         assert_eq!(cmdq_next(Some(&owner)), 0);
-        assert!(CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_cancelled())));
+        assert!(
+            CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_cancelled()))
+        );
         assert!(!ran.get());
 
         assert!(matches!(cfg_done(), CmdOutcome::Normal));

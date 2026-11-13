@@ -1,11 +1,12 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use tiri_core::shared::abi::u_char;
@@ -38,7 +39,7 @@ pub static cmd_paste_buffer_entry: cmd_entry = {
 fn cmd_paste_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let pane_owner = target.pane_handle().expect("paste target pane");
     let pb;
     let mut bufname: Option<&CStr> = None;

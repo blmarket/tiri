@@ -1,21 +1,29 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_count, args_get, args_has, args_parse, args_string, args_strtonum_result};
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::cmd_find_best_client;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
+use crate::cmd::queue::{cmdq_error, cmdq_print};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{
+    args_count, args_get, args_has, args_parse, args_string, args_strtonum_result,
+};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{format_create, format_defaults, format_each, format_expand_time_cstring};
 use tiri_core::json::{json_parse, json_to_string};
 use tiri_core::reactor::{evbuffer_add_formatted, evbuffer_new};
+use tiri_core::shared::target::best_client as cmd_find_best_client;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL};
+use crate::shared::command::{
+    CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL,
+};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
-use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_CONTROL;
+use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::format::{FORMAT_NONE, FORMAT_VERBOSE};
 use tiri_core::shared::limits::UINT_MAX;
 use tiri_core::shared::window::winlink;
@@ -52,12 +60,12 @@ fn cmd_display_message_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) 
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut c: Option<ClientRef> = None;
     let s = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let wp = target.pane_handle();
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

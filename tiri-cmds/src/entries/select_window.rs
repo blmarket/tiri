@@ -1,19 +1,24 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
+use crate::cmd::queue::{cmdq_error, cmdq_insert_hook};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
+};
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_client::Client as _;
 use tiri_core::server_fn::server_redraw_session;
 use tiri_core::session::Session;
 use tiri_core::winlink::{winlink_index, winlink_window};
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_TARGET_SESSION_USAGE;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::winlink;
 use tiri_core::window::Window as _;
 pub static cmd_select_window_entry: cmd_entry = {
@@ -122,8 +127,8 @@ fn cmd_select_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&(item));
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let target = tiri_core::actions::queue::target(&item);
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;

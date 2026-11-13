@@ -1,12 +1,14 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_get_state_owned;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::execution_state as cmdq_get_state_owned;
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::server_fn::server_redraw_window;
-use tiri_core::shared::window::winlink;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::WindowRef;
+use tiri_core::shared::window::winlink;
 use tiri_core::window::Window as _;
 pub static cmd_rotate_window_entry: cmd_entry = {
     cmd_entry {
@@ -38,8 +40,8 @@ fn cmd_rotate_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let target = tiri_core::actions::queue::target(&item);
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let window_owner = target.w.upgrade().expect("live rotation window");
     let result = {
         let down = args_has(args, b'D') != 0;

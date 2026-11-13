@@ -1,21 +1,24 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
+use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::{cmd_get_args, cmd_get_entry};
+use crate::key_bindings::key_bindings_dispatch;
+use crate::shared::command::CMD_FIND_PANE;
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{event as cmdq_get_event, target_client as cmdq_get_target_client};
+use tiri_core::arguments::{
     args, args_count, args_has, args_parse, args_string, args_strtonum_and_expand_result,
 };
-use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
-use crate::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
-use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
+use tiri_core::bindings::{key_bindings_get, key_bindings_get_table};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::key_string::key_string_parse_cstr;
 use tiri_core::options::options_get_number;
 use tiri_core::server_client::Client;
 use tiri_core::session::Session;
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
-use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_READONLY;
+use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::grid::utf8_char;
 use tiri_core::shared::key::key_event;
 use tiri_core::shared::key::{
@@ -25,6 +28,7 @@ use tiri_core::shared::limits::UINT_MAX;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::utf8::UTF8_DONE;
 use tiri_core::shared::window::{window_mode_entry, winlink};
+use tiri_core::text::action_helpers::mouse_pane as cmd_mouse_pane;
 use tiri_core::text::numbers::strtol_prefix;
 use tiri_core::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use tiri_core::window::WindowPane;
@@ -86,13 +90,13 @@ fn cmd_send_keys_inject_key(
 ) -> std::rc::Weak<cmdq_item> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     let item = item_handle.borrow();
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut _s: Option<SessionRef> = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let pane = target.pane_handle().expect("key target pane");
-    let mut wme: crate::refbox::Weak<window_mode_entry> = crate::refbox::Weak::new();
+    let mut wme: tiri_core::refbox::Weak<window_mode_entry> = tiri_core::refbox::Weak::new();
     let mut new_after = crate::runtime::weak(after.clone());
     if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_none() {
@@ -236,14 +240,14 @@ fn cmd_send_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     let item = item_handle.borrow();
     let mouse_pane_owner;
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let pane = target.pane_handle().expect("key target pane");
     let mut event = cmdq_get_event(&(item));
-    let mut wme: crate::refbox::Weak<window_mode_entry> = pane.mode_entry();
+    let mut wme: tiri_core::refbox::Weak<window_mode_entry> = pane.mode_entry();
     let mut after = std::rc::Rc::downgrade(item_handle);
     let mut key: key_code = 0;
     let mut i: u_int = 0;

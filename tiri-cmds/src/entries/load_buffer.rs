@@ -1,17 +1,21 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
-use tiri_core::file::{file_read_wait, FileOutcome};
+use crate::cmd::queue::{cmdq_error, cmdq_resumed};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
+use tiri_core::file::{FileOutcome, file_read_wait};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::paste::paste_set_owned;
 use tiri_core::reactor::evbuffer_pullup;
 use tiri_core::shared::errno::ErrorText;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
 use tiri_core::server_client::Client as _;
@@ -128,17 +132,17 @@ fn cmd_load_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
 
 #[cfg(test)]
 mod tests {
-    use crate::shared::command::CmdOutcome;
     use super::{
         CStr, CString, ClientRef, FileOutcome, Weak, cmd_load_buffer_complete,
         cmd_load_buffer_data, cmdq_item, file_read_wait,
     };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
     use crate::test_support::clients;
-    use crate::tiri_buffer::SegmentedBuf;
     use std::rc::Rc;
     use std::time::Duration;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
     use tiri_core::paste::{paste_buffer_data, paste_get_name};
+    use tiri_core::tiri_buffer::SegmentedBuf;
 
     fn buffer(name: &CStr) -> Option<Vec<u8>> {
         let pb = paste_get_name(name)?;
@@ -172,7 +176,7 @@ mod tests {
     #[test]
     fn a_reported_file_is_stored_inside_the_send() {
         let owner = clients::with_queue();
-        let (tx, rx) = crate::tiri_rt::oneshot::channel();
+        let (tx, rx) = tiri_core::tiri_rt::oneshot::channel();
         let cdata = cmd_load_buffer_data {
             client: None,
             name: Some(c"loaded".to_owned()),
@@ -192,8 +196,8 @@ mod tests {
 
     #[test]
     fn a_local_file_is_stored_one_runtime_turn_later() {
-        use crate::tiri_rt::Runtime as _;
-        let mut runtime = crate::tiri_rt::mio::Runtime::new().unwrap();
+        use tiri_core::tiri_rt::Runtime as _;
+        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let path = std::env::temp_dir().join(format!("tiri-load-{}", std::process::id()));
             std::fs::write(&path, b"local").unwrap();
@@ -217,7 +221,7 @@ mod tests {
     #[test]
     fn a_dead_file_client_releases_the_target_client_and_parks() {
         let owner = clients::with_queue();
-        let (tx, rx) = crate::tiri_rt::oneshot::channel();
+        let (tx, rx) = tiri_core::tiri_rt::oneshot::channel();
         let cdata = cmd_load_buffer_data {
             client: Some(owner.clone()),
             name: Some(c"lost".to_owned()),

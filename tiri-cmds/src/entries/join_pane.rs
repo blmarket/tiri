@@ -1,7 +1,8 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned};
+use crate::cmd::queue::cmdq_error;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::execution_state as cmdq_get_state_owned;
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::events::events_fire_window;
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_client::Client as _;
@@ -12,13 +13,15 @@ use tiri_core::server_fn::{
 use tiri_core::window::Window as _;
 use tiri_core::winlink::winlink_window;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::session::Session;
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::WindowRef;
 
 use tiri_core::shared::window::winlink;
@@ -52,11 +55,11 @@ fn cmd_join_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let source = crate::cmd::queue::cmdq_get_source(&item);
+    let target = tiri_core::actions::queue::target(&item);
+    let source = tiri_core::actions::queue::source(&item);
     let mut dst_s: Option<SessionRef> = None;
-    let mut src_wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
-    let mut dst_wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut src_wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
+    let mut dst_wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut dst_idx: ::core::ffi::c_int = 0;
     dst_s = target.session_handle();
     dst_wl = target.winlink_handle();

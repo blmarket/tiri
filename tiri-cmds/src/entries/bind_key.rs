@@ -1,16 +1,17 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
-    args, args_count, args_get, args_has, args_parse, args_parse_type, args_string, args_value,
-    ArgsParseError, ARGS_PARSE_COMMANDS_OR_STRING,
-};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::cmd::queue::cmdq_error;
-use crate::key_bindings::key_bindings_add;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_count, args_get, args_has,
+    args_parse, args_parse_type, args_string, args_value,
+};
+use tiri_core::bindings::key_bindings_add;
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::key_string::key_string_parse_cstr;
 use tiri_core::shared::abi::{u_char, u_int};

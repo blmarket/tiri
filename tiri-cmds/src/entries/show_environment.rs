@@ -1,11 +1,12 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{cmdq_error, cmdq_print};
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
 use tiri_core::environ::{environ_find, environ_iter};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::session::Session;
@@ -97,7 +98,7 @@ fn cmd_show_environment_print(
 fn cmd_show_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
 
     let mut envent: Option<&environ_entry> = None;
     let mut name: Option<&CStr> = args_string(args, 0 as u_int);

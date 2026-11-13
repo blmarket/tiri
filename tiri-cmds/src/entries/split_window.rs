@@ -1,11 +1,11 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
-    args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
-};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
-    cmdq_wait,
+use crate::cmd::queue::{cmdq_error, cmdq_insert_hook, cmdq_print, cmdq_wait};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    execution_state as cmdq_get_state_owned, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{
+    args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::events::events_fire;
@@ -18,8 +18,9 @@ use tiri_core::format::{format_single_cstring, format_single_from_target_cstring
 use tiri_core::options::{options_set_number, options_set_string};
 use tiri_core::winlink::winlink_window;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::server_client::Client as _;
 use tiri_core::server_fn::{server_redraw_session, server_redraw_window};
 use tiri_core::shared::abi::{u_char, u_int};
@@ -27,6 +28,7 @@ use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::spawn::spawn_context;
 use tiri_core::shared::spawn::{SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY};
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::winlink;
 use tiri_core::window::Window;
 
@@ -89,12 +91,12 @@ fn cmd_split_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut sc: spawn_context = spawn_context {
         geometry: None,
         item: tiri_core::actions::ContextWeak::new(),
         s: std::rc::Weak::new(),
-        wl: crate::refbox::Weak::new(),
+        wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         name: None,
@@ -108,7 +110,7 @@ fn cmd_split_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let original_window = winlink_window(&wl).expect("split target window");
     let result = (|| {
         let mut current_block: u64;

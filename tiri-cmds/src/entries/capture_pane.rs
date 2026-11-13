@@ -1,9 +1,11 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
-use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::control::control_write;
 use tiri_core::file::{file_can_print, file_print, file_print_buffer};
 use tiri_core::format::bytes::write_cstr;
@@ -11,7 +13,7 @@ use tiri_core::paste::paste_set_owned;
 use tiri_core::server_client::Client as _;
 use tiri_core::server_fn::server_redraw_window;
 use tiri_core::shared::abi::{u_char, uint64_t};
-use tiri_core::shared::client::{ClientRef, CLIENT_CONTROL};
+use tiri_core::shared::client::{CLIENT_CONTROL, ClientRef};
 use tiri_core::window_pane::WindowPane as _;
 pub static cmd_capture_pane_entry: cmd_entry = {
     cmd_entry {
@@ -69,7 +71,7 @@ fn cmd_capture_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let args = cmd_get_args(self_0);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let pane_owner = &mut target_state.wp.upgrade().expect("capture target pane");
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;

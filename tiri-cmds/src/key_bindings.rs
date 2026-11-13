@@ -1,32 +1,29 @@
-use crate::shared::command::CmdOutcome;
 use crate::cmd::cmd_list_all_have;
 use crate::cmd::parse::cmd_parse_from_string;
 use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_command, cmdq_insert_after,
-    cmdq_new_state,
 };
-use crate::log::{fatalx, log_cstr, log_debug};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::new_state as cmdq_new_state;
+use tiri_core::log::{fatalx, log_cstr, log_debug};
 
-use crate::server_client::Client as _;
-use crate::shared::abi::uint64_t;
-use crate::shared::client::ClientRef;
-use crate::shared::client::CLIENT_READONLY;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMDQ_STATE_REPEAT;
-use crate::shared::command::{cmd_find_state, cmdq_item};
-use crate::shared::key::KEY_BINDING_REPEAT;
-use crate::shared::key::KeyBindingCommand;
-use crate::shared::key::{key_binding, key_event, key_table};
 use std::ffi::CStr;
+use tiri_core::server_client::Client as _;
+use tiri_core::shared::abi::uint64_t;
+use tiri_core::shared::client::CLIENT_READONLY;
+use tiri_core::shared::client::ClientRef;
+use tiri_core::shared::key::KEY_BINDING_REPEAT;
+use tiri_core::shared::key::KeyBindingCommand;
+use tiri_core::shared::key::{key_binding, key_event, key_table};
+use tiri_core::shared::target::Target as cmd_find_state;
 
 /// Key tables indexed by name.
 type KeyTableMap =
     std::collections::BTreeMap<std::ffi::CString, std::rc::Rc<std::cell::RefCell<key_table>>>;
 
-pub use tiri_core::bindings::{
-    key_bindings_add, key_bindings_get, key_bindings_get_default, key_bindings_get_table,
-    key_bindings_has_repeat, key_bindings_remove, key_bindings_remove_table, key_bindings_reset,
-    key_bindings_set_note, key_tables,
-};
+use tiri_core::bindings::key_tables;
 fn key_bindings_init_done() -> CmdOutcome {
     for owner in key_tables::snapshot() {
         let mut table = owner.borrow_mut();
@@ -403,14 +400,14 @@ pub fn key_bindings_dispatch(
 
 #[cfg(test)]
 mod ownership_tests {
-    use crate::shared::key::key_bindings;
-    use crate::shared::key::key_code;
-    use super::{
-        KEY_BINDING_REPEAT, key_binding, key_bindings_add, key_bindings_get,
-        key_bindings_get_table, key_bindings_init_done, key_bindings_remove_table,
-        key_bindings_reset, key_table, key_tables,
-    };
+    use super::{KEY_BINDING_REPEAT, key_binding, key_bindings_init_done, key_table, key_tables};
     use crate::cmd::cmd_list_new;
+    use tiri_core::bindings::{
+        key_bindings_add, key_bindings_get, key_bindings_get_table, key_bindings_remove_table,
+        key_bindings_reset,
+    };
+    use tiri_core::shared::key::key_bindings;
+    use tiri_core::shared::key::key_code;
 
     use std::rc::Rc;
 

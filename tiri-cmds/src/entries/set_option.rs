@@ -1,15 +1,17 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
-    args, args_count, args_get, args_has, args_parse, args_parse_type, args_string, ArgsParseError,
-    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
-};
-use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count, args_get,
+    args_has, args_parse, args_parse_type, args_string,
+};
 use tiri_core::events::events_fire;
 use tiri_core::events_payload::{
     event_payload_create, event_payload_set_client, event_payload_set_int, event_payload_set_pane,
@@ -17,16 +19,17 @@ use tiri_core::events_payload::{
 };
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_from_target_cstring;
-use tiri_core::monitor::{monitor_parse_owned, MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
-use tiri_core::options::{
-    options_match_owned, options_push_changes, options_scope_from_name, OptionMatchFailure,
-    OptionsScope,
-};
+use tiri_core::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION, monitor_parse_owned};
 use tiri_core::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
-use tiri_core::session::sessions;
+use tiri_core::options::{
+    OptionMatchFailure, OptionsScope, options_match_owned, options_push_changes,
+    options_scope_from_name,
+};
 use tiri_core::session::Session;
+use tiri_core::session::sessions;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::WindowRef;
 use tiri_core::window::{Window, WindowPane};
 pub static cmd_set_option_entry: cmd_entry = {
@@ -116,7 +119,7 @@ fn cmd_set_option_args_parse(args: &args, idx: u_int) -> Result<args_parse_type,
 fn cmd_set_hook_event_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut c: Option<ClientRef> = None;
     if args_count(args) == 0 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
@@ -180,7 +183,7 @@ fn cmd_set_hook_monitor_exec(
     args: &args,
     window: i32,
 ) -> CmdOutcome {
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item_handle.borrow()).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item_handle.borrow()).clone();
     let target = &mut target_state;
     if args_count(args) > 1 {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
@@ -296,7 +299,7 @@ fn unset_window_panes(
 fn cmd_set_option_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &mut target_state;
     let window = std::ptr::eq(cmd_get_entry(self_0), &cmd_set_window_option_entry) as i32;
     let set_hook = std::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry);

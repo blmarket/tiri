@@ -1,13 +1,16 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::queue::{cmdq_error, cmdq_print, cmdq_wait};
 use crate::hooks::hooks_valid_event_name;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
+use tiri_core::actions::Completion as CmdqWaiter;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args, args_get, args_has, args_parse, args_string};
 use tiri_core::events::{events_add_sink, events_remove_sink};
 use tiri_core::events_payload::{
     event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
@@ -20,7 +23,7 @@ use tiri_core::reactor::{evbuffer_add_formatted, evbuffer_new};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
-use tiri_core::shared::events::{event_payload, events_callback, EventSinkId};
+use tiri_core::shared::events::{EventSinkId, event_payload, events_callback};
 use tiri_core::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 
 #[repr(C)]
@@ -520,9 +523,6 @@ pub fn cmd_wait_for_flush() {
 
 #[cfg(test)]
 mod tests {
-    use crate::entries::wait_for::CmdqWaiter;
-    use crate::shared::command::CmdOutcome;
-    use tiri_core::server_client::Client as _;
     use super::{
         CStr, ClientRef, EventSinkId, WAIT_CHANNELS, WAIT_EVENT_ITEMS, Weak, cmd_wait_for_add,
         cmd_wait_for_client_lost, cmd_wait_for_entry, cmd_wait_for_event, cmd_wait_for_flush,
@@ -530,11 +530,14 @@ mod tests {
         cmd_wait_for_wait, cmdq_item, wait_channel, wait_channels,
     };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::entries::wait_for::CmdqWaiter;
     use crate::test_support::clients;
     use std::cell::RefCell;
     use std::ffi::CString;
     use std::future::Future;
     use std::rc::Rc;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::server_client::Client as _;
     use tiri_core::shared::client::CLIENT_DEAD;
 
     #[test]
@@ -579,7 +582,7 @@ mod tests {
     /// receiver must outlive the resume.
     fn waiter_on_wake(
         on_wake: impl FnOnce() + 'static,
-    ) -> (CmdqWaiter, crate::tiri_rt::oneshot::Receiver<()>) {
+    ) -> (CmdqWaiter, tiri_core::tiri_rt::oneshot::Receiver<()>) {
         let (waiter, mut resumed) = CmdqWaiter::detached(Weak::new());
         let waker = std::task::LocalWaker::from(Rc::new(OnWake(std::cell::Cell::new(Some(
             Box::new(on_wake),
@@ -587,9 +590,11 @@ mod tests {
         let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
             .local_waker(&waker)
             .build();
-        assert!(std::pin::Pin::new(&mut resumed)
-            .poll(&mut context)
-            .is_pending());
+        assert!(
+            std::pin::Pin::new(&mut resumed)
+                .poll(&mut context)
+                .is_pending()
+        );
         (waiter, resumed)
     }
 
@@ -598,7 +603,10 @@ mod tests {
     fn recorded_waiters(
         count: usize,
         trace: &Rc<RefCell<Vec<usize>>>,
-    ) -> (Vec<CmdqWaiter>, Vec<crate::tiri_rt::oneshot::Receiver<()>>) {
+    ) -> (
+        Vec<CmdqWaiter>,
+        Vec<tiri_core::tiri_rt::oneshot::Receiver<()>>,
+    ) {
         (0..count)
             .map(|index| {
                 let trace = trace.clone();
@@ -659,25 +667,31 @@ mod tests {
         let second_item = run_on(&second, c"l", cmd_wait_for_lock);
         assert!(first_item.upgrade().is_some() && second_item.upgrade().is_some());
 
-        assert!(run_on(&holder, c"l", cmd_wait_for_unlock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&holder, c"l", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none()
+        );
         cmdq_next(Some(&first));
         cmdq_next(Some(&second));
         assert!(first_item.upgrade().is_none());
         assert!(second_item.upgrade().is_some());
         assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
-        assert!(run_on(&first, c"l", cmd_wait_for_unlock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&first, c"l", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none()
+        );
         cmdq_next(Some(&second));
         assert!(second_item.upgrade().is_none());
         assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
-        assert!(run_on(&second, c"l", cmd_wait_for_unlock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&second, c"l", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none()
+        );
         assert_eq!(channel(c"l", |wc| wc.locked), Some(0));
     }
 
@@ -694,7 +708,7 @@ mod tests {
         exec: fn(&Rc<cmdq_item>, &CStr) -> CmdOutcome,
     ) -> (
         CmdqWaiter,
-        crate::tiri_rt::oneshot::Receiver<()>,
+        tiri_core::tiri_rt::oneshot::Receiver<()>,
         Rc<std::cell::OnceCell<Weak<cmdq_item>>>,
     ) {
         let reentered = Rc::new(std::cell::OnceCell::new());
@@ -757,9 +771,11 @@ mod tests {
     #[test]
     fn unlock_hands_the_lock_to_a_locker_that_unlocks_on_wake() {
         let [holder, relay] = [(); 2].map(|_| clients::with_queue());
-        assert!(run_on(&holder, c"relay", cmd_wait_for_lock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&holder, c"relay", cmd_wait_for_lock)
+                .upgrade()
+                .is_none()
+        );
         let (unlocker, _unlocking, unlocked) =
             reenter_on_wake(&relay, c"relay", cmd_wait_for_unlock);
         let trace = Default::default();
@@ -770,9 +786,11 @@ mod tests {
             wc.lockers.extend(next);
         });
 
-        assert!(run_on(&holder, c"relay", cmd_wait_for_unlock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&holder, c"relay", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none()
+        );
         let item = unlocked.get().expect("unlock handed over the lock");
         assert!(item.upgrade().is_none());
         assert_eq!(*trace.borrow(), [0]);
@@ -785,16 +803,20 @@ mod tests {
     #[test]
     fn unlock_hands_the_lock_to_a_locker_that_relocks_on_wake() {
         let [holder, relocker] = [(); 2].map(|_| clients::with_queue());
-        assert!(run_on(&holder, c"relock", cmd_wait_for_lock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&holder, c"relock", cmd_wait_for_lock)
+                .upgrade()
+                .is_none()
+        );
         let (locker, _locking, relocked) = reenter_on_wake(&relocker, c"relock", cmd_wait_for_lock);
         WAIT_CHANNELS
             .with_borrow_mut(|channels| cmd_wait_for_add(channels, c"relock").lockers.push(locker));
 
-        assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&holder, c"relock", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none()
+        );
         // The woken locker holds the lock, so the relock queues behind it.
         let item = relocked.get().expect("unlock handed over the lock");
         assert!(item.upgrade().is_some());
@@ -803,9 +825,11 @@ mod tests {
             Some((1, 1))
         );
 
-        assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
-            .upgrade()
-            .is_none());
+        assert!(
+            run_on(&holder, c"relock", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none()
+        );
         cmdq_next(Some(&relocker));
         assert!(item.upgrade().is_none());
         assert_eq!(
@@ -896,9 +920,9 @@ mod tests {
             .into_iter()
             .chain(flags.iter().copied())
             .chain([name])
-            .map(crate::arguments::ParseValue::String)
+            .map(tiri_core::arguments::ParseValue::String)
             .collect::<Vec<_>>();
-        let args = crate::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
+        let args = tiri_core::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
         let item = cmdq_append(
             Some(owner),
             cmdq_get_callback_owned(
@@ -1004,9 +1028,11 @@ mod tests {
         let [first_sink, second_sink] = event_sinks()[..] else {
             panic!("two event waiters")
         };
-        assert!(wait_event(&waker, c"@wake", &[c"-w", c""])
-            .upgrade()
-            .is_none());
+        assert!(
+            wait_event(&waker, c"@wake", &[c"-w", c""])
+                .upgrade()
+                .is_none()
+        );
         cmdq_next(Some(&first));
         cmdq_next(Some(&second));
         assert!(first_item.upgrade().is_none());

@@ -1,20 +1,24 @@
-use crate::shared::command::CmdOutcome;
 use crate::arguments::{
-    args, args_command_state, args_count, args_get, args_has, args_make_commands,
-    args_make_commands_get_command_cstring, args_make_commands_prepare, args_parse,
-    args_parse_type, ArgsParseError, ARGS_PARSE_COMMANDS_OR_STRING,
+    args_command_state, args_make_commands, args_make_commands_get_command_cstring,
+    args_make_commands_prepare,
 };
+use crate::cmd::cmd_get_args;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed,
+    cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_resumed,
 };
-use crate::cmd::{cmd_append_argv, cmd_get_args};
 use crate::shared::command::CMD_CLIENT_TFLAG;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::target_client as cmdq_get_target_client;
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_count, args_get, args_has,
+    args_parse, args_parse_type,
+};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::prompt::prompt_type;
 use tiri_core::server_client::Client as _;
@@ -22,21 +26,22 @@ use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::pane::window_pane;
 use tiri_core::shared::prompt::{
+    PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL, PROMPT_ISPANE,
+    PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE, prompt_result,
+};
+use tiri_core::shared::prompt::{
     PROMPT_KEY_CLOSE, PROMPT_KEY_MOVE, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID, prompt_key_result,
     prompt_type,
 };
-use tiri_core::shared::prompt::{
-    prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL,
-    PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
-};
 use tiri_core::status::{status_prompt_set, status_prompt_update};
+use tiri_core::text::action_helpers::append_argv as cmd_append_argv;
 use tiri_core::window_pane::WindowPane as _;
 
 pub struct cmd_command_prompt_cdata {
     /// Resumes the waiting item with the commands to insert after it; the
     /// prompt closing or being freed without any drops it, which resumes the
     /// item with nothing (tmux's cmd_command_prompt_free). None for -b and -i.
-    pub resume: Option<crate::tiri_rt::oneshot::Sender<Rc<cmd_list>>>,
+    pub resume: Option<tiri_core::tiri_rt::oneshot::Sender<Rc<cmd_list>>>,
     pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
@@ -116,7 +121,7 @@ fn cmd_command_prompt_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
     let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut prompt_bytes = Vec::<u8>::new();
     let wp = target.pane_handle();
     let mut count: u_int = args_count(args);
@@ -216,7 +221,7 @@ fn cmd_command_prompt_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
     let flags = cdata.flags;
     let prompt_type = cdata.prompt_type;
     let continuation = if wait != 0 {
-        let (resume, answered) = crate::tiri_rt::oneshot::channel();
+        let (resume, answered) = tiri_core::tiri_rt::oneshot::channel();
         cdata.resume = Some(resume);
         Some(cmd_command_prompt_wait(
             answered,
@@ -258,7 +263,7 @@ fn cmd_command_prompt_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
 /// the send as tmux's callback does. A prompt closed or freed without any
 /// resumes the item with nothing queued.
 async fn cmd_command_prompt_wait(
-    answered: crate::tiri_rt::oneshot::Receiver<Rc<cmd_list>>,
+    answered: tiri_core::tiri_rt::oneshot::Receiver<Rc<cmd_list>>,
     item: Weak<cmdq_item>,
 ) {
     let Some(cmdlist) = answered.await else {

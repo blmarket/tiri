@@ -1,7 +1,10 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_count, args_flag_values, args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::cmd::queue::cmdq_error;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::target_client as cmdq_get_target_client;
+use tiri_core::arguments::{
+    args_count, args_flag_values, args_get, args_has, args_parse, args_string,
+};
 use tiri_core::compat::strtonum::strtonum;
 use tiri_core::control::{
     control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
@@ -12,12 +15,13 @@ use tiri_core::format::bytes::write_cstr;
 use tiri_core::log::{log_cstr, log_debug};
 use tiri_core::monitor::monitor_parse_owned;
 use tiri_core::resize::recalculate_sizes_now;
-use tiri_core::text::numbers::{scan_u32, scan_u32_pair, Scan};
+use tiri_core::text::numbers::{Scan, scan_u32, scan_u32_pair};
 use tiri_core::winlink::winlink_window;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::server_client::Client as _;
 use tiri_core::server_fn::{server_redraw_client, server_status_client};
 use tiri_core::session::Session;
@@ -31,7 +35,7 @@ use tiri_core::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
 
 use std::ffi::CStr;
 use tiri_core::tty::{
-    tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset, ColourReport,
+    ColourReport, tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset,
 };
 use tiri_core::window_pane::WindowPane as _;
 pub static cmd_refresh_client_entry: cmd_entry = {

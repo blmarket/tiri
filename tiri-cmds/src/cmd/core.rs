@@ -1,17 +1,14 @@
-use crate::arguments::{args, args_copy, args_parse, args_print_cstring, ArgsParseError, ParseValue};
-use crate::log::{log_bytes, log_debug};
-use crate::options::OptionsScope;
-pub use tiri_core::text::action_helpers::{
-    append_argv as cmd_append_argv, log_argv as cmd_log_argv, mouse_at as cmd_mouse_at,
-    mouse_pane as cmd_mouse_pane, mouse_window as cmd_mouse_window, pack_argv as cmd_pack_argv,
-    replace_template as cmd_template_replace_cstring,
+use tiri_core::arguments::{
+    ArgsParseError, ParseValue, args, args_copy, args_parse, args_print_cstring,
 };
+use tiri_core::log::{log_bytes, log_debug};
+use tiri_core::options::OptionsScope;
 
-use crate::shared::abi::u_int;
-pub use crate::shared::command::{cmd, cmd_entry, cmd_list};
-pub use crate::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
+use crate::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
 use crate::shared::command::{CMD_READONLY, CMD_STARTSERVER};
+use crate::shared::command::{cmd, cmd_entry, cmd_list};
 use std::ffi::{CStr, CString};
+use tiri_core::shared::abi::u_int;
 
 pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;

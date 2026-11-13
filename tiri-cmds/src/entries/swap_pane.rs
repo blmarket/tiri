@@ -1,15 +1,16 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::events::events_fire_window;
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::client::ClientRef;
 use tiri_core::window::Window as _;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::rc::Rc;
 use tiri_core::server_fn::server_redraw_window;
 use tiri_core::shared::abi::u_char;
@@ -43,8 +44,8 @@ pub static cmd_swap_pane_entry: cmd_entry = {
 fn cmd_swap_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let source = crate::cmd::queue::cmdq_get_source(&item);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let source = tiri_core::actions::queue::source(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut src_idx: ::core::ffi::c_int = 0;
     let mut dst_idx: ::core::ffi::c_int = 0;
     let dst_window_owner = target.w.upgrade().expect("live swap target window");

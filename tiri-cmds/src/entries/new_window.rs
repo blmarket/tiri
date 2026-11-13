@@ -1,16 +1,18 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
-    args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
-};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client,
-    cmdq_insert_hook, cmdq_print,
-};
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::queue::{cmdq_error, cmdq_insert_hook, cmdq_print};
 use crate::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned, target as cmdq_get_target,
+    target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{
+    args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
+};
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_cstring;
@@ -24,6 +26,7 @@ use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::spawn::spawn_context;
 use tiri_core::shared::spawn::{SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL};
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::tree::RB_NEGINF;
 use tiri_core::shared::window::winlink;
 use tiri_core::tmux::{check_name, clean_name_cstring};
@@ -68,7 +71,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         geometry: None,
         item: tiri_core::actions::ContextWeak::new(),
         s: std::rc::Weak::new(),
-        wl: crate::refbox::Weak::new(),
+        wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         name: None,
@@ -83,8 +86,8 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     let mut _tc: Option<ClientRef> = tc_owner.clone();
     let session_owner = target.session_handle().expect("new-window target session");
     let s = Some(session_owner.clone());
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
-    let mut new_wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
+    let mut new_wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut idx: ::core::ffi::c_int = target.idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
@@ -115,7 +118,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             name,
             c_owner.as_ref(),
             Some(&session_owner),
-            (crate::refbox::Weak::new()).clone(),
+            (tiri_core::refbox::Weak::new()).clone(),
             None,
         );
         if !check_name(&expanded) {
@@ -142,7 +145,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 wname,
                 c_owner.as_ref(),
                 Some(&session_owner),
-                (crate::refbox::Weak::new()).clone(),
+                (tiri_core::refbox::Weak::new()).clone(),
                 None,
             );
             wl = s

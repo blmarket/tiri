@@ -1,42 +1,48 @@
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_state_owned};
-use crate::cmd::{cmd_mouse_pane, cmd_mouse_window};
-use crate::compat::strtonum::strtonum;
-use crate::format::bytes::cstr_suffix;
-use crate::format::bytes::write_cstr;
-use crate::log::{fatalx, log_bytes, log_cstr, log_debug, log_pointer};
-use crate::server::{marked_pane, server_check_marked};
-use crate::server_client::Client;
-use crate::server_client::ClientRegistry;
-use crate::session::sessions;
-use crate::session::Session;
-use crate::shared::client::ClientRef;
-use crate::shared::layout::Direction;
-use crate::tiri_sys::fnmatch;
-use crate::window::Window;
-use crate::window::{
-    winlink_find_by_index, winlink_next, winlink_next_by_number, winlink_previous_by_number,
-    winlinks_minmax,
-};
-use crate::window_pane::WindowPane as _;
-use crate::winlink::winlink_window;
+use crate::cmd::queue::cmdq_error;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-pub use tiri_core::shared::target::{
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, event as cmdq_get_event, execution_state as cmdq_get_state_owned,
+};
+use tiri_core::compat::strtonum::strtonum;
+use tiri_core::format::bytes::cstr_suffix;
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::log::{fatalx, log_bytes, log_cstr, log_debug, log_pointer};
+use tiri_core::server::{marked_pane, server_check_marked};
+use tiri_core::server_client::Client;
+use tiri_core::server_client::ClientRegistry;
+use tiri_core::session::Session;
+use tiri_core::session::sessions;
+use tiri_core::shared::client::ClientRef;
+use tiri_core::shared::layout::Direction;
+use tiri_core::shared::target::{
     best_client as cmd_find_best_client, best_session as cmd_find_best_session,
     inside_pane as cmd_find_inside_pane,
 };
+use tiri_core::text::action_helpers::{
+    mouse_pane as cmd_mouse_pane, mouse_window as cmd_mouse_window,
+};
+use tiri_core::tiri_sys::fnmatch;
+use tiri_core::window::Window;
+use tiri_core::window::{
+    winlink_find_by_index, winlink_next, winlink_next_by_number, winlink_previous_by_number,
+    winlinks_minmax,
+};
+use tiri_core::window_pane::WindowPane as _;
+use tiri_core::winlink::winlink_window;
 
-use crate::shared::abi::u_int;
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW, cmd_find_type};
-use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_FIND_DEFAULT_MARKED, CMD_FIND_EXACT_SESSION, CMD_FIND_EXACT_WINDOW,
     CMD_FIND_PREFER_UNATTACHED, CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX,
 };
-use crate::shared::limits::INT_MAX;
-use crate::shared::pane::window_pane;
-use crate::shared::tree::{RB_INF, RB_NEGINF};
-use crate::shared::window::winlink;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW, cmd_find_type};
+use tiri_core::shared::abi::u_int;
+use tiri_core::shared::limits::INT_MAX;
+use tiri_core::shared::pane::window_pane;
+use tiri_core::shared::target::Target as cmd_find_state;
+use tiri_core::shared::tree::{RB_INF, RB_NEGINF};
+use tiri_core::shared::window::winlink;
 
 pub const _PATH_DEV: &std::ffi::CStr = c"/dev/";
 const cmd_find_window_table: &[(&CStr, &CStr)] = &[
@@ -101,14 +107,14 @@ impl TargetLookup for cmd_find_state {
     fn get_session(&mut self, target: &CStr) -> i32 {
         log_debug(format_args!("cmd_find_get_session: {}", log_cstr(target)));
         if target.to_bytes().first() == Some(&b'$') {
-            self.set_s(crate::shared::session::SessionRef::find_by_id_str(target).as_ref());
+            self.set_s(tiri_core::shared::session::SessionRef::find_by_id_str(target).as_ref());
             return if self.session_handle().is_some() {
                 0
             } else {
                 -1
             };
         }
-        self.set_s(crate::session::sessions::find(target).as_ref());
+        self.set_s(tiri_core::session::sessions::find(target).as_ref());
         if self.session_handle().is_some() {
             return 0;
         }
@@ -157,7 +163,7 @@ impl TargetLookup for cmd_find_state {
             log_cstr(window)
         ));
         if window.to_bytes().first() == Some(&b'@') {
-            let window_owner = crate::window::window_find_by_id_str(window);
+            let window_owner = tiri_core::window::window_find_by_id_str(window);
             let result = (|| {
                 self.set_w(window_owner.as_ref());
                 if self.window_handle().is_none() {
@@ -194,7 +200,7 @@ impl TargetLookup for cmd_find_state {
         -(1 as ::core::ffi::c_int)
     }
     fn get_window_with_session(&mut self, window: &CStr) -> ::core::ffi::c_int {
-        let mut wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+        let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
         let mut idx: ::core::ffi::c_int = 0;
         let mut n: ::core::ffi::c_int = 0;
         let mut exact: ::core::ffi::c_int = 0;
@@ -214,7 +220,7 @@ impl TargetLookup for cmd_find_state {
         self.set_w(winlink_window(&self.winlink_handle()).as_ref());
         let first = window.to_bytes().first().copied();
         if first == Some(b'@') {
-            let window_owner = crate::window::window_find_by_id_str(window);
+            let window_owner = tiri_core::window::window_find_by_id_str(window);
             let result = (|| {
                 self.set_w(window_owner.as_ref());
                 if self.window_handle().is_none()
@@ -298,7 +304,7 @@ impl TargetLookup for cmd_find_state {
         if exact == 0 {
             if window == c"!" {
                 let session = self.session_handle().expect("window target session");
-                self.set_wl(crate::session::Session::last_winlink(&session));
+                self.set_wl(tiri_core::session::Session::last_winlink(&session));
                 if !self.winlink_handle().is_alive() {
                     return -(1 as ::core::ffi::c_int);
                 }
@@ -373,7 +379,7 @@ impl TargetLookup for cmd_find_state {
                 }
             }
         }
-        self.set_wl((crate::refbox::Weak::new()).clone());
+        self.set_wl((tiri_core::refbox::Weak::new()).clone());
         wl = self
             .session_handle()
             .expect("window target session")
@@ -403,7 +409,7 @@ impl TargetLookup for cmd_find_state {
         if exact != 0 {
             return -(1 as ::core::ffi::c_int);
         }
-        self.set_wl((crate::refbox::Weak::new()).clone());
+        self.set_wl((tiri_core::refbox::Weak::new()).clone());
         wl = self
             .session_handle()
             .expect("window target session")
@@ -430,7 +436,7 @@ impl TargetLookup for cmd_find_state {
             self.set_w(winlink_window(&self.winlink_handle()).as_ref());
             return 0 as ::core::ffi::c_int;
         }
-        self.set_wl((crate::refbox::Weak::new()).clone());
+        self.set_wl((tiri_core::refbox::Weak::new()).clone());
         wl = self
             .session_handle()
             .expect("window target session")
@@ -778,7 +784,7 @@ impl TargetLookup for cmd_find_state {
                 match type_0 as ::core::ffi::c_uint {
                     0 => {
                         {
-                            let mut wl = crate::refbox::Weak::new();
+                            let mut wl = tiri_core::refbox::Weak::new();
                             let mut mouse_session_owner = None;
                             mouse_pane_owner =
                                 cmd_mouse_pane(m, Some(&mut mouse_session_owner), Some(&mut wl));

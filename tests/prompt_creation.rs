@@ -1,15 +1,15 @@
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 use tiri::environ::environ_create;
-use tiri::options::options_table;
 use tiri::options::OptionsScope;
+use tiri::options::options_table;
 use tiri::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };
-use tiri::shared::command::cmd_find_state;
 use tiri::shared::prompt::{
     PROMPT_CONTINUE, PROMPT_INCREMENTAL, PROMPT_NOFORMAT, prompt, prompt_create_data,
 };
 use tiri::tmux::replace_global_environ;
+use tiri_core::shared::target::Target;
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {
     prompt
@@ -41,7 +41,7 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
         OptionsScope::GlobalSession.reset_default(definition);
     }
     let events = Rc::new(RefCell::new(Vec::new()));
-    let state = cmd_find_state {
+    let state = Target {
         flags: 77,
         idx: 9,
         ..Default::default()
@@ -143,11 +143,13 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
                 b""
             );
         } else {
-            assert!(prompt
-                .try_borrow_mut()
-                .expect("live unborrowed prompt")
-                .last
-                .is_none());
+            assert!(
+                prompt
+                    .try_borrow_mut()
+                    .expect("live unborrowed prompt")
+                    .last
+                    .is_none()
+            );
             assert_eq!(
                 prompt
                     .try_borrow_mut()

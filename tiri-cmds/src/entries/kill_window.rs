@@ -1,15 +1,17 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
-use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use std::ffi::CStr;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
 use tiri_core::winlink::winlink_window;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::session::Session;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::format::FORMAT_NONE;
@@ -70,8 +72,8 @@ pub static cmd_unlink_window_entry: cmd_entry = {
 fn cmd_kill_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let target = tiri_core::actions::queue::target(&item);
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
     if filter.is_some() && args_has(args, 'a' as i32 as u_char) == 0 {
@@ -106,10 +108,10 @@ fn cmd_kill_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
 }
 fn cmd_kill_window_all(item_handle: &std::rc::Rc<cmdq_item>, filter: Option<&CStr>) -> CmdOutcome {
     let item = item_handle.borrow();
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut s: Option<SessionRef> = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
-    let mut loop_0: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
+    let mut loop_0: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut found: u_int = 0;
     let mut kill_current: u_int = 0;
     if !winlinks_prev(&wl.try_borrow().expect("live winlink")).is_alive()
@@ -184,7 +186,7 @@ fn cmd_kill_window_all(item_handle: &std::rc::Rc<cmdq_item>, filter: Option<&CSt
 fn cmd_kill_window_filter(
     item_handle: &std::rc::Rc<cmdq_item>,
     s_owner: &SessionRef,
-    mut wl: crate::refbox::Weak<winlink>,
+    mut wl: tiri_core::refbox::Weak<winlink>,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();

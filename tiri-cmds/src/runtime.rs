@@ -1,11 +1,12 @@
 use crate::arguments::{args_command_state, args_make_commands, args_make_commands_prepare};
 use crate::cmd::find::TargetLookup;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
     cmdq_append, cmdq_cancel_background, cmdq_error, cmdq_get_callback_owned, cmdq_get_cmd,
     cmdq_get_command, cmdq_get_error, cmdq_guard, cmdq_insert_after, cmdq_new, cmdq_next,
     cmdq_print, cmdq_running, cmdq_wait,
 };
-use crate::shared::command::{cmd_list, cmdq_item};
+use crate::shared::command::cmd_list;
 use std::rc::Rc;
 use tiri_core::actions::{ContextRef, ContextWeak, PreparedAction, ProgramRef, Runtime};
 
@@ -97,7 +98,7 @@ pub static RUNTIME: Runtime = Runtime {
     hook_is_event: crate::hooks::hooks_is_event,
     bindings_init: crate::key_bindings::key_bindings_init,
     binding_dispatch: |binding, client, item, event, target| {
-        let binding = crate::shared::key::KeyBindingCommand {
+        let binding = tiri_core::shared::key::KeyBindingCommand {
             key: binding.key,
             commands: binding.commands.clone(),
             flags: binding.flags,

@@ -1,10 +1,12 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_true,
@@ -81,7 +83,7 @@ fn cmd_list_sessions_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             ft,
             c.as_ref(),
             Some(&l[i as usize]),
-            (crate::refbox::Weak::new()).clone(),
+            (tiri_core::refbox::Weak::new()).clone(),
             None,
         );
         if filter.is_none_or(|filter| format_true(&format_expand_cstring(ft, filter))) {

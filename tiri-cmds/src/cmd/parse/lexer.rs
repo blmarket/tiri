@@ -1,12 +1,12 @@
 //! Byte-oriented command lexer. Expansion happens as each token is requested,
 //! after any preceding grammar actions have updated the application environment.
 use super::{ParseSession, RefCell};
-use crate::environ::environ_find;
-use crate::shared::stdio::EOF;
-use crate::tiri_cmdparse::{Token, TokenText};
-use crate::tiri_sys::{user_home, user_home_by_name, user_id};
-use crate::tmux::global_environ;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
+use tiri_cmdparse::{Token, TokenText};
+use tiri_core::environ::environ_find;
+use tiri_core::shared::stdio::EOF;
+use tiri_core::tiri_sys::{user_home, user_home_by_name, user_id};
+use tiri_core::tmux::global_environ;
 
 type LocatedToken = (usize, Token, usize);
 
@@ -467,7 +467,7 @@ impl<'a, 'input> Lexer<'a, 'input> {
 }
 
 impl Iterator for Lexer<'_, '_> {
-    type Item = Result<LocatedToken, crate::tiri_cmdparse::LexError>;
+    type Item = Result<LocatedToken, tiri_cmdparse::LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -483,7 +483,7 @@ impl Iterator for Lexer<'_, '_> {
             Err(error) => {
                 self.finished = true;
                 self.session.borrow_mut().record_error(error.message());
-                Some(Err(crate::tiri_cmdparse::LexError))
+                Some(Err(tiri_cmdparse::LexError))
             }
         }
     }

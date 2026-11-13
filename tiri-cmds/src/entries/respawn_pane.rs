@@ -1,9 +1,10 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_flag_values, args_get, args_has, args_parse, args_to_vector};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_flag_values, args_get, args_has, args_parse, args_to_vector};
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::server_fn::{server_redraw_window_borders, server_status_window};
@@ -42,12 +43,12 @@ pub static cmd_respawn_pane_entry: cmd_entry = {
 fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut sc: spawn_context = spawn_context {
         geometry: None,
         item: tiri_core::actions::ContextWeak::new(),
         s: std::rc::Weak::new(),
-        wl: crate::refbox::Weak::new(),
+        wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         name: None,
@@ -59,7 +60,7 @@ fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     };
     let mut argv_owner = Vec::new();
     let mut s: Option<SessionRef> = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let wp = target.pane_handle();
     sc.item = crate::runtime::context(item_handle.clone()).downgrade();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));

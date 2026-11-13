@@ -1,16 +1,14 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_count, args_get, args_has, args_parse, args_string};
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::hooks::{
-    hooks_is_event, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
-    hooks_monitor_to_cstring,
-};
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::hooks::hooks_is_event;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
     format_add, format_add_time, format_create_from_target, format_expand_cstring,
@@ -19,13 +17,18 @@ use tiri_core::format::{
 use tiri_core::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
+use tiri_core::monitor::{
+    subscription_fire_count as hooks_monitor_get_fire_count,
+    subscription_fire_time as hooks_monitor_get_fire_time,
+    subscription_text as hooks_monitor_to_cstring,
+};
+use tiri_core::options::OPTIONS_TABLE_IS_HOOK;
 use tiri_core::options::options_table;
 use tiri_core::options::options_table_entry;
-use tiri_core::options::OPTIONS_TABLE_IS_HOOK;
 use tiri_core::options::{
-    options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_is_array,
-    options_is_string, options_iter, options_match_owned, options_scope_from_flags,
-    options_scope_from_name, options_to_cstring, OptionMatchFailure, OptionsScope,
+    OptionMatchFailure, OptionsScope, options_get_fire_count, options_get_fire_time,
+    options_get_monitor_data, options_is_array, options_is_string, options_iter,
+    options_match_owned, options_scope_from_flags, options_scope_from_name, options_to_cstring,
 };
 use tiri_core::shared::abi::time_t;
 use tiri_core::shared::format::format_tree;
@@ -111,7 +114,7 @@ pub static cmd_show_hooks_entry: cmd_entry = {
 fn cmd_show_options_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &mut target_state;
     let window = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_window_options_entry) as i32;
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);

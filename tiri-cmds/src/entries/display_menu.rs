@@ -1,13 +1,13 @@
-use crate::shared::command::CmdOutcome;
-use crate::shared::command::cmd_find_state;
-use crate::arguments::{
-    args, args_count, args_flag_values, args_get, args_has, args_parse, args_parse_type,
-    args_percentage_result, args_string, args_strtonum_result, args_to_vector, ArgsParseError,
-    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
-};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
+use crate::cmd::queue::cmdq_error;
 use std::ffi::CStr;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{event as cmdq_get_event, target_client as cmdq_get_target_client};
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count,
+    args_flag_values, args_get, args_has, args_parse, args_parse_type, args_percentage_result,
+    args_string, args_strtonum_result, args_to_vector,
+};
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
@@ -16,22 +16,24 @@ use tiri_core::format::{
 use tiri_core::key_string::key_string_parse_cstr;
 use tiri_core::menu::{menu_add_item, menu_create, menu_display};
 use tiri_core::options::{options_find_choice, options_get_number};
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::text::numbers::strtol_prefix;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::server_client::Client as _;
 use tiri_core::session::Session;
 use tiri_core::shared::abi::u_int;
-use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_CONTROL;
+use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::key::KEYC_UNKNOWN;
 use tiri_core::shared::layout::{
     BOX_LINES_DEFAULT, PANE_LINES_NONE, box_lines, layout_geometry, pane_lines,
 };
 use tiri_core::shared::limits::UINT_MAX;
-use tiri_core::shared::menu::{menu_item, MENU_NOMOUSE, MENU_STAYOPEN};
+use tiri_core::shared::menu::{MENU_NOMOUSE, MENU_STAYOPEN, menu_item};
 use tiri_core::shared::style::STYLE_RANGE_WINDOW;
 use tiri_core::status::{status_at_line, status_line_size};
 use tiri_core::window::Window as _;
@@ -145,7 +147,7 @@ fn cmd_display_menu_get_menu_pos(
     width: u_int,
     height: u_int,
 ) -> i32 {
-    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
     let event = cmdq_get_event(&item.borrow()).metadata_snapshot();
     let window = if event.m.valid != 0 {
         client
@@ -267,7 +269,7 @@ fn cmd_display_menu_get_menu_pos(
 fn cmd_display_menu_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &target_state;
     let event = cmdq_get_event(&(item));
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -402,11 +404,11 @@ fn cmd_display_popup_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOu
     use crate::cmd::queue::cmdq_wait;
     use std::rc::Rc;
     use tiri_core::options::{options_set_number, options_set_string};
-    use tiri_core::shared::pane::{window_pane, PaneWaitFor};
-    use tiri_core::shared::spawn::{spawn_context, SPAWN_MODAL};
+    use tiri_core::shared::pane::{PaneWaitFor, window_pane};
+    use tiri_core::shared::spawn::{SPAWN_MODAL, spawn_context};
 
     let args = cmd_get_args(command);
-    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
     let client = cmdq_get_target_client(Some(&item.borrow())).expect("popup target client");
     let session = target.session_handle().expect("popup session");
     let window = target.window_handle().expect("popup window");

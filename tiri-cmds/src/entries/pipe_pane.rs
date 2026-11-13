@@ -1,6 +1,7 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::args_parse;
-use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::cmd::queue::cmdq_item;
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::args_parse;
 use tiri_core::window_pane::WindowPane;
 
 pub static cmd_pipe_pane_entry: cmd_entry = {
@@ -29,7 +30,7 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
     }
 };
 fn cmd_pipe_pane_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
     let pane = target.wp.upgrade().expect("live pipe target pane");
     pane.pipe(crate::cmd::cmd_get_args(command), item)
 }

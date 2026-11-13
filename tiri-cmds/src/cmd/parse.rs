@@ -1,25 +1,27 @@
-use crate::arguments::ParseValue;
 use crate::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
 use crate::cmd::{cmd_get_alias, cmd_list_new, cmd_list_print_cstring, cmd_parse};
-use crate::environ::environ_put;
-use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
-use crate::log::{log_bytes, log_debug};
-use crate::shared::abi::u_int;
-use crate::shared::client::ClientRef;
+use crate::shared::command::cmd_list;
 use crate::shared::command::cmd_parse_input;
-use crate::shared::command::{cmd_find_state, cmd_list, cmdq_state};
 use crate::shared::command::{
     CMD_PARSE_MAX_ENVIRON_LEN, CMD_PARSE_NOALIAS, CMD_PARSE_ONEGROUP, CMD_PARSE_PARSEONLY,
     CMD_PARSE_VERBOSE,
 };
-use crate::shared::environment::ENVIRON_HIDDEN;
-use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::shared::limits::UINT_MAX;
-use crate::tmux::global_environ_mut;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
+use tiri_core::actions::ExecutionState as cmdq_state;
+use tiri_core::arguments::ParseValue;
+use tiri_core::environ::environ_put;
+use tiri_core::format::{format_create, format_defaults, format_expand_cstring, format_true};
+use tiri_core::log::{log_bytes, log_debug};
+use tiri_core::shared::abi::u_int;
+use tiri_core::shared::client::ClientRef;
+use tiri_core::shared::environment::ENVIRON_HIDDEN;
+use tiri_core::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use tiri_core::shared::limits::UINT_MAX;
+use tiri_core::shared::target::Target as cmd_find_state;
+use tiri_core::tmux::global_environ_mut;
 
 /// The command set and its children retain their separate heap allocations.
 struct cmd_parse_commands {
@@ -118,15 +120,12 @@ fn cmd_parse_new_commands() -> Box<cmd_parse_commands> {
 
 struct ParserContext<'a, 'input>(&'a RefCell<ParseSession<'input>>);
 
-impl crate::tiri_cmdparse::Context for ParserContext<'_, '_> {
+impl tiri_cmdparse::Context for ParserContext<'_, '_> {
     fn line(&self) -> u32 {
         self.0.borrow().input.line
     }
 
-    fn expand_format(
-        &mut self,
-        token: crate::tiri_cmdparse::TokenText,
-    ) -> crate::tiri_cmdparse::TokenText {
+    fn expand_format(&mut self, token: tiri_cmdparse::TokenText) -> tiri_cmdparse::TokenText {
         let mut session = self.0.borrow_mut();
         let pi = &mut *session.input;
         let client_owner = pi.c.upgrade();
@@ -162,16 +161,16 @@ impl crate::tiri_cmdparse::Context for ParserContext<'_, '_> {
 
     fn put_environ(
         &mut self,
-        token: crate::tiri_cmdparse::TokenText,
+        token: tiri_cmdparse::TokenText,
         hidden: bool,
         active: bool,
-    ) -> Result<(), crate::tiri_cmdparse::LexError> {
+    ) -> Result<(), tiri_cmdparse::LexError> {
         {
             if token.as_c_str().to_bytes().len() > CMD_PARSE_MAX_ENVIRON_LEN as usize {
                 self.0
                     .borrow_mut()
                     .record_error(c"environment variable is too long");
-                return Err(crate::tiri_cmdparse::LexError);
+                return Err(tiri_cmdparse::LexError);
             }
             if self.0.borrow().input.flags & CMD_PARSE_PARSEONLY == 0 && active {
                 global_environ_mut(|environment| {
@@ -186,27 +185,25 @@ impl crate::tiri_cmdparse::Context for ParserContext<'_, '_> {
         Ok(())
     }
 
-    fn is_true(&self, token: &crate::tiri_cmdparse::TokenText) -> bool {
+    fn is_true(&self, token: &tiri_cmdparse::TokenText) -> bool {
         format_true(token.as_c_str())
     }
 }
 
-fn take_parser_token(text: CString) -> crate::tiri_cmdparse::TokenText {
-    crate::tiri_cmdparse::TokenText::from_cstring(text)
+fn take_parser_token(text: CString) -> tiri_cmdparse::TokenText {
+    tiri_cmdparse::TokenText::from_cstring(text)
 }
 
-fn build_parser_commands(
-    commands: Vec<crate::tiri_cmdparse::ParseCommand>,
-) -> Box<cmd_parse_commands> {
+fn build_parser_commands(commands: Vec<tiri_cmdparse::ParseCommand>) -> Box<cmd_parse_commands> {
     let mut output = cmd_parse_new_commands();
     for command in commands {
         let mut cmd = cmd_parse_new_command(command.line);
         for argument in command.arguments {
             let arg = match argument {
-                crate::tiri_cmdparse::ParseArgument::String(text) => {
+                tiri_cmdparse::ParseArgument::String(text) => {
                     cmd_parse_argument::String(text.as_c_str().to_owned())
                 }
-                crate::tiri_cmdparse::ParseArgument::Commands(commands) => {
+                tiri_cmdparse::ParseArgument::Commands(commands) => {
                     cmd_parse_argument::Commands(build_parser_commands(commands))
                 }
             };
@@ -221,7 +218,7 @@ fn cmd_parse_run_parser(
     session: &RefCell<ParseSession<'_>>,
     lexer: Lexer<'_, '_>,
 ) -> Result<Box<cmd_parse_commands>, CString> {
-    match crate::tiri_cmdparse::parse(&mut ParserContext(session), lexer) {
+    match tiri_cmdparse::parse(&mut ParserContext(session), lexer) {
         Ok(commands) => Ok(build_parser_commands(commands)),
         Err(_) => {
             let mut session = session.borrow_mut();

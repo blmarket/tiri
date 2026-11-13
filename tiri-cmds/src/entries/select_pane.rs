@@ -1,7 +1,8 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
-use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
+use crate::cmd::queue::{cmdq_error, cmdq_insert_hook, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::execution_state as cmdq_get_state_owned;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::events::events_fire;
 use tiri_core::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
@@ -28,10 +29,12 @@ use tiri_core::winlink::winlink_window;
 
 use tiri_core::window_pane::WindowPane as _;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::uint64_t;
 use tiri_core::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS};
+use tiri_core::shared::target::Target as cmd_find_state;
 pub static cmd_select_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"select-pane",
@@ -145,7 +148,7 @@ fn cmd_select_pane_redraw(w_owner: &WindowRef) {
 fn cmd_select_pane_marked_pane(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let arguments = cmd_get_args(command);
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
     let link = target.winlink_handle();
@@ -203,7 +206,7 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let entry = cmd_get_entry(command);
     let arguments = cmd_get_args(command);
     let current = cmdq_get_state_owned(&item);
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &mut target_state;
     let link = target.winlink_handle();
     let session = target.session_handle();

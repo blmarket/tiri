@@ -96,9 +96,9 @@ fn a_dead_file_client_leaves_its_command_blocked() {
 #[test]
 fn scripting_attaches_to_a_client_created_by_core_before_initialization() {
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::shared::command::CmdOutcome;
     use std::cell::Cell;
     use std::rc::Rc;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
 
     let client = tiri_core::server_client::queue_test_clients::with_queue();
     crate::initialize();

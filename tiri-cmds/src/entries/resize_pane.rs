@@ -1,10 +1,11 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::server_fn::{server_redraw_window, server_unzoom_window};
 use tiri_core::window::{LayoutAction, Window as _};
 use tiri_core::window_pane::WindowPane as _;
@@ -40,7 +41,7 @@ pub static cmd_resize_pane_entry: cmd_entry = {
 fn cmd_resize_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let pane_owner = target.wp.upgrade().expect("live resize target pane");
     if args_has(args, b'Z') != 0 && args_has(args, b'T') == 0 {
         let window_owner = target.w.upgrade().expect("live resize target window");

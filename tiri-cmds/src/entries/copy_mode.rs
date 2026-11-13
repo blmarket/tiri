@@ -1,10 +1,11 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
-use crate::cmd::queue::{cmdq_get_client, cmdq_get_event};
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{client as cmdq_get_client, event as cmdq_get_event};
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::client::ClientRef;
@@ -12,6 +13,7 @@ use tiri_core::shared::key::{
     KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK,
 };
 use tiri_core::shared::session::SessionRef;
+use tiri_core::text::action_helpers::mouse_pane as cmd_mouse_pane;
 use tiri_core::window::WindowPane;
 use tiri_core::window_clock::window_clock_mode;
 use tiri_core::window_copy::{
@@ -72,8 +74,8 @@ fn cmd_copy_mode_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
     let mut event = cmdq_get_event(&(item));
-    let source = crate::cmd::queue::cmdq_get_source(&item);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let source = tiri_core::actions::queue::source(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;

@@ -1,41 +1,45 @@
 use crate::cmd::cmd_list_print_cstring;
 use crate::cmd::parse::cmd_parse_from_string;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
-    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags,
-    cmdq_insert_after, cmdq_new_state, cmdq_running,
+    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_flags, cmdq_insert_after,
+    cmdq_running,
 };
-use crate::events::{events_add_sink, events_fire};
-use crate::events_payload::{
+use crate::shared::command::CMDQ_STATE_NOHOOKS;
+use crate::shared::command::cmd_list;
+use std::ffi::{CStr, CString};
+use tiri_core::actions::ExecutionState as cmdq_state;
+use tiri_core::actions::queue::{event as cmdq_get_event, new_state as cmdq_new_state};
+use tiri_core::events::{events_add_sink, events_fire};
+use tiri_core::events_payload::{
     event_payload_add_formats, event_payload_create, event_payload_get_client,
     event_payload_get_identity, event_payload_get_target, event_payload_set_client,
     event_payload_set_identity, event_payload_set_int, event_payload_set_pane,
     event_payload_set_session, event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
-use crate::format::bytes::write_cstr;
-use crate::format::{
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::format::{
     format_add, format_create, format_create_defaults, format_expand_cstring, format_log_debug,
     format_merge,
 };
-use crate::log::{log_cstr, log_debug, log_get_level};
-use crate::monitor::{
+use tiri_core::log::{log_cstr, log_debug, log_get_level};
+use tiri_core::monitor::{
     monitor_add, monitor_callback, monitor_change, monitor_create_session_owned, monitor_type,
 };
-use crate::options::options_table;
-use crate::options::OPTIONS_TABLE_IS_HOOK;
-use crate::options::{options_hook_fired, options_search, options_set_string, OptionsScope};
-use crate::shared::client::ClientWeak;
-use crate::shared::command::CMDQ_STATE_NOHOOKS;
-use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
-use crate::shared::events::{event_payload, events_callback, EventSinkId};
-use crate::shared::format::format_tree;
-use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::shared::pane::window_pane;
-use crate::shared::session::SessionRef;
-use crate::shared::window::{WindowRef, WindowWeak};
-use crate::window::WindowPane;
-use crate::winlink::winlink_window;
-use std::ffi::{CStr, CString};
+use tiri_core::options::OPTIONS_TABLE_IS_HOOK;
+use tiri_core::options::options_table;
+use tiri_core::options::{OptionsScope, options_hook_fired, options_search, options_set_string};
+use tiri_core::shared::client::ClientWeak;
+use tiri_core::shared::events::{EventSinkId, event_payload, events_callback};
+use tiri_core::shared::format::format_tree;
+use tiri_core::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use tiri_core::shared::pane::window_pane;
+use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
+use tiri_core::shared::window::{WindowRef, WindowWeak};
+use tiri_core::window::WindowPane;
+use tiri_core::winlink::winlink_window;
 
 #[derive(Default)]
 struct HooksEvents {
@@ -64,7 +68,7 @@ pub struct hooks_data<'a> {
     pub client: ClientWeak,
     pub expand: ::core::ffi::c_int,
 }
-pub use tiri_core::monitor::MonitorSubscription as hooks_monitor;
+use tiri_core::monitor::MonitorSubscription as hooks_monitor;
 
 thread_local! {
     static CStrings: std::cell::RefCell<HooksEvents> = const {
@@ -86,7 +90,7 @@ fn hooks_insert_one(
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",
-            crate::log::log_bytes(hd.name.to_bytes()),
+            tiri_core::log::log_bytes(hd.name.to_bytes()),
             log_cstr(&s)
         ));
     }
@@ -128,7 +132,7 @@ fn hooks_find(
     let mut fs = cmd_find_state::default();
     log_debug(format_args!(
         "hooks_insert: inserting hook {}",
-        crate::log::log_bytes(name.to_bytes())
+        tiri_core::log::log_bytes(name.to_bytes())
     ));
     if target.is_empty() || !target.is_valid() {
         fs = cmd_find_state::from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
@@ -157,7 +161,7 @@ fn hooks_find(
     let Some(source) = source else {
         log_debug(format_args!(
             "hooks_insert: hook {} not found",
-            crate::log::log_bytes(name.to_bytes())
+            tiri_core::log::log_bytes(name.to_bytes())
         ));
         return None;
     };
@@ -194,7 +198,7 @@ fn hooks_insert(
         match pr {
             Err(error) => log_debug(format_args!(
                 "hooks_insert: can't parse hook {}: {}",
-                crate::log::log_bytes(name.to_bytes()),
+                tiri_core::log::log_bytes(name.to_bytes()),
                 log_cstr(&error)
             )),
             Ok(commands) => {
@@ -305,11 +309,11 @@ fn CString_cb(name: &CStr, payload: &mut event_payload) {
     let ep = &*payload;
     if matches!(
         event_payload_get_identity(ep, c"_hooks_monitor"),
-        Some(crate::shared::events::EventPayloadIdentity::HookMonitor(_))
+        Some(tiri_core::shared::events::EventPayloadIdentity::HookMonitor(_))
     ) {
         return;
     }
-    if let Some(crate::shared::events::EventPayloadIdentity::Operation(observer)) =
+    if let Some(tiri_core::shared::events::EventPayloadIdentity::Operation(observer)) =
         event_payload_get_identity(ep, c"_cmdq_item")
     {
         let Some(item_owner) = observer.upgrade() else {
@@ -365,7 +369,7 @@ pub fn hooks_run(item_handle: Option<&std::rc::Rc<cmdq_item>>, name: &CStr) {
     let (target_state, client) = {
         let item = item_handle.expect("command queue item").borrow();
         (
-            crate::cmd::queue::cmdq_get_target(&item).clone(),
+            tiri_core::actions::queue::target(&item).clone(),
             item.client.clone(),
         )
     };
@@ -397,7 +401,7 @@ fn hooks_monitor_hook_cb(
     generation: usize,
 ) {
     if !matches!(event_payload_get_identity(payload, c"_hooks_monitor"),
-        Some(crate::shared::events::EventPayloadIdentity::HookMonitor(id)) if *id == generation)
+        Some(tiri_core::shared::events::EventPayloadIdentity::HookMonitor(id)) if *id == generation)
     {
         return;
     }
@@ -436,7 +440,7 @@ fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generati
     event_payload_set_identity(
         &mut ep,
         c"_hooks_monitor",
-        crate::shared::events::EventPayloadIdentity::HookMonitor(generation),
+        tiri_core::shared::events::EventPayloadIdentity::HookMonitor(generation),
     );
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     if let Some(pane) = pane_owner.as_ref().filter(|pane| {
@@ -569,9 +573,3 @@ pub fn hooks_monitor_add(
         .expect("monitor option");
     monitor_add(&set, name, type_0, id, format, flags);
 }
-
-pub use tiri_core::monitor::{
-    subscription_fire_count as hooks_monitor_get_fire_count,
-    subscription_fire_time as hooks_monitor_get_fire_time,
-    subscription_text as hooks_monitor_to_cstring,
-};

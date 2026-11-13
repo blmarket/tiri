@@ -1,22 +1,24 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::queue::cmdq_error;
 use std::ffi::CStr;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use tiri_core::server_fn::{server_destroy_session, server_redraw_session};
-use tiri_core::session::sessions;
 use tiri_core::session::Session;
+use tiri_core::session::sessions;
 use tiri_core::winlink::winlink_window;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::format::FORMAT_NONE;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::tree::RB_NEGINF;
-use tiri_core::shared::window::winlink;
 use tiri_core::shared::window::WINLINK_ALERTFLAGS;
+use tiri_core::shared::window::winlink;
 use tiri_core::window::Window as _;
 use tiri_core::window::{winlink_next, winlinks_minmax};
 pub static cmd_kill_session_entry: cmd_entry = {
@@ -47,10 +49,10 @@ pub static cmd_kill_session_entry: cmd_entry = {
 fn cmd_kill_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let source = target.s.upgrade().expect("live target session");
-    let mut sg = crate::refbox::Weak::new();
-    let mut wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut sg = tiri_core::refbox::Weak::new();
+    let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
     if filter.is_some()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
@@ -86,7 +88,7 @@ fn cmd_kill_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
 }
 fn cmd_kill_session_all(item_handle: &std::rc::Rc<cmdq_item>, filter: Option<&CStr>) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut s: Option<SessionRef> = crate::cmd::queue::cmdq_get_target(&item).session_handle();
+    let mut s: Option<SessionRef> = tiri_core::actions::queue::target(&item).session_handle();
     let mut sloop: Option<SessionRef> = None;
     let mut sloop_owner = sessions::first();
     sloop = sloop_owner.clone();
@@ -130,7 +132,7 @@ fn cmd_kill_session_filter(
         ft,
         None,
         Some(s_owner),
-        (crate::refbox::Weak::new()).clone(),
+        (tiri_core::refbox::Weak::new()).clone(),
         None,
     );
     let expanded = format_expand_cstring(ft, filter);

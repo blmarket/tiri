@@ -1,19 +1,21 @@
 //! Building command lists from command arguments.
 
 use crate::cmd::parse::cmd_parse_from_string;
-use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::cmd::{
-    cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_log_argv,
-    cmd_template_replace_cstring,
-};
-use crate::format::bytes::write_cstr;
-use crate::format::format_single_from_target_cstring;
-use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
-use crate::shared::abi::u_int;
-use crate::shared::client::ClientRef;
-use crate::shared::command::{cmd, cmd_list, cmd_parse_input, cmdq_item};
+use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::{cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first};
+use crate::shared::command::{cmd, cmd_list, cmd_parse_input};
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
+use tiri_core::actions::queue::target_client as cmdq_get_target_client;
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::format::format_single_from_target_cstring;
+use tiri_core::log::{fatalx, log_bytes, log_cstr, log_debug};
+use tiri_core::shared::abi::u_int;
+use tiri_core::shared::client::ClientRef;
+use tiri_core::text::action_helpers::{
+    log_argv as cmd_log_argv, replace_template as cmd_template_replace_cstring,
+};
 
 /// Box-owned prepared command; retained model references have typed owners.
 pub struct args_command_state {
@@ -61,7 +63,7 @@ pub fn args_make_commands_prepare(
 ) -> Box<args_command_state> {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
     let values = &args.values;

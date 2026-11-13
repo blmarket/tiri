@@ -1,7 +1,10 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_print};
+use crate::cmd::queue::{cmdq_error, cmdq_print};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    execution_state as cmdq_get_state_owned, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::events::events_fire_window;
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_cstring;
@@ -18,12 +21,14 @@ use tiri_core::server_fn::{
 };
 use tiri_core::session::Session;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
 
 use tiri_core::shared::window::winlink;
 use tiri_core::tmux::{check_name, clean_name_cstring};
@@ -62,11 +67,11 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
-    let target = crate::cmd::queue::cmdq_get_target(&item);
-    let source = crate::cmd::queue::cmdq_get_source(&item);
+    let target = tiri_core::actions::queue::target(&item);
+    let source = tiri_core::actions::queue::source(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut wl: crate::refbox::Weak<winlink> = source.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = source.winlink_handle();
     let mut src_s: Option<SessionRef> = source.session_handle();
     let mut dst_s: Option<SessionRef> = target.session_handle();
     let pane_owner = source.pane_handle().expect("live break pane");

@@ -1,9 +1,10 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::args_parse;
 use crate::cmd::cmd_get_entry;
-use crate::shared::command::CMD_STARTSERVER;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::CMD_STARTSERVER;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::args_parse;
 use tiri_core::shared::signal::SIGTERM;
 pub static cmd_kill_server_entry: cmd_entry = {
     cmd_entry {
@@ -57,7 +58,8 @@ pub static cmd_start_server_entry: cmd_entry = {
 };
 fn cmd_kill_server_exec(self_0: &cmd, _item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_kill_server_entry) {
-        let _ = crate::tiri_sys::send_signal(std::process::id() as crate::libc::pid_t, SIGTERM);
+        let _ =
+            tiri_core::tiri_sys::send_signal(std::process::id() as tiri_core::libc::pid_t, SIGTERM);
     }
     CmdOutcome::Normal
 }

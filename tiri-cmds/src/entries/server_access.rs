@@ -1,12 +1,13 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_count, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_CLIENT_CANFAIL;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::tiri_sys::{group_id_by_name, user_id, user_id_by_name};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::target_client as cmdq_get_target_client;
+use tiri_core::arguments::{args_count, args_has, args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_cstring;
 use tiri_core::server_acl::{
@@ -17,6 +18,7 @@ use tiri_core::shared::abi::id_t;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::server_acl::SERVER_ACL_IS_GROUP;
+use tiri_core::tiri_sys::{group_id_by_name, user_id, user_id_by_name};
 pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {
         name: c"server-access",
@@ -85,7 +87,7 @@ fn cmd_server_access_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         args_string(args, 0 as u_int).unwrap_or(c""),
         c.as_ref(),
         None,
-        (crate::refbox::Weak::new()).clone(),
+        (tiri_core::refbox::Weak::new()).clone(),
         None,
     );
     if args_has(args, 'g' as i32 as u_char) != 0 {

@@ -1,24 +1,28 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
-    args, args_get, args_has, args_make_commands_now, args_parse, args_parse_type, ArgsParseError,
-    ARGS_PARSE_COMMANDS_OR_STRING,
-};
+use crate::arguments::args_make_commands_now;
+use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed,
+    cmdq_append, cmdq_error, cmdq_get_command, cmdq_insert_after, cmdq_resumed,
 };
 use crate::cmd::{cmd_get_args, cmd_list_first};
 use crate::shared::command::CMD_CLIENT_TFLAG;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_get, args_has, args_parse,
+    args_parse_type,
+};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
-use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_DEAD;
+use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::prompt::PROMPT_TYPE_COMMAND;
-use tiri_core::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
+use tiri_core::shared::prompt::{PROMPT_CLOSE, PROMPT_SINGLE, prompt_result};
 use tiri_core::status::status_prompt_set;
 
 pub struct cmd_confirm_before_data {
@@ -30,7 +34,7 @@ pub struct cmd_confirm_before_data {
 /// Who acts on the answer.
 pub enum cmd_confirm_before_reply {
     /// The waiting item's continuation, which owns the command list.
-    Wait(crate::tiri_rt::oneshot::Sender<bool>),
+    Wait(tiri_core::tiri_rt::oneshot::Sender<bool>),
     /// -b: a confirmed command is appended to the answering client's queue.
     Background(Rc<cmd_list>),
 }
@@ -70,7 +74,7 @@ fn cmd_confirm_before_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
     let args = cmd_get_args(self_0);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let Some(cmdlist) = args_make_commands_now(self_0, item_handle, 0, 1) else {
@@ -109,7 +113,7 @@ fn cmd_confirm_before_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
         CString::new(bytes).expect("C string command and validated key contain no interior NUL")
     };
     let continuation = if wait != 0 {
-        let (answer, answered) = crate::tiri_rt::oneshot::channel();
+        let (answer, answered) = tiri_core::tiri_rt::oneshot::channel();
         cdata.reply = Some(cmd_confirm_before_reply::Wait(answer));
         Some(cmd_confirm_before_wait(
             answered,
@@ -143,7 +147,7 @@ fn cmd_confirm_before_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
 /// never resumes the item (tmux's cmd_confirm_before_free): release the
 /// command list and park.
 async fn cmd_confirm_before_wait(
-    answered: crate::tiri_rt::oneshot::Receiver<bool>,
+    answered: tiri_core::tiri_rt::oneshot::Receiver<bool>,
     cmdlist: Rc<cmd_list>,
     item: Weak<cmdq_item>,
 ) {
@@ -202,8 +206,6 @@ impl cmd_confirm_before_data {
 
 #[cfg(test)]
 mod tests {
-    use crate::shared::command::CmdOutcome;
-    use tiri_core::server_client::Client as _;
     use super::{
         CLIENT_DEAD, ClientRef, PROMPT_CLOSE, Rc, Weak, cmd_confirm_before_callback,
         cmd_confirm_before_data, cmd_confirm_before_reply, cmd_confirm_before_wait, cmd_list,
@@ -213,6 +215,9 @@ mod tests {
     use crate::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
     use crate::test_support::clients;
     use std::cell::Cell;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::server_client::Client as _;
+    use tiri_core::server_client::queue_test_clients::return_value;
 
     /// Queue an item on `owner` that waits for the answer to a prompt, as
     /// cmd_confirm_before_exec does; return the item, the prompt's data and
@@ -225,7 +230,7 @@ mod tests {
         Box<cmd_confirm_before_data>,
         Weak<cmd_list>,
     ) {
-        let (answer, answered) = crate::tiri_rt::oneshot::channel();
+        let (answer, answered) = tiri_core::tiri_rt::oneshot::channel();
         let cmdlist = Rc::new(cmd_list_new());
         let list = Rc::downgrade(&cmdlist);
         let item = cmdq_append(
@@ -284,7 +289,7 @@ mod tests {
                 cmd_confirm_before_callback(&owner, &mut cdata, answer),
                 PROMPT_CLOSE
             );
-            assert_eq!(clients::return_value(&owner), (!confirmed).into());
+            assert_eq!(return_value(&owner), (!confirmed).into());
             assert!(list.upgrade().is_none(), "the continuation finished");
             assert!(head.upgrade().is_some() && !ran.get());
             assert_eq!(cmdq_next(Some(&owner)), if confirmed { 3 } else { 2 });
@@ -304,7 +309,7 @@ mod tests {
         assert!(list.upgrade().is_none(), "the command list is released");
         assert_eq!(cmdq_next(Some(&owner)), 0);
         assert!(head.upgrade().is_some() && !ran.get());
-        assert_eq!(clients::return_value(&owner), -1);
+        assert_eq!(return_value(&owner), -1);
         owner.update_flags(CLIENT_DEAD as u64, 0);
         drop(owner);
         assert!(head.upgrade().is_none());

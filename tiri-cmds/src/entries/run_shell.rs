@@ -1,14 +1,16 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{
-    args, args_command_state, args_count, args_get, args_has, args_make_commands,
-    args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
-    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
-};
+use crate::arguments::{args_command_state, args_make_commands, args_make_commands_prepare};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed,
+    cmdq_append, cmdq_error, cmdq_get_command, cmdq_insert_after, cmdq_resumed,
+};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, target_client as cmdq_get_target_client,
+};
+use tiri_core::arguments::{
+    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count, args_get,
+    args_has, args_parse, args_parse_type, args_string,
 };
 use tiri_core::compat::strtod::strtod;
 use tiri_core::format::bytes::format_message_with;
@@ -25,9 +27,10 @@ use tiri_core::winlink::winlink_window;
 
 use tiri_core::server_client::Client as _;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_CANFAIL;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
@@ -36,9 +39,10 @@ use tiri_core::session::Session;
 use tiri_core::shared::abi::{size_t, time_t, u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::event::Timer;
-use tiri_core::shared::job::{job, JobCompletion, JOB_NOWAIT, JOB_SHOWSTDERR};
+use tiri_core::shared::job::{JOB_NOWAIT, JOB_SHOWSTDERR, JobCompletion, job};
 use tiri_core::shared::pane::window_pane;
 use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::status::status_message_set;
 use tiri_core::window::Window as _;
 use tiri_core::window_copy::{window_copy_add, window_view_mode};
@@ -138,7 +142,7 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 fn cmd_run_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -250,7 +254,7 @@ fn cmd_run_shell_wait(
     delay: Duration,
 ) -> CmdOutcome {
     let item = Rc::downgrade(item_handle);
-    let (elapsed, delayed) = crate::tiri_rt::oneshot::channel();
+    let (elapsed, delayed) = tiri_core::tiri_rt::oneshot::channel();
     let timer = Timer::new(delay, move || {
         let _ = elapsed.send(());
     })
@@ -264,7 +268,7 @@ fn cmd_run_shell_wait(
         let Some(job) = cmd_run_shell_timer(&mut cdata, Some(&item)) else {
             return;
         };
-        let (done, completed) = crate::tiri_rt::oneshot::channel();
+        let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
         job.try_borrow_mut()
             .expect("newly registered job")
             .completecb = Some(Box::new(move |completion| {
@@ -278,7 +282,7 @@ fn cmd_run_shell_wait(
 /// completing never resumes the item (tmux's cmd_run_shell_free): release the
 /// data, and the client with it, then park.
 async fn cmd_run_shell_complete(
-    completed: crate::tiri_rt::oneshot::Receiver<JobCompletion>,
+    completed: tiri_core::tiri_rt::oneshot::Receiver<JobCompletion>,
     cdata: Box<cmd_run_shell_data>,
     item: Weak<cmdq_item>,
 ) {
@@ -294,7 +298,7 @@ async fn cmd_run_shell_complete(
 fn cmd_run_shell_timer(
     cdata: &mut cmd_run_shell_data,
     item: Option<&Weak<cmdq_item>>,
-) -> Option<crate::refbox::Weak<job>> {
+) -> Option<tiri_core::refbox::Weak<job>> {
     let c = cdata.client.as_ref();
     let cmd = cdata.cmd.as_deref();
     let new_item_allocation;
@@ -446,19 +450,20 @@ impl Drop for cmd_run_shell_data {
 
 #[cfg(test)]
 mod tests {
-    use crate::shared::command::CmdOutcome;
-    use tiri_core::server_client::Client as _;
     use super::{
         CStr, ClientRef, Duration, ExitStatusExt, JobCompletion, Rc, Weak, cmd_run_shell_complete,
         cmd_run_shell_data, cmd_run_shell_wait, cmdq_item,
     };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_running};
     use crate::test_support::clients;
-    use crate::tiri_rt::Runtime as _;
     use std::cell::Cell;
     use std::process::ExitStatus;
     use std::time::Instant;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::server_client::Client as _;
+    use tiri_core::server_client::queue_test_clients::return_value;
     use tiri_core::shared::client::CLIENT_DEAD;
+    use tiri_core::tiri_rt::Runtime as _;
 
     /// Foreground data; the callback body panics on a missing command.
     fn data(client: Option<ClientRef>, cmd: Option<&CStr>) -> Box<cmd_run_shell_data> {
@@ -502,9 +507,9 @@ mod tests {
         cdata: Box<cmd_run_shell_data>,
     ) -> (
         Weak<cmdq_item>,
-        crate::tiri_rt::oneshot::Sender<JobCompletion>,
+        tiri_core::tiri_rt::oneshot::Sender<JobCompletion>,
     ) {
-        let (done, completed) = crate::tiri_rt::oneshot::channel();
+        let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
         let item = append(Some(owner), move |item| {
             CmdOutcome::Suspend(Box::pin(cmd_run_shell_complete(
                 completed,
@@ -525,7 +530,7 @@ mod tests {
 
     #[test]
     fn a_zero_delay_runs_the_timer_body_one_runtime_turn_later() {
-        let mut runtime = crate::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let head = append(None, |item| {
                 cmd_run_shell_wait(item, data(None, None), Duration::ZERO)
@@ -545,7 +550,7 @@ mod tests {
 
     #[test]
     fn a_delay_resumes_at_its_deadline() {
-        let mut runtime = crate::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let delay = Duration::from_millis(50);
             let start = Instant::now();
@@ -570,7 +575,7 @@ mod tests {
 
     #[test]
     fn dropping_the_item_during_the_delay_cancels_the_timer() {
-        let mut runtime = crate::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let owner = clients::with_queue();
             let other = clients::with_queue();
@@ -598,7 +603,7 @@ mod tests {
         let ran = append_flag(Some(&owner));
         assert!(head.upgrade().is_some());
         assert!(done.send(exited(0)).is_ok());
-        assert_eq!(clients::return_value(&owner), 0);
+        assert_eq!(return_value(&owner), 0);
         assert!(head.upgrade().is_some() && !ran.get());
         assert_eq!(cmdq_next(Some(&owner)), 2);
         assert!(head.upgrade().is_none());

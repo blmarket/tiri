@@ -1,25 +1,31 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector};
 use crate::cfg::{cfg_finished, cfg_show_causes};
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
-};
+use crate::cmd::queue::{cmdq_error, cmdq_get_flags, cmdq_insert_hook, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::entries::attach_session::cmd_attach_session;
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
+};
+use tiri_core::arguments::{
+    args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector,
+};
 use tiri_core::compat::strtonum::strtonum;
 use tiri_core::environ::{environ_create, environ_put, environ_update};
 use tiri_core::events::events_fire_session;
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_cstring;
-use tiri_core::options::{options_get_number, options_get_string, options_set_string, OptionsScope};
+use tiri_core::options::{
+    OptionsScope, options_get_number, options_get_string, options_set_string,
+};
 use tiri_core::server_client::Client as _;
 use tiri_core::text::numbers::scan_u32_pair;
 
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
-    CMDQ_STATE_REPEAT, CMD_FIND_CANFAIL, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE,
+    CMD_FIND_CANFAIL, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE, CMDQ_STATE_REPEAT,
 };
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use tiri_core::options::options;
 use tiri_core::session::Session;
@@ -31,6 +37,7 @@ use tiri_core::shared::environment::environ;
 use tiri_core::shared::limits::USHRT_MAX;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::spawn::spawn_context;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::terminal::termios;
 use tiri_core::shared::tree::RB_NEGINF;
 use tiri_core::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
@@ -96,7 +103,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     let mut current_block: u64;
     let args = cmd_get_args(self_0);
     let current = cmdq_get_state_owned(&(item));
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
@@ -106,7 +113,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     let mut env: Option<Box<environ>> = None;
     let mut oo: Option<options> = None;
     let mut tio: Option<termios> = None;
-    let mut sg = crate::refbox::Weak::new();
+    let mut sg = tiri_core::refbox::Weak::new();
     let mut group: Option<&CStr> = None;
     let mut cwd: Option<CString> = None;
     let mut wname_owned: Option<CString> = None;
@@ -124,7 +131,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         geometry: None,
         item: tiri_core::actions::ContextWeak::new(),
         s: std::rc::Weak::new(),
-        wl: crate::refbox::Weak::new(),
+        wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
         name: None,
@@ -161,7 +168,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             tmp,
             c.as_ref(),
             None,
-            (crate::refbox::Weak::new()).clone(),
+            (tiri_core::refbox::Weak::new()).clone(),
             None,
         );
         if !check_name(&ename) {
@@ -181,7 +188,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             tmp,
             c.as_ref(),
             None,
-            (crate::refbox::Weak::new()).clone(),
+            (tiri_core::refbox::Weak::new()).clone(),
             None,
         );
         if !check_name(&ename) {
@@ -288,7 +295,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                             tmp,
                             c.as_ref(),
                             None,
-                            (crate::refbox::Weak::new()).clone(),
+                            (tiri_core::refbox::Weak::new()).clone(),
                             None,
                         ));
                     } else {

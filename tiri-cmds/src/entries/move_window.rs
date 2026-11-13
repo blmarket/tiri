@@ -1,19 +1,21 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::find::TargetLookup as _;
 use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::options::options_get_number;
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_fn::{server_link_window, server_status_session, server_unlink_window};
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::shared::command::{CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::session::Session;
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::winlink;
 use tiri_core::window::winlink_shuffle_up;
 pub static cmd_move_window_entry: cmd_entry = {
@@ -69,7 +71,7 @@ pub static cmd_link_window_entry: cmd_entry = {
 fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let source = crate::cmd::queue::cmdq_get_source(&item);
+    let source = tiri_core::actions::queue::source(&item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -81,7 +83,7 @@ fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     let tflag = args_get(args, 't' as i32 as u_char);
     let mut src: Option<SessionRef> = source.session_handle();
     let mut dst: Option<SessionRef> = None;
-    let mut wl: crate::refbox::Weak<winlink> = source.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = source.winlink_handle();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;
     let mut dflag: ::core::ffi::c_int = 0;

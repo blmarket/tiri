@@ -1,10 +1,12 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::cmd::queue::cmdq_item;
+use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_true,
@@ -48,10 +50,10 @@ fn cmd_list_windows_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut s: Option<SessionRef> = None;
     let mut i: u_int = 0;
     let mut n: u_int = 0;

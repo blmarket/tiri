@@ -1,12 +1,13 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::args_parse;
 use crate::cmd::cmd_get_entry;
-use crate::cmd::queue::cmdq_get_target_client;
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
 };
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::target_client as cmdq_get_target_client;
+use tiri_core::arguments::args_parse;
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_fn::{server_lock, server_lock_client, server_lock_session};
 pub static cmd_lock_server_entry: cmd_entry = {
@@ -86,7 +87,7 @@ pub static cmd_lock_client_entry: cmd_entry = {
 };
 fn cmd_lock_server_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_lock_server_entry) {
         server_lock();

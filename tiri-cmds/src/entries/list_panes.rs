@@ -1,7 +1,8 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::cmd::queue::{cmdq_error, cmdq_print};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_true,
@@ -9,9 +10,10 @@ use tiri_core::format::{
 use tiri_core::session::sessions;
 use tiri_core::winlink::winlink_window;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::session::Session;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
@@ -51,9 +53,9 @@ pub static cmd_list_panes_entry: cmd_entry = {
 fn cmd_list_panes_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut s: Option<SessionRef> = target.session_handle();
-    let mut wl: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -104,7 +106,7 @@ fn cmd_list_panes_session(
     mut type_0: ::core::ffi::c_int,
 ) {
     let s = Some(s_owner.clone());
-    let mut wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     wl = s
         .as_ref()
         .expect("live session")
@@ -117,7 +119,7 @@ fn cmd_list_panes_session(
 fn cmd_list_panes_window(
     self_0: &cmd,
     s_owner: &SessionRef,
-    mut wl: crate::refbox::Weak<winlink>,
+    mut wl: tiri_core::refbox::Weak<winlink>,
     item_handle: &std::rc::Rc<cmdq_item>,
     mut type_0: ::core::ffi::c_int,
 ) {

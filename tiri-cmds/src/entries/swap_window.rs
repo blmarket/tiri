@@ -1,15 +1,16 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_WINDOW;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server::marked_pane;
 use tiri_core::server_fn::server_redraw_session_group;
-use tiri_core::session::session_group_synchronize_from;
 use tiri_core::session::Session;
+use tiri_core::session::session_group_synchronize_from;
 use tiri_core::shared::abi::u_char;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::window::winlink;
@@ -44,14 +45,14 @@ pub static cmd_swap_window_entry: cmd_entry = {
 fn cmd_swap_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let source = crate::cmd::queue::cmdq_get_source(&item);
-    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let source = tiri_core::actions::queue::source(&item);
+    let target = tiri_core::actions::queue::target(&item);
     let mut src: Option<SessionRef> = source.session_handle();
     let mut dst: Option<SessionRef> = target.session_handle();
-    let mut sg_src = crate::refbox::Weak::new();
-    let mut sg_dst = crate::refbox::Weak::new();
-    let mut wl_src: crate::refbox::Weak<winlink> = source.winlink_handle();
-    let mut wl_dst: crate::refbox::Weak<winlink> = target.winlink_handle();
+    let mut sg_src = tiri_core::refbox::Weak::new();
+    let mut sg_dst = tiri_core::refbox::Weak::new();
+    let mut wl_src: tiri_core::refbox::Weak<winlink> = source.winlink_handle();
+    let mut wl_dst: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     sg_src = tiri_core::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),

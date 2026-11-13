@@ -1,59 +1,56 @@
-use crate::shared::command::CmdOutcome;
 use crate::cmd::find::TargetLookup as _;
-pub use tiri_core::actions::queue::{
-    client as cmdq_get_client, event as cmdq_get_event, execution_state as cmdq_get_state_owned,
-    merge_formats as cmdq_merge_formats, new_state as cmdq_new_state, source as cmdq_get_source,
-    target as cmdq_get_target, target_client as cmdq_get_target_client,
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
+    new_state as cmdq_new_state, target as cmdq_get_target,
+    target_client as cmdq_get_target_client,
 };
 mod command;
 
 use self::command::CommandRef;
-use crate::arguments::{
-    args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
-};
 use crate::cfg::{cfg_add_cause, cfg_finished};
 use crate::cmd::find::cmd_find_client;
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_source, cmd_print_cstring};
-use crate::control::{control_write, control_write_guard};
-use crate::events::events_fire;
-use crate::events_payload::{
+use crate::shared::command::{
+    CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_CLIENT_TFLAG, CMDQ_STATE_CONTROL,
+    CMDQ_STATE_NOHOOKS,
+};
+use crate::shared::command::{cmd, cmd_entry_flag, cmd_list, cmdq_cb};
+use std::ffi::{CStr, CString};
+use tiri_core::actions::ExecutionState as cmdq_state;
+use tiri_core::arguments::{
+    args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
+};
+use tiri_core::control::{control_write, control_write_guard};
+use tiri_core::events::events_fire;
+use tiri_core::events_payload::{
     event_payload_create, event_payload_set_identity, event_payload_set_string,
     event_payload_set_target,
 };
-use crate::file::file_error;
-use crate::format::bytes::format_message_with;
-use crate::format::bytes::write_cstr;
-use crate::format::{format_add_cstr, format_create, format_merge};
-use crate::key_string::key_string_format;
-use crate::log::{log_cstr, log_debug, log_get_level};
-use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
-use crate::server::server_add_message;
-use crate::server_client::Client as _;
-use crate::shared::abi::{u_char, u_int, uint64_t};
-use crate::shared::abi::{__uid_t, uid_t};
-use crate::shared::client::{ClientRef, ClientWeak};
-use crate::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
-use crate::shared::command::{cmd, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state};
-use crate::shared::command::{
-    CMDQ_STATE_CONTROL, CMDQ_STATE_NOHOOKS, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG,
-    CMD_CLIENT_TFLAG,
-};
-use crate::shared::format::format_tree;
-use crate::shared::format::FORMAT_NONE;
-use crate::shared::key::{KEYC_NONE, key_code};
-use crate::shared::session::SessionRef;
-use crate::status::status_message_set;
-use crate::text::utf8::utf8_sanitize_cstring;
-use crate::tiri_buffer::SegmentedBuf;
-use crate::tiri_sys::{user_id, user_name};
-use std::ffi::{CStr, CString};
+use tiri_core::file::file_error;
+use tiri_core::format::bytes::format_message_with;
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::format::{format_add_cstr, format_create, format_merge};
+use tiri_core::key_string::key_string_format;
+use tiri_core::log::{log_cstr, log_debug, log_get_level};
+use tiri_core::reactor::{evbuffer_add_formatted, evbuffer_new};
+use tiri_core::server::server_add_message;
+use tiri_core::server_client::Client as _;
+use tiri_core::shared::abi::{__uid_t, uid_t};
+use tiri_core::shared::abi::{u_char, u_int, uint64_t};
+use tiri_core::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
+use tiri_core::shared::client::{ClientRef, ClientWeak};
+use tiri_core::shared::format::FORMAT_NONE;
+use tiri_core::shared::format::format_tree;
+use tiri_core::shared::key::{KEYC_NONE, key_code};
+use tiri_core::shared::session::SessionRef;
+use tiri_core::shared::target::Target as cmd_find_state;
+use tiri_core::status::status_message_set;
+use tiri_core::text::utf8::utf8_sanitize_cstring;
+use tiri_core::tiri_buffer::SegmentedBuf;
+use tiri_core::tiri_sys::{user_id, user_name};
 
 /// Queue-created command state. Only this module may construct or remove it.
-///
-/// ```compile_fail
-/// use tiri_cmds::shared::command::cmdq_item;
-/// let item = cmdq_item::empty();
-/// ```
 pub struct cmdq_item(std::cell::RefCell<QueueItem>);
 
 impl std::ops::Deref for cmdq_item {
@@ -182,12 +179,6 @@ impl QueueItem {
 /// Box-owned by a client until client destruction; the lazy global queue lives for
 /// the process. The private deque owns stable command item allocations, and
 /// the drain owns a suspended head's continuation.
-///
-/// ```compile_fail
-/// use tiri_cmds::cmd::queue::cmdq_new;
-/// let mut queue = cmdq_new();
-/// queue.list.pop_front();
-/// ```
 pub struct cmdq_list {
     /// Dropped first, so pending continuations are cancelled before items go.
     drain: DrainSlot,
@@ -197,7 +188,7 @@ pub struct cmdq_list {
     item: std::rc::Weak<cmdq_item>,
     list: std::collections::VecDeque<std::rc::Rc<cmdq_item>>,
     /// Detached commands belong to the server's global queue, not a client.
-    background: std::collections::BTreeMap<u64, crate::reactor::Timer>,
+    background: std::collections::BTreeMap<u64, tiri_core::reactor::Timer>,
     next_background_id: u64,
 }
 
@@ -235,7 +226,7 @@ pub fn cmdq_background(
         queue.next_background_id = id.checked_add(1).expect("background command ID overflow");
         id
     });
-    let timer = crate::reactor::Timer::new(delay, move || {
+    let timer = tiri_core::reactor::Timer::new(delay, move || {
         let timer = QueueTarget::Global.with_queue(|queue| queue.background.remove(&id));
         drop(timer);
         callback();
@@ -393,7 +384,7 @@ pub fn cmdq_append(
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_append",
-            crate::log::log_bytes(cmdq_name(owner).as_bytes()),
+            tiri_core::log::log_bytes(cmdq_name(owner).as_bytes()),
             log_cstr(name.as_deref().unwrap_or(c"(null)"))
         ));
     }
@@ -431,7 +422,7 @@ pub fn cmdq_insert_after(
         log_debug(format_args!(
             "{} {}: {} after {}",
             "cmdq_insert_after",
-            crate::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
+            tiri_core::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
             log_cstr(name.as_deref().unwrap_or(c"(null)")),
             log_cstr(previous.as_deref().unwrap_or(c"(null)"))
         ));
@@ -466,7 +457,7 @@ pub fn cmdq_insert_hook(
     event_payload_set_identity(
         &mut ep,
         c"_cmdq_item",
-        crate::shared::events::EventPayloadIdentity::Operation(
+        tiri_core::shared::events::EventPayloadIdentity::Operation(
             tiri_core::actions::ContextRef::new(item_handle.clone()).downgrade(),
         ),
     );
@@ -532,8 +523,8 @@ async fn cmdq_drain(queue: QueueTarget) {
             let mut item = item_owner.borrow_mut();
             log_debug(format_args!(
                 "cmdq_next {}: {}",
-                crate::log::log_bytes(cmdq_queue_name(&queue).as_bytes()),
-                crate::log::log_bytes(item.name.as_deref().unwrap_or(c"(null)").to_bytes()),
+                tiri_core::log::log_bytes(cmdq_queue_name(&queue).as_bytes()),
+                tiri_core::log::log_bytes(item.name.as_deref().unwrap_or(c"(null)").to_bytes()),
             ));
             item.start.take().expect("queue head starts once")
         };
@@ -545,7 +536,7 @@ async fn cmdq_drain(queue: QueueTarget) {
         NUMBER.set(number);
         {
             let mut item = item_owner.borrow_mut();
-            item.time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
+            item.time = tiri_core::shared::time::unix_seconds(std::time::SystemTime::now());
             item.number = number;
         }
         match start(&item_owner) {
@@ -643,7 +634,7 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain) -> u_int {
         .unwrap_or(0)
 }
 /// The resuming end of a plain wait. Dropping it never resumes the item.
-pub use tiri_core::actions::Completion as CmdqWaiter;
+use tiri_core::actions::Completion as CmdqWaiter;
 /// Suspend the executing item until its waiter resumes it, and return the
 /// waiter with the outcome its command or callback must return.
 #[must_use = "return the suspension from the command"]
@@ -859,8 +850,8 @@ fn cmdq_fire_command(item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_fire_command",
-            crate::log::log_bytes(name.as_bytes()),
-            crate::log::log_bytes(tmp.as_bytes())
+            tiri_core::log::log_bytes(name.as_bytes()),
+            tiri_core::log::log_bytes(tmp.as_bytes())
         ));
     }
     flags = (state.flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
@@ -1012,7 +1003,7 @@ pub fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let queue = QueueTarget::for_client(owner);
     log_debug(format_args!(
         "cmdq_next {}: enter",
-        crate::log::log_bytes(cmdq_name(owner).as_bytes())
+        tiri_core::log::log_bytes(cmdq_name(owner).as_bytes())
     ));
     let drain = queue.with_queue(|queue| {
         match std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false }) {
@@ -1078,7 +1069,7 @@ pub fn cmdq_error(
     log_debug(format_args!(
         "{}: {}",
         "cmdq_error",
-        crate::log::log_bytes(msg.as_bytes())
+        tiri_core::log::log_bytes(msg.as_bytes())
     ));
     match c.as_ref() {
         None => {
@@ -1149,13 +1140,13 @@ pub fn cmdq_error(
 
 #[cfg(test)]
 mod lifecycle_tests {
-    use crate::shared::command::CmdOutcome;
     use super::{
         CStr, FORMAT_NONE, cmdq_append, cmdq_get_callback_owned, cmdq_item, cmdq_next, cmdq_remove,
         cmdq_running, format_create,
     };
     use std::cell::Cell;
     use std::rc::Rc;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
 
     pub(super) struct SetOnDrop(pub(super) Rc<Cell<bool>>);
     impl Drop for SetOnDrop {
@@ -1219,7 +1210,7 @@ mod lifecycle_tests {
         let parent = tracked_item(c"parent", &parent_released);
         let capture = ParentContext(child_released.clone());
         let mut formats = format_create(None, None, FORMAT_NONE, 0);
-        crate::format::format_add_owned_cb(&mut formats, c"release-order", move |_| {
+        tiri_core::format::format_add_owned_cb(&mut formats, c"release-order", move |_| {
             let _ = &capture;
             None
         });
@@ -1306,8 +1297,7 @@ mod lifecycle_tests {
 
 #[cfg(test)]
 mod suspend_tests {
-    use crate::shared::command::CmdOutcome;
-    use super::lifecycle_tests::{append_recording, SetOnDrop};
+    use super::lifecycle_tests::{SetOnDrop, append_recording};
     use super::{
         CStr, cmdq_append, cmdq_get_callback_owned, cmdq_get_state, cmdq_item, cmdq_next,
         cmdq_resumed, cmdq_running,
@@ -1315,8 +1305,9 @@ mod suspend_tests {
     use std::cell::{Cell, RefCell};
     use std::future::Future;
     use std::rc::{Rc, Weak};
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
 
-    use crate::tiri_rt::oneshot::channel;
+    use tiri_core::tiri_rt::oneshot::channel;
 
     type Trace = Rc<RefCell<Vec<&'static str>>>;
 
@@ -1526,8 +1517,8 @@ mod suspend_tests {
 
     #[test]
     fn send_after_runtime_shutdown_runs_the_body_and_leaves_dispatch_pending() {
-        use crate::tiri_rt::Runtime as _;
-        let runtime = crate::tiri_rt::mio::Runtime::new().unwrap();
+        use tiri_core::tiri_rt::Runtime as _;
+        let runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let trace: Trace = Default::default();
             let (tx, rx) = channel::<()>();
@@ -1541,7 +1532,7 @@ mod suspend_tests {
             });
             let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
-            crate::reactor::shutdown_runtime(runtime);
+            tiri_core::reactor::shutdown_runtime(runtime);
             tx.send(()).unwrap();
             assert_eq!(*trace.borrow(), ["body"]);
             assert!(released.get());
@@ -1555,15 +1546,16 @@ mod suspend_tests {
 
 #[cfg(test)]
 mod wait_tests {
-    use crate::shared::command::CmdOutcome;
     use super::{
         CStr, ClientRef, CmdqWaiter, cmdq_append, cmdq_get_callback_owned, cmdq_get_client,
         cmdq_insert_after, cmdq_item, cmdq_next, cmdq_wait,
     };
-    use crate::session::session_new_for_test;
     use crate::test_support::clients;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::server_client::queue_test_clients::{attach, return_value};
+    use tiri_core::session::session_new_for_test;
 
     type Slot = Rc<RefCell<Option<CmdqWaiter>>>;
 
@@ -1623,7 +1615,7 @@ mod wait_tests {
         let waiter = slot.take().unwrap();
         assert!(waiter.client().is_none());
         waiter.finish(5);
-        assert_eq!(clients::return_value(&lent), 0);
+        assert_eq!(return_value(&lent), 0);
         assert_eq!(cmdq_next(None), 1);
         assert!(head.upgrade().is_none());
     }
@@ -1663,7 +1655,7 @@ mod wait_tests {
         let waiter = slot.take().unwrap();
         assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &lent)));
         waiter.finish(3);
-        assert_eq!(clients::return_value(&lent), 3);
+        assert_eq!(return_value(&lent), 3);
         assert_eq!(cmdq_next(None), 1);
     }
 
@@ -1671,22 +1663,22 @@ mod wait_tests {
     fn finish_reports_the_status_only_to_a_client_sessionless_at_finish() {
         let owner = clients::with_queue();
         let session = session_new_for_test();
-        clients::attach(&owner, Some(&session));
+        attach(&owner, Some(&session));
         let (first, second): (Slot, Slot) = Default::default();
         let first_item = cmdq_append(Some(&owner), waiting(c"first waiter", &first));
         let second_item = cmdq_append(Some(&owner), waiting(c"second waiter", &second));
         assert_eq!(cmdq_next(Some(&owner)), 0);
-        clients::attach(&owner, None);
+        attach(&owner, None);
         first.take().unwrap().finish(7);
-        assert_eq!(clients::return_value(&owner), 7);
+        assert_eq!(return_value(&owner), 7);
         assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(first_item.upgrade().is_none());
-        clients::attach(&owner, Some(&session));
+        attach(&owner, Some(&session));
         second.take().unwrap().finish(9);
-        assert_eq!(clients::return_value(&owner), 7);
+        assert_eq!(return_value(&owner), 7);
         assert_eq!(cmdq_next(Some(&owner)), 1);
         assert!(second_item.upgrade().is_none());
-        clients::attach(&owner, None);
+        attach(&owner, None);
     }
 
     #[test]

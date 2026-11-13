@@ -1,29 +1,29 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_count, args_has, args_parse, args_string};
 use crate::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after, cmdq_resumed,
-};
+use crate::cmd::queue::{cmdq_error, cmdq_get_callback_owned, cmdq_insert_after, cmdq_resumed};
 use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
-use tiri_core::file::{file_read_wait, FileOutcome, FileWait};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::arguments::{args_count, args_has, args_parse, args_string};
+use tiri_core::file::{FileOutcome, FileWait, file_read_wait};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::log::{log_cstr, log_debug};
 use tiri_core::reactor::evbuffer_pullup;
 use tiri_core::server_client::Client as _;
 
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 use tiri_core::libc::{EINVAL, ENOENT, ENOMEM};
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
-use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_CONTROL;
+use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::errno::ErrorText;
 
 pub struct cmd_source_file_data {
@@ -36,7 +36,7 @@ pub struct cmd_source_file_data {
     pub files: Vec<CString>,
 }
 
-pub use tiri_core::libc::{GLOB_NOMATCH, GLOB_NOSPACE};
+use tiri_core::libc::{GLOB_NOMATCH, GLOB_NOSPACE};
 thread_local! {
     static SOURCE_FILE_DEPTH: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
 }
@@ -183,7 +183,7 @@ fn cmd_source_file_done(
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
     let bsize = bdata.len();
     let mut new_item = Weak::new();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &mut target_state;
     if error != 0 {
         cmdq_error(item_owner, |out| {
@@ -320,7 +320,7 @@ fn cmd_source_file_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                 "cmd_source_file_exec",
                 log_cstr(&pattern)
             ));
-            match crate::tiri_sys::glob(pattern.as_c_str()) {
+            match tiri_core::tiri_sys::glob(pattern.as_c_str()) {
                 Err(result) => {
                     if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
                         let error = if result == GLOB_NOMATCH {

@@ -1,23 +1,26 @@
-use crate::shared::command::CmdOutcome;
-use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::find::TargetLookup as _;
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
+use crate::cmd::queue::{cmdq_error, cmdq_get_flags};
+use tiri_core::actions::TaskOutcome as CmdOutcome;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
+    target_client as cmdq_get_target_client,
 };
-use crate::key_bindings::key_bindings_get_table;
-use crate::tiri_sys::user_id;
+use tiri_core::arguments::{args_get, args_has, args_parse};
+use tiri_core::bindings::key_bindings_get_table;
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::server_fn::server_redraw_window;
+use tiri_core::tiri_sys::user_id;
 use tiri_core::window::Window as _;
 use tiri_core::window_pane::WindowPane as _;
 use tiri_core::winlink::winlink_window;
 
-use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, cmd_find_type};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
-    CMDQ_STATE_REPEAT, CMD_CLIENT_CFLAG, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY,
+    CMD_CLIENT_CFLAG, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY, CMDQ_STATE_REPEAT,
 };
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, cmd_find_type};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::uid_t;
 use tiri_core::shared::abi::{u_char, uint64_t};
 use tiri_core::shared::client::ClientRef;
@@ -25,6 +28,7 @@ use tiri_core::shared::client::{CLIENT_IGNORESIZE, CLIENT_READONLY};
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::sort::sort_criteria;
 use tiri_core::shared::sort::{SORT_ACTIVITY, SORT_END};
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::winlink;
 use tiri_core::sort::sort_order_from_string;
 
@@ -75,7 +79,7 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut selected_session;
     let mut s: Option<SessionRef> = None;
-    let mut wl: crate::refbox::Weak<winlink> = crate::refbox::Weak::new();
+    let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut wp = None;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
