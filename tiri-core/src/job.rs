@@ -15,9 +15,9 @@ use crate::reactor::{
 };
 use crate::server::server_proc;
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{pid_t, u_int};
 use crate::shared::environment::environ;
-use crate::shared::event::*;
+use crate::shared::event::{bufferevent_data_callback, bufferevent_event_callback};
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::job::{
     job, job_complete_cb, job_free_cb, job_state, job_update_cb, jobs, JobCompletion,
@@ -518,7 +518,11 @@ pub fn job_print_summary(
 
 #[cfg(test)]
 mod job_stream_tests {
-    use super::*;
+    use super::{
+        AsRawFd, BufferEvent, ExitStatus, ExitStatusExt, JOB_CLOSED, JOB_DEAD, RefBox,
+        bufferevent_new, job, job_check_died, job_completion, job_error_callback, job_free,
+        job_get_event, job_read_callback, job_write_callback, jobs,
+    };
     use crate::shared::job::job_update_callback;
     use std::cell::Cell;
     use std::os::unix::net::UnixStream;

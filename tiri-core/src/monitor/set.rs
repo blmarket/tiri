@@ -9,7 +9,7 @@ use crate::reactor::Timer;
 use crate::server::current_time;
 use crate::server_client::Client as _;
 use crate::session::{sessions, Session as _};
-use crate::shared::abi::*;
+use crate::shared::abi::{time_t, u_int};
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::format::{format_tree, FORMAT_NOJOBS};
 use crate::shared::pane::window_pane;
@@ -789,7 +789,13 @@ fn monitor_items_insert(
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::*;
+    use super::{
+        CStr, CString, MONITOR_NOTIFY_INITIAL, MONITOR_NOTIFY_TRUE, MONITOR_SESSION,
+        MonitorValueTarget, Rc, current_time, monitor_add, monitor_check_value, monitor_create,
+        monitor_create_client, monitor_destroy, monitor_first_item, monitor_get_fire_count,
+        monitor_get_fire_time, monitor_item, monitor_items, monitor_items_insert, monitor_remove,
+        monitor_set, monitor_visit, monitor_with_item,
+    };
     use tiri_rt::Runtime as _;
 
     #[test]

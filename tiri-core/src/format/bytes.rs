@@ -159,7 +159,11 @@ pub fn cstr_basename(path: &CStr) -> CString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CStr, CString, cstr_append_into, cstr_basename, cstr_copy_into, cstr_dirname, format_bytes,
+        format_bytes_with, format_cstring, format_message_with, io, try_format_message_with,
+        write_cstr,
+    };
 
     // (buffer, src, after copy, copy result, after append, append result)
     type CopyCase = (

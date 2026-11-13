@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{
     args, args_command_state, args_count, args_get, args_has, args_make_commands,
     args_make_commands_get_command_cstring, args_make_commands_prepare, args_parse,
@@ -9,7 +10,7 @@ use crate::cmd::queue::{
 };
 use crate::cmd::{cmd_append_argv, cmd_get_args};
 use crate::shared::command::CMD_CLIENT_TFLAG;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -17,10 +18,13 @@ use std::rc::{Rc, Weak};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::prompt::prompt_type;
 use tiri_core::server_client::Client as _;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::pane::window_pane;
-use tiri_core::shared::prompt::*;
+use tiri_core::shared::prompt::{
+    PROMPT_KEY_CLOSE, PROMPT_KEY_MOVE, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID, prompt_key_result,
+    prompt_type,
+};
 use tiri_core::shared::prompt::{
     prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL,
     PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
@@ -363,7 +367,7 @@ impl cmd_command_prompt_cdata {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::cmd_command_prompt_rows;
 
     #[test]
     fn split_prompts_keep_empty_fields_and_fill_missing_inputs() {

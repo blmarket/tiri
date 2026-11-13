@@ -13,17 +13,25 @@ use crate::options::{options_get_number, options_get_string};
 use crate::paste::{paste_buffer_data, paste_get_top};
 use crate::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
 use crate::screen::screen_set_cursor_style;
-use crate::screen_write::{
-    screen_write_cell, screen_write_clearcharacter, screen_write_cursormove,
-};
+use crate::screen_write::{screen_write_cell, screen_write_clearcharacter, screen_write_cursormove};
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, u_short};
 use crate::shared::format::format_tree;
-use crate::shared::grid::*;
+use crate::shared::grid::{GRID_ATTR_UNDERSCORE, grid_cell, utf8_char, utf8_data};
 use crate::shared::key::MODEKEY_VI;
-use crate::shared::key::*;
+use crate::shared::key::{
+    KEYC_BSPACE, KEYC_CTRL, KEYC_DC, KEYC_DOWN, KEYC_END, KEYC_HOME, KEYC_KP_EIGHT, KEYC_KP_ENTER,
+    KEYC_KP_FIVE, KEYC_KP_FOUR, KEYC_KP_MINUS, KEYC_KP_NINE, KEYC_KP_ONE, KEYC_KP_PERIOD,
+    KEYC_KP_PLUS, KEYC_KP_SEVEN, KEYC_KP_SIX, KEYC_KP_SLASH, KEYC_KP_STAR, KEYC_KP_THREE,
+    KEYC_KP_TWO, KEYC_KP_ZERO, KEYC_LEFT, KEYC_MASK_FLAGS, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS,
+    KEYC_MASK_TYPE, KEYC_META, KEYC_NPAGE, KEYC_PPAGE, KEYC_RIGHT, KEYC_TYPE_UNICODE, KEYC_UP,
+    KEYC_VI, key_code,
+};
 use crate::shared::prompt::prompt;
-use crate::shared::prompt::*;
+use crate::shared::prompt::{
+    PROMPT_KEY_CLOSE, PROMPT_KEY_HANDLED, PROMPT_KEY_MOVE, PROMPT_KEY_NOT_HANDLED,
+    PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID, PROMPT_TYPE_SEARCH, prompt_key_result, prompt_type,
+};
 use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::shared::prompt::{
     PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_EDITARROWS,
@@ -33,8 +41,10 @@ use crate::shared::prompt::{
 use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
-use crate::shared::style::*;
-use crate::shared::utf8::*;
+use crate::shared::style::{
+    STYLE_ALIGN_DEFAULT, STYLE_DEFAULT_BASE, STYLE_LIST_OFF, STYLE_RANGE_NONE, style,
+};
+use crate::shared::utf8::{UTF8_DONE, UTF8_MORE};
 use crate::style::{style_parse, style_set};
 use crate::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
@@ -1679,7 +1689,19 @@ pub fn prompt_type_string(kind: prompt_type) -> &'static CStr {
 
 #[cfg(test)]
 mod prompt_buffer_tests {
-    use super::*;
+    use crate::shared::prompt::PROMPT_CONTINUE;
+    use super::{
+        CStr, CString, KEYC_BSPACE, KEYC_CTRL, KEYC_DC, KEYC_KP_PLUS, KEYC_LEFT, KEYC_UP,
+        MODEKEY_VI, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_EDITARROWS,
+        PROMPT_FREEING, PROMPT_FREE_PENDING, PROMPT_INCREMENTAL, PROMPT_KEY, PROMPT_KEY_CLOSE,
+        PROMPT_KEY_HANDLED, PROMPT_KEY_MOVE, PROMPT_KEY_NOT_HANDLED, PROMPT_NUMERIC,
+        PROMPT_QUOTENEXT, PROMPT_SINGLE, PromptTranslatedKey, Rc, RefCell, key_code, prompt,
+        prompt_backward_word, prompt_closed, prompt_decode_paste, prompt_end_word,
+        prompt_forward_word, prompt_free, prompt_in_list, prompt_key, prompt_keypad_key,
+        prompt_paste, prompt_replace_complete, prompt_space, prompt_translate_key,
+        prompt_trim_buffer, utf8_data, utf8_fromcstr_vec, utf8_set, utf8_strlen,
+        utf8_tocstr_cstring,
+    };
 
     fn make_prompt(input: &CStr, index: usize, copied: Option<Box<[utf8_data]>>) -> Box<prompt> {
         Box::new(prompt {

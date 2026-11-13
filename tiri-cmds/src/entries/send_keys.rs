@@ -1,10 +1,11 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{
     args, args_count, args_has, args_parse, args_string, args_strtonum_and_expand_result,
 };
 use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
 use tiri_core::format::bytes::write_cstr;
@@ -12,15 +13,17 @@ use tiri_core::key_string::key_string_parse_cstr;
 use tiri_core::options::options_get_number;
 use tiri_core::server_client::Client;
 use tiri_core::session::Session;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_READONLY;
-use tiri_core::shared::grid::*;
+use tiri_core::shared::grid::utf8_char;
 use tiri_core::shared::key::key_event;
-use tiri_core::shared::key::*;
+use tiri_core::shared::key::{
+    KEYC_LITERAL, KEYC_MASK_FLAGS, KEYC_NONE, KEYC_SENT, KEYC_UNKNOWN, key_code,
+};
 use tiri_core::shared::limits::UINT_MAX;
 use tiri_core::shared::session::SessionRef;
-use tiri_core::shared::utf8::*;
+use tiri_core::shared::utf8::UTF8_DONE;
 use tiri_core::shared::window::{window_mode_entry, winlink};
 use tiri_core::text::numbers::strtol_prefix;
 use tiri_core::text::utf8::{utf8_from_data, utf8_fromcstr_vec};

@@ -34,14 +34,14 @@ use crate::options::options_get_number;
 use crate::resize::recalculate_sizes;
 use crate::server::{marked_pane, server_clear_marked};
 use crate::server_fn::server_lock_session;
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::environment::environ;
-use crate::shared::event::*;
+use crate::shared::event::Timer;
 use crate::shared::limits::UINT_MAX;
 use crate::shared::pane::window_pane;
 use crate::shared::session::{SessionRef, SessionWeak};
 use crate::shared::sort::sort_criteria;
-use crate::shared::terminal::*;
+use crate::shared::terminal::termios;
 use crate::shared::tree::{RB_INF, RB_NEGINF};
 use crate::shared::window::WindowRef;
 use crate::shared::window::WINLINK_ALERTFLAGS;
@@ -753,7 +753,7 @@ pub fn session_new_for_test() -> SessionRef {
 
 #[cfg(test)]
 mod session_index_tests {
-    use super::*;
+    use super::{session, winlink_add, winlink_remove};
 
     #[test]
     fn current_winlink_observer_expires_when_index_removes_it() {

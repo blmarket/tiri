@@ -1562,7 +1562,11 @@ impl KeyBindingCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        KEYC_BUILD_MODIFIERS, KEYC_F1, KEYC_MASK_MODIFIERS, KEYC_META, KEYC_MOUSE_LOCATION_NOWHERE,
+        KEYC_MOUSE_LOCATION_PANE, KEYC_NUSER, KEYC_TYPE_NOTYPE, KEYC_TYPE_UNICODE, key_code,
+        key_code_mouse_location, key_code_type,
+    };
     use ::core::mem::{align_of, size_of};
 
     #[test]

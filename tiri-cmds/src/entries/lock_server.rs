@@ -1,7 +1,8 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::args_parse;
 use crate::cmd::cmd_get_entry;
 use crate::cmd::queue::cmdq_get_target_client;
-use crate::shared::command::*;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,

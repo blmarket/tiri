@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
@@ -7,11 +8,11 @@ use tiri_core::shared::client::ClientRef;
 use tiri_core::window::Window as _;
 
 use crate::shared::command::CMD_FIND_DEFAULT_MARKED;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use std::rc::Rc;
 use tiri_core::server_fn::server_redraw_window;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::u_char;
 use tiri_core::shared::window::WindowRef;
 use tiri_core::window_pane::WindowPane as _;
 pub static cmd_swap_pane_entry: cmd_entry = {

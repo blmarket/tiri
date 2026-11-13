@@ -8,9 +8,14 @@ use crate::grid::{
 use crate::hyperlinks::hyperlinks_get;
 use crate::input::input_pending;
 use crate::screen::screen_reset_hyperlinks;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int};
 use crate::shared::colour::COLOUR_FLAG_256;
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_FLAG_BG256, GRID_FLAG_FG256, GRID_LINE_DEAD, GRID_LINE_EXTENDED, GRID_LINE_HYPERLINK,
+    GRID_LINE_OSC133_FLAGS, GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED,
+    GRID_STRING_EMPTY_CELLS, GRID_STRING_ESCAPE_SEQUENCES, GRID_STRING_TRIM_SPACES,
+    GRID_STRING_WITH_SEQUENCES, grid, grid_cell, utf8_data,
+};
 use crate::shared::limits::{INT_MIN, SHRT_MAX};
 use crate::shared::pane::window_pane;
 use crate::shared::screen::screen;

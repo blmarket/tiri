@@ -431,7 +431,7 @@ pub fn json_to_string(node: &json_node) -> CString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::json_error;
 
     #[test]
     fn diagnostics_preserve_bytes_and_context_truncation() {

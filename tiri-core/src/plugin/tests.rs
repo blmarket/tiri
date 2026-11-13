@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Duration, Host, Instant, OsStr, PaneId, PaneValues, Plugin, REGISTRY, Registry, Slot, Variable,
+    each, enabled_names, find, io, register, shutdown, tick,
+};
 use crate::options::OptionsScope;
 
 struct Fake {

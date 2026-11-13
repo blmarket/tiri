@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{
     args, args_command_state, args_count, args_get, args_has, args_make_commands,
     args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
@@ -25,16 +26,16 @@ use tiri_core::winlink::winlink_window;
 use tiri_core::server_client::Client as _;
 
 use crate::shared::command::CMD_FIND_CANFAIL;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 use tiri_core::session::Session;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{size_t, time_t, u_char, u_int};
 use tiri_core::shared::client::ClientRef;
-use tiri_core::shared::event::*;
+use tiri_core::shared::event::Timer;
 use tiri_core::shared::job::{job, JobCompletion, JOB_NOWAIT, JOB_SHOWSTDERR};
 use tiri_core::shared::pane::window_pane;
 use tiri_core::shared::session::SessionRef;
@@ -445,7 +446,12 @@ impl Drop for cmd_run_shell_data {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::shared::command::CmdOutcome;
+    use tiri_core::server_client::Client as _;
+    use super::{
+        CStr, ClientRef, Duration, ExitStatusExt, JobCompletion, Rc, Weak, cmd_run_shell_complete,
+        cmd_run_shell_data, cmd_run_shell_wait, cmdq_item,
+    };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_running};
     use crate::test_support::clients;
     use crate::tiri_rt::Runtime as _;

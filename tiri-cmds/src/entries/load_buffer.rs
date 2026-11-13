@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
@@ -8,13 +9,13 @@ use tiri_core::paste::paste_set_owned;
 use tiri_core::reactor::evbuffer_pullup;
 use tiri_core::shared::errno::ErrorText;
 
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
 use tiri_core::server_client::Client as _;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::tty::tty_set_selection;
 
@@ -127,7 +128,11 @@ fn cmd_load_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::shared::command::CmdOutcome;
+    use super::{
+        CStr, CString, ClientRef, FileOutcome, Weak, cmd_load_buffer_complete,
+        cmd_load_buffer_data, cmdq_item, file_read_wait,
+    };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
     use crate::test_support::clients;
     use crate::tiri_buffer::SegmentedBuf;

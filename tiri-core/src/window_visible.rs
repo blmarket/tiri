@@ -1,4 +1,4 @@
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::display::visible_range;
 use crate::shared::pane::window_pane;
 

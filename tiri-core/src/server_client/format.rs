@@ -1,5 +1,9 @@
 //! Owned, lazy builtin values. Cross-model lookups never retain a Client borrow.
-use super::*;
+use crate::session::Session as _;
+use super::{
+    CLIENT_UTF8, CStr, CString, Client, format_tree, options_get_string, server_client_get_flags,
+    tty_get_features,
+};
 use crate::format::FormatValue;
 use crate::session::sessions;
 use crate::shared::client::ClientRef;
@@ -113,7 +117,9 @@ fn number(value: impl std::fmt::Display) -> CString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::server_client::format_create;
+    use crate::shared::client::client;
+    use super::{CString, Client, FormatValue, Rc};
 
     #[test]
     fn values_own_bytes_and_preserve_unstarted_terminal_behavior() {

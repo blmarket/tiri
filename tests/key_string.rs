@@ -1,5 +1,5 @@
 use tiri::key_string::{key_string_format, key_string_parse_cstr};
-use tiri::shared::key::*;
+use tiri::shared::key::{KEYC_CTRL, KEYC_CURSOR, key_code};
 
 #[test]
 fn invalid_packed_unicode_preserves_c_string_termination() {

@@ -1,7 +1,8 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::shared::command::*;
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use std::ffi::{CStr, CString};
 use tiri_core::control::control_write;
 use tiri_core::file::{file_can_print, file_print, file_print_buffer};
@@ -9,7 +10,7 @@ use tiri_core::format::bytes::write_cstr;
 use tiri_core::paste::paste_set_owned;
 use tiri_core::server_client::Client as _;
 use tiri_core::server_fn::server_redraw_window;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, uint64_t};
 use tiri_core::shared::client::{ClientRef, CLIENT_CONTROL};
 use tiri_core::window_pane::WindowPane as _;
 pub static cmd_capture_pane_entry: cmd_entry = {

@@ -750,7 +750,7 @@ static DEFAULT_WIDTHS: [WidthItem; 162] = [
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Utf8ItemCache, Utf8WidthCache, WidthEntry};
 
     #[test]
     fn item_indexes_deduplicate_exact_bytes_and_preserve_zero_padding() {

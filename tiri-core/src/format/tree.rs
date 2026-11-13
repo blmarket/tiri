@@ -1,6 +1,10 @@
+use crate::format::callbacks::FORMAT_TABLE;
 use crate::log::log_cstr;
 
-use super::*;
+use super::{
+    FormatValue, event, format_entry, format_entry_tree, format_message_with, format_plugin_pane,
+    format_tree, log_debug, log_get_level, merge_formats, u_int, window_pane,
+};
 use crate::shared::client::ClientRef;
 use crate::shared::format::FormatEntryState;
 use std::ffi::{CStr, CString};
@@ -213,7 +217,13 @@ pub fn format_add_owned_cb(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::format::format_expand_cstring;
+    use crate::shared::format::FORMAT_NONE;
+    use super::{
+        CStr, CString, FormatEntryState, FormatValue, format_add, format_add_cstr,
+        format_add_owned_cb, format_add_time, format_create, format_entry_get_value,
+        format_entry_tree_find, format_merge, format_tree,
+    };
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use std::time::{Duration, UNIX_EPOCH};

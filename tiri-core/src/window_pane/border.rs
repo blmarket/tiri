@@ -1,5 +1,11 @@
 //! Pane border cache and status rendering.
-use super::*;
+use crate::shared::abi::u_short;
+use crate::shared::grid::GRID_ATTR_CHARSET;
+use crate::winlink::winlink_window;
+use super::{
+    Client, ClientRef, PANE_STATUS_OFF, Rc, RefCell, Session, Window, WindowPane, grid_cell,
+    screen, screen_init, window_pane,
+};
 use crate::format::{
     format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
 };

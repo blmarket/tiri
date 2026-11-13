@@ -2,7 +2,9 @@
 use super::diagnostic::options_string_cause;
 use super::scope::OptionsScope;
 use super::table::options_table;
-use super::types::*;
+use super::types::{
+    OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
+};
 use crate::arguments::{args, args_get, args_has};
 use crate::shared::window::WindowRef;
 use crate::winlink::winlink_window;

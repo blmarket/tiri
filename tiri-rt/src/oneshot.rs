@@ -92,7 +92,7 @@ impl<T> Drop for Receiver<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Cell, Future, LocalWaker, Pin, Poll, Rc, Receiver, RefCell, channel};
     use std::task::{ContextBuilder, LocalWake, Waker};
 
     #[derive(Default)]

@@ -6,7 +6,12 @@ use super::parse::{
 };
 use super::scope::OptionsScope;
 use super::table::{options_other_names, options_table};
-use super::types::*;
+use super::types::{
+    OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_COMMAND, OPTIONS_TABLE_FLAG,
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_KEY, OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_STRING,
+    OptionCommand, OptionsArrayKey, options, options_array, options_array_item, options_entry,
+    options_table_entry, options_value,
+};
 use crate::actions::sources::compile;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
@@ -16,8 +21,8 @@ use crate::server::current_time;
 
 use crate::style::colour::{colour_format, colour_parse_cstr};
 
-use crate::shared::abi::*;
-use crate::shared::key::*;
+use crate::shared::abi::{time_t, u_int};
+use crate::shared::key::key_code;
 use crate::shared::limits::UINT_MAX;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};

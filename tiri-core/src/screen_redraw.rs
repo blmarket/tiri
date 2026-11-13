@@ -7,7 +7,7 @@ use crate::options::OptionsScope;
 use crate::server::{marked_pane, server_is_marked};
 use crate::server_client::Client as _;
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, u_short, uint64_t};
 use crate::shared::borders::{
     CELL_LD, CELL_LR, CELL_LRD, CELL_LRU, CELL_LRUD, CELL_LU, CELL_RD, CELL_RU, CELL_UD, CELL_ULD,
     CELL_URD,
@@ -17,8 +17,8 @@ use crate::shared::client::{
     CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW,
     CLIENT_SUSPENDED, CLIENT_UTF8,
 };
-use crate::shared::grid::*;
-use crate::shared::layout::*;
+use crate::shared::grid::{GRID_ATTR_CHARSET, GRID_ATTR_REVERSE, grid_cell, utf8_data};
+use crate::shared::layout::{PANE_LINES_SINGLE, pane_lines};
 use crate::shared::limits::SIZE_MAX;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{
@@ -31,7 +31,7 @@ use crate::shared::redraw::{
 };
 use crate::shared::screen::CURSOR_MODES;
 use crate::shared::session::SessionRef;
-use crate::shared::tty::*;
+use crate::shared::tty::{TTYC_BIDI, tty_window_view};
 use crate::shared::window::WindowRef;
 use crate::status::{status_line_size, status_message_redraw, status_prompt_redraw, status_redraw};
 use crate::style::style_apply_with_options;
@@ -703,7 +703,7 @@ fn redraw_mark_menu(bctx: &mut redraw_build_ctx) {
     }
 }
 fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
-    use redraw_span_data::*;
+    use redraw_span_data::{Pane, Outside, Empty, Status, Border, Scrollbar, Menu};
     match (&a.data, &b.data) {
         (Pane(a), Pane(b)) => a.wp.ptr_eq(&b.wp) && a.py == b.py && a.px.wrapping_add(1) == b.px,
         (Border(a), Border(b)) => a == b && a.flags & REDRAW_BORDER_IS_ARROW == 0,

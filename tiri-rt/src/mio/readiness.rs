@@ -507,9 +507,9 @@ impl<F> Drop for Operation<'_, F> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Cell, Context, Direction, Future, OwnedFd, Pin, Poll};
     use crate::Runtime as _;
-    use std::io::Write;
+    use std::io::{self, Write};
     use std::os::unix::net::UnixStream;
     use std::task::Waker;
     use std::time::Duration;

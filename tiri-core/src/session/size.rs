@@ -1,5 +1,5 @@
 //! Session-owned cache publication used by creation and the sizing pass.
-use super::*;
+use super::{Session, SessionRef, options_get_number, sessions, u_int};
 use crate::server_client::Client;
 use crate::server_client::ClientRegistry;
 

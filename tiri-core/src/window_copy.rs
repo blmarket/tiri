@@ -44,12 +44,16 @@ use crate::screen_write::{
 use crate::server_client::Client as _;
 use crate::session::Session;
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, time_t, u_char, u_int, u_short, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;
-use crate::shared::event::*;
+use crate::shared::event::Timer;
 use crate::shared::format::format_tree;
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_ATTR_CHARSET, GRID_FLAG_EXTENDED, GRID_FLAG_NOPALETTE, GRID_FLAG_PADDING, GRID_FLAG_TAB,
+    GRID_HISTORY, GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED, WHITESPACE,
+    grid, grid_cell, grid_line, utf8_data,
+};
 use crate::shared::input::input_ctx;
 use crate::shared::job::JOB_NOWAIT;
 use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
@@ -241,7 +245,10 @@ fn window_copy_snapshot_separators(scope: &OptionsScope) -> Option<CString> {
 
 #[cfg(test)]
 mod separator_snapshot_tests {
-    use super::*;
+    use super::{
+        OptionsScope, window_copy_mode_data, window_copy_separators,
+        window_copy_snapshot_separators,
+    };
     use crate::options::options_table;
     use crate::options::{options_default, options_set_string};
 
@@ -9879,7 +9886,8 @@ fn window_copy_acquire_cursor_down(
 
 #[cfg(test)]
 mod regex_cell_tests {
-    use super::*;
+    use crate::shared::grid::grid_cell_entry;
+    use super::{Cow, grid, grid_line, window_copy_cstrtocellpos, window_copy_find_cell_suffix};
 
     #[test]
     fn suffix_mapping_preserves_padding_and_partial_cells() {
@@ -9940,7 +9948,10 @@ mod regex_cell_tests {
 
 #[cfg(test)]
 mod backing_owner_tests {
-    use super::*;
+    use super::{
+        OptionsScope, grid_default_cell, grid_get_cell, screen, screen_init, u_int,
+        window_copy_clone_screen, window_copy_mode_data,
+    };
     use crate::grid::grid_set_cell;
     use crate::options::options_table;
 

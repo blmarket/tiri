@@ -1,7 +1,8 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::args_parse;
 use crate::cmd::cmd_get_entry;
 use crate::shared::command::CMD_STARTSERVER;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use tiri_core::shared::signal::SIGTERM;
 pub static cmd_kill_server_entry: cmd_entry = {

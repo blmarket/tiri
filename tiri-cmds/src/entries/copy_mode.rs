@@ -1,13 +1,16 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_has, args_parse};
 use crate::cmd::queue::{cmdq_get_client, cmdq_get_event};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
 use tiri_core::server_client::Client as _;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::u_char;
 use tiri_core::shared::client::ClientRef;
-use tiri_core::shared::key::*;
+use tiri_core::shared::key::{
+    KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK,
+};
 use tiri_core::shared::session::SessionRef;
 use tiri_core::window::WindowPane;
 use tiri_core::window_clock::window_clock_mode;

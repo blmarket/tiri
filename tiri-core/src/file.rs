@@ -6,7 +6,10 @@ use model::FileRegistration;
 pub use model::{client_file, client_file_cb, client_file_event, client_files};
 
 use crate::compat::imsg::imsg;
-use crate::compat::imsg::*;
+use crate::compat::imsg::{
+    MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_WRITE, MSG_WRITE_CLOSE,
+    MSG_WRITE_DONE, MSG_WRITE_OPEN, MSG_WRITE_READY, msgtype,
+};
 use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::log::{fatalx, log_cstr, log_debug};
 use crate::proc::{bytes_of, int_message, proc_send, read_plain};
@@ -18,10 +21,10 @@ use crate::reactor::{
 
 use crate::server_client::Client as _;
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_int, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
-use crate::shared::event::*;
+use crate::shared::event::{bufferevent_data_callback, bufferevent_event_callback};
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::posix_io::{O_APPEND, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use crate::shared::process::tmuxpeer;

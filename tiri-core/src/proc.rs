@@ -1,6 +1,6 @@
 use crate::compat::imsg::imsg;
 use crate::compat::imsg::PROTOCOL_VERSION;
-use crate::compat::imsg::*;
+use crate::compat::imsg::{MSG_VERSION, msgtype};
 use crate::compat::imsg::{
     imsg_compose, imsgbuf_clear, imsgbuf_get, imsgbuf_init, imsgbuf_output, imsgbuf_queuelen,
     imsgbuf_receive, imsgbuf_written,
@@ -9,7 +9,7 @@ use crate::compat::setproctitle::setproctitle;
 use crate::format::bytes::write_cstr;
 use crate::log::{fatal, log_cstr, log_debug, log_open, log_pointer, log_toggle};
 use crate::reactor;
-use crate::shared::abi::*;
+use crate::shared::abi::pid_t;
 use crate::shared::abi::{gid_t, uid_t, uint32_t};
 use crate::shared::process::PeerMessage;
 use crate::shared::process::{tmuxpeer, tmuxproc};
@@ -542,7 +542,9 @@ pub fn proc_get_peer_gid(peer: &refbox::Weak<tmuxpeer>) -> gid_t {
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::*;
+    use crate::compat::imsg::MAX_IMSGSIZE;
+    use crate::compat::imsg::MSG_COMMAND;
+    use super::{PEER_BAD, proc_send, tmuxpeer};
     use std::os::unix::net::UnixStream;
 
     #[test]

@@ -1,14 +1,15 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_print};
-use crate::shared::command::*;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use std::ffi::{CStr, CString};
 use tiri_core::environ::{environ_find, environ_iter};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::session::Session;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::environment::ENVIRON_HIDDEN;
 use tiri_core::shared::environment::{environ, environ_entry};
 use tiri_core::tmux::global_environ;
@@ -148,7 +149,7 @@ fn cmd_show_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::cmd_show_environment_escape;
 
     #[test]
     fn escape_preserves_non_utf8_bytes_and_stops_at_first_nul() {

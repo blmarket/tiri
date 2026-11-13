@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::shared::client::ClientRef;
 use crate::shared::client::ClientWeak;
 use crate::shared::session::{SessionRef, SessionWeak};
 use crate::shared::window::WindowWeak;
@@ -19,7 +21,7 @@ use crate::shared::redraw::redraw_scene;
 use crate::shared::status::status_line;
 use crate::tty::tty;
 
-use crate::shared::client::*;
+use crate::shared::client::{client_exit_type, client_files};
 pub type MouseDragUpdate = Box<dyn FnMut(&mut mouse_event)>;
 pub type MouseDragRelease = Box<dyn FnOnce(&mut mouse_event)>;
 pub struct client {

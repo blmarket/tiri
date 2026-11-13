@@ -233,7 +233,7 @@ pub fn command_names() -> Vec<&'static CStr> {
 }
 
 pub mod sources {
-    use super::*;
+    use super::{CStr, CString, ClientRef, ExecutionState, ProgramRef, Rc, queue, runtime};
     pub fn compile(source: &CStr) -> Result<ProgramRef, CString> {
         (runtime().parse_source)(source)
     }
@@ -261,7 +261,7 @@ pub mod sources {
 }
 
 pub mod config {
-    use super::*;
+    use super::{CString, ClientRef, RUNTIME, runtime};
     pub fn configuration_finished() -> bool {
         RUNTIME
             .get()
@@ -310,7 +310,10 @@ pub mod queue {
     }
 
     pub use super::Completion;
-    use super::*;
+    use super::{
+        CStr, Callback, ClientRef, Context, ContextRef, ContextSource, ContextWeak, ExecutionState,
+        ProgramRef, RUNTIME, Rc, RefCell, Target, TaskOutcome, Weak, WorkQueue, key_event, runtime,
+    };
     pub fn new_queue() -> Option<Box<dyn WorkQueue>> {
         RUNTIME.get().map(|runtime| (runtime.queue_new)())
     }
@@ -413,7 +416,10 @@ pub mod queue {
     }
 }
 
-pub use crate::text::action_helpers::*;
+pub use crate::text::action_helpers::{
+    append_argv, log_argv, mouse_at, mouse_pane, mouse_window, pack_argv, replace_template,
+    stringify_argv,
+};
 
 pub trait ProgramSource {
     fn program_ref(&self) -> ProgramRef;

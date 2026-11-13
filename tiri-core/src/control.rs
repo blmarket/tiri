@@ -1,7 +1,7 @@
 use crate::actions::queue::{callback, client, enqueue, guard, new_state};
 use crate::actions::sources::submit;
 use crate::actions::CONTROL_REPLY;
-use crate::actions::*;
+use crate::actions::{TaskOutcome};
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
 use crate::log::{fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
@@ -16,7 +16,7 @@ use crate::reactor::{
 };
 use crate::server_client::Client as _;
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_int, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::client::{
     CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
@@ -24,7 +24,10 @@ use crate::shared::client::{
 use crate::shared::control::{
     control_block, control_pane, control_panes, control_state, control_window, control_windows,
 };
-use crate::shared::event::*;
+use crate::shared::event::{
+    bufferevent_data_callback, bufferevent_data_cb, bufferevent_event_callback,
+    bufferevent_event_cb,
+};
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::pane::window_pane;
 use crate::shared::pane::window_pane_offset;
@@ -1155,7 +1158,10 @@ fn control_windows_set(windows: &mut control_windows, window: u_int, sx: u_int, 
 
 #[cfg(test)]
 mod control_queue_tests {
-    use super::*;
+    use super::{
+        CONTROL_PANE_OFF, control_add_pane, control_pane, control_window, control_windows,
+        control_windows_set, window_pane_offset,
+    };
 
     #[test]
     fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {

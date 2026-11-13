@@ -19,13 +19,16 @@ use crate::session::Session;
 use crate::window::Window as _;
 
 use crate::actions::Target;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, u_short};
 use crate::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
 use crate::shared::client::ClientRef;
-use crate::shared::event::*;
-use crate::shared::grid::*;
-use crate::shared::key::*;
-use crate::shared::layout::*;
+use crate::shared::event::Timer;
+use crate::shared::grid::{GRID_ATTR_CHARSET, grid_cell, utf8_data};
+use crate::shared::key::{
+    KEYC_MASK_KEY, KEYC_MASK_MODIFIERS, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, key_code,
+};
+use crate::shared::layout::layout_geometry;
 use crate::shared::limits::UINT_MAX;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
@@ -1065,7 +1068,7 @@ fn window_panes_key(
 
 #[cfg(test)]
 mod preview_geometry_tests {
-    use super::*;
+    use super::{layout_geometry, window_panes_scaled_geometry};
 
     fn geometry(offset: (i32, i32), size: (u32, u32)) -> layout_geometry {
         layout_geometry {

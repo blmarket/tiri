@@ -53,7 +53,7 @@ pub struct visible_range {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::visible_ranges;
 
     #[test]
     fn visible_ranges_owns_initialized_storage() {

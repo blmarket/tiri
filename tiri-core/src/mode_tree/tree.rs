@@ -7,7 +7,7 @@ use super::types::{
 use crate::actions::queue::{callback, client, enqueue, new_state};
 use crate::actions::sources::{capitalize_error, submit};
 use crate::actions::Target;
-use crate::actions::*;
+use crate::actions::TaskOutcome;
 use crate::actions::{mouse_at, replace_template};
 use crate::arguments::{args, args_get, args_has};
 use crate::format::bytes::write_cstr;
@@ -31,17 +31,24 @@ use crate::screen_write::{
 };
 use crate::server_client::Client as _;
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, uint64_t};
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::shared::format::format_tree;
-use crate::shared::grid::*;
-use crate::shared::key::*;
-use crate::shared::layout::*;
+use crate::shared::grid::{grid_cell, utf8_data};
+use crate::shared::key::{
+    KEYC_DOUBLECLICK1_PANE, KEYC_FOCUS_IN, KEYC_FOCUS_OUT, KEYC_MASK_KEY, KEYC_MASK_TYPE,
+    KEYC_META, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE, KEYC_MOUSEDOWN3_PANE, KEYC_NONE,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_UNKNOWN, key_code,
+};
+use crate::shared::layout::BOX_LINES_DEFAULT;
 use crate::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
 use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::shared::pane::window_pane;
-use crate::shared::prompt::*;
+use crate::shared::prompt::{
+    PROMPT_KEY_CLOSE, PROMPT_KEY_HANDLED, PROMPT_KEY_NOT_HANDLED, PROMPT_TYPE_SEARCH,
+    prompt_key_result, prompt_type,
+};
 use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::shared::prompt::{
     prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE,
@@ -2344,7 +2351,12 @@ pub fn mode_tree_run_command(
 
 #[cfg(test)]
 mod mode_tree_tests {
-    use super::*;
+    use super::{
+        CStr, KEYC_NONE, MODE_TREE_PREVIEW_OFF, ModeTreeItemData, Rc, RefCell, key_code,
+        mode_tree_alloc_data, mode_tree_build, mode_tree_build_lines, mode_tree_call_build,
+        mode_tree_data, mode_tree_find_item, mode_tree_free_items, mode_tree_search_backward,
+        mode_tree_search_forward, u_int,
+    };
 
     #[test]
     fn child_owners_preserve_search_order_and_survive_removal() {
@@ -2573,7 +2585,10 @@ mod mode_tree_tests {
 
 #[cfg(test)]
 mod mode_prompt_data_tests {
-    use super::*;
+    use super::{
+        Rc, RefCell, Weak, mode_tree_alloc_data, mode_tree_data, mode_tree_prompt,
+        mode_tree_prompt_free_callback,
+    };
     use std::cell::Cell;
 
     fn data(tree: &Rc<RefCell<mode_tree_data>>) -> refbox::RefBox<mode_tree_prompt> {
@@ -2620,7 +2635,10 @@ mod mode_prompt_data_tests {
 
 #[cfg(test)]
 mod queued_prompt_accept_tests {
-    use super::*;
+    use super::{
+        CStr, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_KEY_HANDLED, Rc, RefCell, mode_tree_alloc_data,
+        mode_tree_data, mode_tree_observed_prompt_callback, prompt_key_result, prompt_result,
+    };
 
     #[test]
     fn observed_prompt_callbacks_retain_only_during_live_dispatch() {
@@ -2655,7 +2673,11 @@ mod queued_prompt_accept_tests {
 
 #[cfg(test)]
 mod row_owner_tests {
-    use super::*;
+    use super::{
+        CString, KEYC_NONE, ModeTreeItemData, Rc, key_code, mode_tree_alloc_data, mode_tree_build,
+        mode_tree_build_lines, mode_tree_each_tagged, mode_tree_free, mode_tree_free_items,
+        mode_tree_search_forward, mode_tree_set_height,
+    };
 
     #[test]
     fn row_observers_expire_and_borrowed_data_and_names_survive_teardown() {
@@ -2881,7 +2903,10 @@ mod row_owner_tests {
 
 #[cfg(test)]
 mod payload_owner_tests {
-    use super::*;
+    use super::{
+        CStr, ModeTreeItemData, key_code, mode_tree_alloc_data, mode_tree_build_lines,
+        mode_tree_free, mode_tree_free_items,
+    };
     use crate::window_buffer::window_buffer_itemdata;
 
     fn payload(name: &CStr) -> refbox::RefBox<window_buffer_itemdata> {

@@ -77,14 +77,12 @@ impl session {
 
 #[cfg(test)]
 mod retained_session_tests {
-    use super::*;
+    use super::session;
     use crate::shared::session::session_group;
 
     #[test]
     fn group_membership_is_weak_but_traversal_retains_live_sessions() {
-        use crate::session::{
-            session_group_attached_count, session_group_count, session_group_members,
-        };
+        use crate::session::{session_group_attached_count, session_group_count, session_group_members};
         use std::rc::Rc;
 
         let first = session::new();

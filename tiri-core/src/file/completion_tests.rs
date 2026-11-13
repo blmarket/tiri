@@ -1,4 +1,5 @@
-use super::*;
+use crate::server_client::Client as _;
+use super::{CLIENT_DEAD, Rc, Weak, client_file, file_read_wait, file_wait, file_write_wait, uint64_t};
 use crate::actions::queue::{callback, drive, enqueue};
 use crate::actions::TaskOutcome;
 use crate::reactor::shutdown_runtime;

@@ -1,9 +1,12 @@
 use crate::format::format_skip;
 use crate::grid::grid_default_cell;
-use crate::shared::abi::*;
-use crate::shared::grid::*;
-use crate::shared::style::*;
-use crate::shared::utf8::*;
+use crate::shared::abi::{bitstr_t, u_int};
+use crate::shared::grid::{grid_cell, utf8_data};
+use crate::shared::style::{
+    STYLE_ALIGN_ABSOLUTE_CENTRE, STYLE_ALIGN_CENTRE, STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT,
+    STYLE_ALIGN_RIGHT, STYLE_DEFAULT_BASE, STYLE_LIST_OFF, STYLE_RANGE_NONE, style, style_align,
+};
+use crate::shared::utf8::{UTF8_DONE, UTF8_MORE};
 use crate::style::{style_parse, style_set};
 use crate::text::utf8::{utf8_append, utf8_open, utf8_set};
 use std::ffi::{CStr, CString};
@@ -553,7 +556,7 @@ pub(crate) fn fuzzy_match_owned(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CStr, fuzzy_match_owned};
 
     #[test]
     fn scores_preserve_ties_inverse_terms_and_negative_matches() {

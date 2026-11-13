@@ -2,7 +2,7 @@ use crate::arguments::args_escape_cstring;
 use crate::format::bytes::cstr_copy_into;
 use crate::log::{fatalx, log_bytes, log_debug};
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;

@@ -1,4 +1,4 @@
-use super::*;
+use super::{CStr, tmuxpeer};
 use crate::shared::client::ClientRef;
 use tiri_buffer::SegmentedBuf;
 

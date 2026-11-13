@@ -1,5 +1,5 @@
 //! Pane comparison reads owned display state before querying parent order.
-use super::*;
+use super::{Rc, RefCell, Window, window_pane};
 use crate::shared::sort::{
     sort_criteria, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE,
 };
@@ -52,7 +52,12 @@ pub(super) fn compare(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::window_pane::WindowPane as _;
+    use crate::window_pane::CString;
+    use super::{
+        Ordering, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE, sort_criteria,
+        window_pane,
+    };
 
     #[test]
     fn comparison_orders_whole_keys_title_ties_and_reverse() {

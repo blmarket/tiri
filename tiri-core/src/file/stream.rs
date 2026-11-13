@@ -1,7 +1,7 @@
 //! Consumer-side adaptation of the push protocol. Producers deliver callbacks
 //! and wake notifications after releasing model borrows. Not polling pauses only
 //! consumption: the peer can continue sending and input can continue growing.
-use super::*;
+use super::client_file;
 use futures_core::Stream;
 use std::io;
 use std::pin::Pin;
@@ -84,7 +84,12 @@ pub(super) fn collect_for_callback(file: &mut client_file) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::file::EIO;
+    use crate::file::Rc;
+    use super::{
+        Buf, BufMut, Context, LocalWaker, Pin, Poll, Stream, Waker, client_file, finish, io,
+        take_wake,
+    };
     use std::cell::Cell;
     use std::task::{ContextBuilder, LocalWake};
 

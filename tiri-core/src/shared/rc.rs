@@ -27,7 +27,7 @@ pub fn same<P: SameAllocation>(a: Option<&P>, b: Option<&P>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Rc;
     use std::cell::{Cell, RefCell};
 
     struct Value(Rc<Cell<usize>>);

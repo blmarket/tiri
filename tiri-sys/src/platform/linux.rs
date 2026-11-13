@@ -181,12 +181,13 @@ fn read_ppid(pid: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::fs::File;
     use std::io;
     use std::ptr;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::*;
+    use super::{Duration, Linux, Platform};
 
     #[test]
     fn process_open_files_reports_current_process_file() {

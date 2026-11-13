@@ -1,8 +1,9 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
 use crate::hooks::hooks_valid_event_name;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -17,7 +18,7 @@ use tiri_core::format::{format_create, format_expand_cstring, format_true};
 use tiri_core::log::{log_cstr, log_debug, log_pointer};
 use tiri_core::reactor::{evbuffer_add_formatted, evbuffer_new};
 use tiri_core::server_client::Client as _;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::events::{event_payload, events_callback, EventSinkId};
 use tiri_core::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
@@ -519,7 +520,15 @@ pub fn cmd_wait_for_flush() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::entries::wait_for::CmdqWaiter;
+    use crate::shared::command::CmdOutcome;
+    use tiri_core::server_client::Client as _;
+    use super::{
+        CStr, ClientRef, EventSinkId, WAIT_CHANNELS, WAIT_EVENT_ITEMS, Weak, cmd_wait_for_add,
+        cmd_wait_for_client_lost, cmd_wait_for_entry, cmd_wait_for_event, cmd_wait_for_flush,
+        cmd_wait_for_lock, cmd_wait_for_remove, cmd_wait_for_signal, cmd_wait_for_unlock,
+        cmd_wait_for_wait, cmdq_item, wait_channel, wait_channels,
+    };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
     use crate::test_support::clients;
     use std::cell::RefCell;

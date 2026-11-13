@@ -6,16 +6,19 @@ use crate::winlink::winlink_window;
 use std::ffi::CStr;
 
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::uint64_t;
 use crate::shared::client::ClientRef;
 use crate::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
-use crate::shared::key::*;
+use crate::shared::key::KEYC_MASK_MODIFIERS;
 use crate::shared::key::{key_binding, key_table};
 use crate::shared::pane::window_pane;
 use crate::shared::paste::paste_buffer;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
+use crate::shared::sort::{
+    SORT_ACTIVITY, SORT_CREATION, SORT_END, SORT_INDEX, SORT_MODIFIER, SORT_NAME, SORT_ORDER,
+    SORT_SIZE, sort_order,
+};
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::winlink;
 use crate::shared::window::WindowRef;
@@ -347,7 +350,11 @@ pub fn sort_get_key_bindings_table<'a>(
 
 #[cfg(test)]
 mod sequence_tests {
-    use super::*;
+    use super::{
+        SORT_ACTIVITY, SORT_CREATION, SORT_END, SORT_INDEX, SORT_MODIFIER, SORT_NAME, SORT_ORDER,
+        SORT_SIZE, sort_by_criteria, sort_criteria, sort_next_order, sort_order_from_string,
+        sort_order_to_string, sort_ordering,
+    };
 
     #[test]
     fn equal_keys_preserve_input_order_in_both_directions() {

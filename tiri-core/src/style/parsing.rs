@@ -4,14 +4,21 @@ use crate::format::format_single_cstring;
 use crate::grid::grid_default_cell;
 use crate::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::log::{fatalx, log_bytes, log_debug};
-use crate::shared::abi::*;
-use crate::shared::grid::*;
+use crate::shared::abi::{u_char, u_int, u_short};
+use crate::shared::grid::{GRID_ATTR_NOATTR, grid_cell, utf8_data};
 use crate::shared::hyperlinks::hyperlinks_uri;
 pub use crate::shared::limits::UINT_MAX;
 pub use crate::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };
-use crate::shared::style::*;
+use crate::shared::style::{
+    STYLE_ALIGN_ABSOLUTE_CENTRE, STYLE_ALIGN_CENTRE, STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT,
+    STYLE_ALIGN_RIGHT, STYLE_DEFAULT_BASE, STYLE_DEFAULT_POP, STYLE_DEFAULT_PUSH,
+    STYLE_DEFAULT_SET, STYLE_LIST_FOCUS, STYLE_LIST_LEFT_MARKER, STYLE_LIST_OFF, STYLE_LIST_ON,
+    STYLE_LIST_RIGHT_MARKER, STYLE_RANGE_CONTROL, STYLE_RANGE_LEFT, STYLE_RANGE_NONE,
+    STYLE_RANGE_PANE, STYLE_RANGE_RIGHT, STYLE_RANGE_SESSION, STYLE_RANGE_USER, STYLE_RANGE_WINDOW,
+    style, style_ranges,
+};
 use crate::style::attributes::{attributes_format, attributes_parse};
 use crate::style::colour::{colour_format, colour_parse_cstr};
 use crate::text::utf8::utf8_set;
@@ -659,7 +666,8 @@ pub fn style_ranges_clear(srs: &mut style_ranges) {
 
 #[cfg(test)]
 mod style_ranges_tests {
-    use super::{style_range, style_ranges, STYLE_RANGE_LEFT};
+    use crate::shared::style::style_range;
+    use super::{style_ranges, STYLE_RANGE_LEFT};
     use crate::shared::abi::u_int;
 
     fn range(start: u_int, end: u_int) -> Box<style_range> {

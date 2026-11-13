@@ -1,7 +1,7 @@
-use crate::shared::abi::*;
-use crate::shared::grid::*;
+use crate::shared::abi::{u_char, u_int};
+use crate::shared::grid::utf8_data;
 use crate::shared::utf8::wchar_t;
-use crate::shared::utf8::*;
+use crate::shared::utf8::UTF8_DONE;
 use crate::shared::utf8::{
     hanguljamo_state, HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE,
     HANGULJAMO_STATE_NOT_COMPOSABLE, HANGULJAMO_STATE_NOT_HANGULJAMO,
@@ -243,7 +243,11 @@ pub fn hanguljamo_check_state(p_ud: &utf8_data, ud: &utf8_data) -> hanguljamo_st
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE, HANGULJAMO_STATE_NOT_COMPOSABLE,
+        HANGULJAMO_STATE_NOT_HANGULJAMO, hanguljamo_check_state, utf8_data, utf8_has_zwj,
+        utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj, utf8_regional_count, utf8_should_combine,
+    };
 
     fn cell(text: &str) -> utf8_data {
         let mut cell = utf8_data::default();

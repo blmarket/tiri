@@ -17,7 +17,7 @@ pub const UTF8_SIZE: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{UTF8_DONE, UTF8_ERROR, UTF8_MORE, utf8_state};
     use ::core::mem::{align_of, size_of};
 
     #[test]

@@ -7,7 +7,7 @@ use crate::shared::client::ClientRef;
 
 use crate::actions::ProgramRef;
 use crate::shared::key::KEY_BINDING_REPEAT;
-use crate::shared::key::*;
+use crate::shared::key::{KEYC_MASK_FLAGS, key_code};
 use crate::shared::key::{key_binding, key_table};
 use std::ffi::CStr;
 

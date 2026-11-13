@@ -1,5 +1,17 @@
 //! Pane-owned lazy formatting. Values leave the pane as owned bytes or timestamps.
-use super::*;
+use crate::shared::abi::__time_t;
+use crate::shared::abi::time_t;
+use crate::shared::grid::GRID_FLAG_PADDING;
+use crate::shared::grid::grid_cell_entry;
+use crate::shared::grid::grid_extd_entry;
+use crate::shared::grid::grid_line;
+use super::{
+    BufferEvent, CStr, CString, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES, PANE_INPUTOFF,
+    PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES, Rc, RefCell, WINDOW_PANE_NO_MODE,
+    Window, WindowPane, grid_cell, marked_pane, options_get_number, server_check_marked, size_t,
+    u_int, utf8_data, window_pane, window_pane_get_pane_status, window_pane_index,
+    window_pane_mode, window_pane_printable_flags,
+};
 use crate::actions::stringify_argv;
 use crate::format::format_quote_shell_single;
 use crate::format::C2RustUnnamed_43;
@@ -9,7 +21,12 @@ use crate::grid::view::grid_view_get_cell;
 use crate::names::parse_window_name_cstring;
 use crate::osdep::osdep_get_name_cstring;
 use crate::shared::pane::{PANE_CMDRUNNING, PANE_STATUSDRAWN};
-use crate::shared::screen::*;
+use crate::shared::screen::{
+    ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_INSERT, MODE_KCURSOR,
+    MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
+    MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC, MODE_WRAP,
+};
 use crate::style::colour::colour_format;
 use crate::tmux::sig2name;
 use std::fmt::Write as _;

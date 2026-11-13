@@ -1,8 +1,9 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_count, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::shared::command::CMD_CLIENT_CANFAIL;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::tiri_sys::{group_id_by_name, user_id, user_id_by_name};
 use std::ffi::CStr;
@@ -13,7 +14,7 @@ use tiri_core::server_acl::{
     server_acl_display, server_acl_find,
 };
 use tiri_core::shared::abi::id_t;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::server_acl::SERVER_ACL_IS_GROUP;
 pub static cmd_server_access_entry: cmd_entry = {

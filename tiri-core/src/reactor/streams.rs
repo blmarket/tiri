@@ -2,7 +2,7 @@ mod api;
 use super::io;
 use crate::control::CONTROL_BUFFER_LOW;
 use crate::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
-pub use api::*;
+pub use api::{BufferEvent, Interests, StreamError, StreamResult};
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short};
 use std::future::{poll_fn, Future};
@@ -314,7 +314,7 @@ pub fn bufferevent_setwatermark(stream: &mut bufferevent) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Buf, BufferEvent, bufferevent_get_input, bufferevent_new, bufferevent_write, clear};
 
     #[test]
     fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {

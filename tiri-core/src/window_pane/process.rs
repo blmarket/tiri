@@ -3,7 +3,7 @@ use super::{window_pane_destroy_ready, window_pane_exited};
 use crate::arguments::{args_count, args_has, args_string};
 
 use crate::actions::queue::{client, report_error, target_client};
-use crate::actions::*;
+use crate::actions::{TaskOutcome};
 use crate::format::{format_create, format_defaults, format_expand_time_cstring};
 use crate::log::{fatalx, log_debug};
 use crate::proc::proc_clear_signals;
@@ -14,10 +14,10 @@ use crate::reactor::{
 };
 use crate::server::server_proc;
 use crate::server_fn::server_destroy_pane;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int};
 use crate::shared::client::ClientRef;
 use crate::shared::errno::ErrorText;
-use crate::shared::event::*;
+use crate::shared::event::{bufferevent_data_callback, bufferevent_event_callback};
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::pane::window_pane;
@@ -230,7 +230,10 @@ fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<wind
 
 #[cfg(test)]
 mod pipe_stream_tests {
-    use super::*;
+    use super::{
+        BufferEvent, bufferevent_new, cmd_pipe_pane_error_callback, cmd_pipe_pane_read_callback,
+        evbuffer_get_length, window_pane,
+    };
     use crate::reactor::{evbuffer_add, shutdown_runtime};
     use std::os::fd::AsRawFd;
 

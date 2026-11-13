@@ -467,7 +467,10 @@ fn normalize(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CString, Discovery, PaneGit, PaneId, PaneValues, Path, PathBuf, Repo, VARIABLES, file_name,
+        fs, normalize, read_action, repo_name, subdir,
+    };
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
 

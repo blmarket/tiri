@@ -50,7 +50,7 @@ fn name(command: &ParseCommand) -> &[u8] {
 
 #[test]
 fn separators_and_nested_command_arguments() {
-    use Token::*;
+    use Token::{Newline, Semicolon, OpenBrace, CloseBrace};
     let commands = run(
         &mut Host::default(),
         vec![
@@ -83,7 +83,7 @@ fn separators_and_nested_command_arguments() {
 
 #[test]
 fn multiline_and_inline_conditionals_select_first_true_branch() {
-    use Token::*;
+    use Token::{Newline, If, Else, Elif, Endif};
     for separator in [vec![], vec![Newline]] {
         let mut tokens = vec![If, word("0")];
         tokens.extend(separator.clone());
@@ -110,7 +110,7 @@ fn multiline_and_inline_conditionals_select_first_true_branch() {
 
 #[test]
 fn assignments_respect_all_enclosing_scopes_and_hidden_flag() {
-    use Token::*;
+    use Token::{Newline, Hidden, If, Else, Endif, Equals};
     let mut host = Host::default();
     let commands = run(
         &mut host,
@@ -151,7 +151,7 @@ fn assignments_respect_all_enclosing_scopes_and_hidden_flag() {
 
 #[test]
 fn trailing_assignment_keeps_accumulated_commands() {
-    use Token::*;
+    use Token::{Newline, Semicolon, Equals};
     let mut host = Host::default();
     let commands = run(
         &mut host,
@@ -164,7 +164,7 @@ fn trailing_assignment_keeps_accumulated_commands() {
 
 #[test]
 fn semicolon_lists_under_a_false_condition_are_discarded() {
-    use Token::*;
+    use Token::{Newline, Semicolon, If, Endif};
     let commands = run(
         &mut Host::default(),
         vec![

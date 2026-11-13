@@ -1,5 +1,8 @@
 use crate::shared::session::session;
-use crate::window::*;
+use crate::window::{
+    winlink_add, winlink_count, winlink_find_by_index, winlink_remove, winlink_shuffle_up,
+    winlink_stack_indices, winlink_stack_push, winlinks_minmax, winlinks_next, winlinks_reindex,
+};
 use refbox::BorrowError;
 
 #[test]

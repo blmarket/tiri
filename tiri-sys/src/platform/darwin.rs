@@ -374,7 +374,7 @@ mod tests {
     use std::os::fd::AsFd;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::*;
+    use super::{Darwin, Platform, parse_procargs2};
 
     #[test]
     fn procargs2_splits_arguments_from_environment() {

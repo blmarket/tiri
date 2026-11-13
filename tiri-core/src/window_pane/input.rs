@@ -44,12 +44,21 @@ use crate::screen_write::{
 use crate::server_client::{Client as _, ClientRegistry};
 use crate::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, time_t, u_char, u_int, u_short, uint64_t};
 use crate::shared::client::{ClientRef, CLIENT_UNATTACHEDFLAGS};
 use crate::shared::colour::COLOUR_FLAG_256;
-use crate::shared::display::*;
-use crate::shared::event::*;
-use crate::shared::grid::*;
+use crate::shared::display::{
+    SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE,
+};
+use crate::shared::event::{Timer, bufferevent};
+use crate::shared::grid::{
+    GRID_ATTR_ALL_UNDERSCORE, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_DIM,
+    GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
+    GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
+    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5, GRID_LINE_END_OUTPUT, GRID_LINE_SECOND_PROMPT,
+    GRID_LINE_START_COMMAND, GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, grid_cell,
+    osc133_data, utf8_data,
+};
 use crate::shared::input::{
     input_ctx, input_end_type, input_request, input_request_clipboard_data,
     input_request_palette_data, input_request_type, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE,
@@ -68,7 +77,7 @@ use crate::shared::screen::{
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
 use crate::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-use crate::shared::utf8::*;
+use crate::shared::utf8::UTF8_MORE;
 use crate::shared::window::{WindowRef, WINDOW_BELL};
 use crate::style::colour::{
     colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
@@ -2062,7 +2071,7 @@ fn input_complete_request(
 
 #[cfg(test)]
 mod input_buffer_ownership_tests {
-    use super::*;
+    use super::{BufferEvent, input_init, input_send_reply, window_pane};
     use crate::reactor::bufferevent_new;
 
     #[test]
@@ -2107,7 +2116,7 @@ mod input_buffer_ownership_tests {
 
 #[cfg(test)]
 mod input_request_ownership_tests {
-    use super::*;
+    use super::{input_ctx, input_reply};
 
     #[test]
     fn reply_without_pending_request_does_not_queue() {
@@ -2121,7 +2130,7 @@ mod input_request_ownership_tests {
 
 #[cfg(test)]
 mod print_run_tests {
-    use super::*;
+    use super::{grid_default_cell, input_init, input_parse_screen, screen};
     use crate::grid::{grid_cells_equal, grid_get_cell, grid_get_line};
     use crate::screen::screen_init;
     use tiri_rt::Runtime as _;

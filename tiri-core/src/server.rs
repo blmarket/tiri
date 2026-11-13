@@ -56,10 +56,10 @@ fn server_clear_messages() {
 
 use crate::actions::Target;
 use crate::shared::abi::__mode_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{pid_t, time_t, u_int, uint64_t};
 use crate::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
 use crate::shared::errno::ErrorText;
-use crate::shared::event::*;
+use crate::shared::event::Timer;
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
 use crate::shared::process::tmuxproc;

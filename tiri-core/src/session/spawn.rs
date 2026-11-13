@@ -3,12 +3,14 @@
 use crate::shared::window::{WindowRef, WindowWeak};
 use crate::winlink::{winlink_index, winlink_window};
 
-use super::*;
+use super::{
+    CString, Rc, Session, WINLINK_ALERTFLAGS, events_fire_winlink, options_get_number,
+    session_group_synchronize_from, session_select, window_pane, winlink, winlink_add,
+    winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
+};
 use crate::events::events_fire_window;
 use crate::resize::default_window_size;
-use crate::shared::spawn::{
-    spawn_context, SPAWN_DETACHED, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
-};
+use crate::shared::spawn::{spawn_context, SPAWN_DETACHED, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN};
 use crate::spawn::{initialize_spawned_window, prepare_respawn_window, spawn_cause, spawn_log};
 use crate::window::Window;
 

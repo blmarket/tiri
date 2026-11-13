@@ -1,5 +1,5 @@
 //! Side effects of option changes.
-use super::store::*;
+use super::store::options_get_number;
 use crate::alerts::alerts_reset_all;
 use crate::input::input_set_buffer_size;
 use crate::log::{log_cstr, log_debug};
@@ -20,7 +20,7 @@ use crate::text::utf8::utf8_update_width_cache;
 use crate::tty::tty_invalidate;
 use crate::tty::tty_keys_build;
 
-use crate::shared::abi::*;
+use crate::shared::abi::size_t;
 use crate::window::{windows, Window, WindowPane};
 use std::ffi::CStr;
 

@@ -1,5 +1,6 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::args_parse;
-use crate::shared::command::*;
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use tiri_core::window_pane::WindowPane;
 
 pub static cmd_pipe_pane_entry: cmd_entry = {

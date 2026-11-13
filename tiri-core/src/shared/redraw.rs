@@ -195,7 +195,7 @@ pub type redraw_span_type = ::core::ffi::c_uint;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{redraw_span, redraw_spans, u_int};
 
     fn span(x: u_int) -> redraw_span {
         redraw_span {

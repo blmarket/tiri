@@ -5,7 +5,22 @@
 //! option callbacks must not reenter the window, free/reparent the component, or
 //! let references or pointers escape.
 
-use super::*;
+use crate::reactor::Timer;
+use crate::shared::grid::grid_cell;
+use crate::shared::layout::Direction;
+use crate::shared::layout::PANE_LINES_NONE;
+use super::{
+    CStr, CString, FloatingPane, LayoutAction, LayoutKind, PaneHistory, Rc, RefCell, Target, Weak,
+    WindowPane, event_payload_create, event_payload_set_target, event_payload_set_uint,
+    event_payload_set_window, events_fire, events_fire_window, layout, layout_geometry, log_debug,
+    options, options_get_number, pane_lines, server_redraw_window, u_int, window_arrange,
+    window_find_string, window_get_active_at, window_get_pane_lines, window_get_pane_status,
+    window_has_pane, window_pane, window_pane_cells, window_pop_zoom, window_push_zoom,
+    window_rearrange_panes, window_redraw_active_switch, window_remove_pane, window_replace_name,
+    window_resize, window_set_active_pane, window_set_name, window_unzoom, window_update_activity,
+    window_update_focus, window_winlinks_append, window_winlinks_first, window_winlinks_next,
+    window_winlinks_remove, window_zoom, windows, winlink,
+};
 use crate::server_client::ClientRegistry;
 use crate::shared::client::ClientRef;
 use crate::shared::menu::menu_data;
@@ -894,7 +909,8 @@ fn resize_window(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::window::window;
+    use super::{Window};
     use crate::options::options_create;
     use crate::options::OptionsScope;
 

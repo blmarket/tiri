@@ -1,5 +1,5 @@
 use super::control::{tty_check_codeset, tty_fake_bce};
-use super::model::*;
+use super::model::{TTY_NOCURSOR, TTY_XTERMJS, terminal_set, terminal_value};
 use super::output::{
     terminal_term, tty_attributes, tty_cursor, tty_default_attributes, tty_margin_off, tty_putc,
     tty_putcode, tty_putcode_i, tty_putn, tty_putn_xtermjs_wide, tty_region_off, tty_repeat_space,
@@ -10,13 +10,16 @@ use crate::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
 use crate::log::{fatalx, log_debug, log_get_level};
 use crate::screen::screen_select_cell;
 use crate::server_client::Client as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int};
 use crate::shared::client::{ClientRef, CLIENT_UTF8};
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_ATTR_CHARSET, GRID_FLAG_CLEARED, GRID_FLAG_PADDING, GRID_FLAG_SELECTED, GRID_FLAG_TAB,
+    GRID_LINE_WRAPPED, grid_cell, utf8_data,
+};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::screen::screen;
 use crate::shared::tty::tty_style_ctx;
-use crate::shared::tty::*;
+use crate::shared::tty::{TTYC_ECH, TTYC_EL, TTYC_EL1};
 use crate::tty::term::tty_term_has;
 
 pub(super) type tty_draw_line_state = ::core::ffi::c_uint;

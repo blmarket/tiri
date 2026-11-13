@@ -1,9 +1,7 @@
 use crate::actions::queue::{enqueue, error_task, new_state};
 use crate::actions::sources::submit;
 use crate::actions::Target;
-use crate::format::{
-    format_create_defaults, format_single_cstring, format_single_from_state_cstring,
-};
+use crate::format::{format_create_defaults, format_single_cstring, format_single_from_state_cstring};
 use crate::format_draw::{format_trim_right_bytes, format_width};
 use crate::grid::grid_default_cell;
 use crate::key_string::key_string_format;
@@ -17,11 +15,15 @@ use crate::screen_write::{
 use crate::server_client::Client as _;
 use crate::server_fn::{server_redraw_window, server_redraw_window_menu};
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::client::ClientRef;
 use crate::shared::key::key_event;
-use crate::shared::key::*;
-use crate::shared::layout::*;
+use crate::shared::key::{
+    KEYC_BSPACE, KEYC_BTAB, KEYC_CTRL, KEYC_DOWN, KEYC_END, KEYC_HOME, KEYC_MASK_FLAGS,
+    KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_NONE, KEYC_NPAGE, KEYC_PPAGE,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_UNKNOWN, KEYC_UP, key_code,
+};
+use crate::shared::layout::{BOX_LINES_DEFAULT, BOX_LINES_NONE, box_lines};
 use crate::shared::menu::{
     menu, menu_item, MenuRow, MenuSelection, MENU_NOMOUSE, MENU_STAYOPEN, MENU_TAB,
 };
@@ -31,7 +33,7 @@ use crate::shared::mouse::{
     MOUSE_WHEEL_UP,
 };
 use crate::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
-use crate::shared::style::*;
+use crate::shared::style::style;
 use crate::shared::window::WindowWeak;
 use crate::style::{style_apply_with_options, style_parse, style_set};
 use crate::window::Window as _;
@@ -677,7 +679,14 @@ pub fn menu_display(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::shared::key::KEYC_SENT;
+    use crate::shared::key::KEYC_VI;
+    use super::{
+        CStr, KEYC_DOWN, KEYC_END, KEYC_HOME, KEYC_MOUSE, KEYC_NPAGE, KEYC_PPAGE, KEYC_UP,
+        MENU_NOMOUSE, MENU_STAYOPEN, MOUSE_MASK_DRAG, MenuKeyAction, MenuRow, MenuSelection,
+        key_code, key_event, menu, menu_data, menu_free_data, menu_handle_key, menu_initial_choice,
+        menu_key, mouse_event, u_int,
+    };
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 

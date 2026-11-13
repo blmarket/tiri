@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{
     args, args_get, args_has, args_make_commands_now, args_parse, args_parse_type, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING,
@@ -8,15 +9,15 @@ use crate::cmd::queue::{
 };
 use crate::cmd::{cmd_get_args, cmd_list_first};
 use crate::shared::command::CMD_CLIENT_TFLAG;
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 use tiri_core::server_client::Client as _;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::CLIENT_DEAD;
-use tiri_core::shared::prompt::*;
+use tiri_core::shared::prompt::PROMPT_TYPE_COMMAND;
 use tiri_core::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
 use tiri_core::status::status_prompt_set;
 
@@ -201,7 +202,13 @@ impl cmd_confirm_before_data {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::shared::command::CmdOutcome;
+    use tiri_core::server_client::Client as _;
+    use super::{
+        CLIENT_DEAD, ClientRef, PROMPT_CLOSE, Rc, Weak, cmd_confirm_before_callback,
+        cmd_confirm_before_data, cmd_confirm_before_reply, cmd_confirm_before_wait, cmd_list,
+        cmdq_append, cmdq_item,
+    };
     use crate::cmd::cmd_list_new;
     use crate::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
     use crate::test_support::clients;

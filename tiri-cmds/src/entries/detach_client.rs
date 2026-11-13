@@ -1,12 +1,13 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_source, cmdq_get_target_client};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::shared::command::*;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{
     CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_READONLY, CMD_TARGET_CLIENT_USAGE,
 };
-use tiri_core::compat::imsg::*;
+use tiri_core::compat::imsg::{MSG_DETACH, MSG_DETACHKILL};
 use tiri_core::server_client::Client;
 use tiri_core::server_client::ClientRegistry;
 use tiri_core::shared::client::ClientRef;

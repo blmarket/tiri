@@ -18,10 +18,10 @@ use crate::paste::{
 };
 use crate::screen_write::{screen_write_cursormove, screen_write_nputs};
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::format::FORMAT_NONE;
-use crate::shared::key::*;
+use crate::shared::key::{KEYC_NONE, KEYC_UNKNOWN, key_code};
 use crate::shared::menu::menu_item;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
@@ -30,7 +30,7 @@ use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
+use crate::shared::sort::{SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, sort_order};
 use crate::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
 use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
@@ -739,7 +739,10 @@ fn window_buffer_key(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CString, ModeTreeItemData, window_buffer_add_item, window_buffer_clear_items,
+        window_buffer_find,
+    };
 
     #[test]
     fn buffer_search_matches_binary_substrings_without_unicode_case_folding() {

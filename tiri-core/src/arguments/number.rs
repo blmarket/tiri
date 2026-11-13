@@ -2,7 +2,7 @@
 
 use super::store::{args, args_last_string, args_last_value};
 use crate::format::format_single_from_target_cstring;
-use crate::shared::abi::*;
+use crate::shared::abi::u_char;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

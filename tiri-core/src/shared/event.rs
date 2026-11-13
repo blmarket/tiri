@@ -3,7 +3,7 @@
 //! Scheduling and registration ownership live in the reactor's Rust collections.
 //! Timer handles schedule monotonic waits; application tasks await I/O and signals.
 //! Streams own their buffers; these layouts are independent of libevent.
-use super::abi::*;
+use super::abi::size_t;
 pub use crate::reactor::Timer;
 use tiri_buffer::SegmentedBuf;
 

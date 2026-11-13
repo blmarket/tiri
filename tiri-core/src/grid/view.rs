@@ -3,8 +3,8 @@ use crate::grid::{
     grid_scroll_history, grid_scroll_history_region, grid_set_cell, grid_set_cells,
     grid_set_padding, grid_string_cells_bytes,
 };
-use crate::shared::abi::*;
-use crate::shared::grid::*;
+use crate::shared::abi::u_int;
+use crate::shared::grid::{GRID_HISTORY, grid, grid_cell};
 pub fn grid_view_get_cell(gd: &grid, px: u_int, py: u_int, gc: &mut grid_cell) {
     grid_get_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
@@ -165,7 +165,12 @@ pub fn grid_view_string_cells_bytes(gd: &grid, py: u_int, nx: u_int) -> Vec<u8> 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        GRID_HISTORY, grid, grid_get_cell, grid_scroll_history, grid_set_cell,
+        grid_view_clear_history, grid_view_delete_cells, grid_view_get_cell,
+        grid_view_insert_cells, grid_view_scroll_region_down, grid_view_scroll_region_up,
+        grid_view_set_cell, grid_view_set_cells, u_int,
+    };
     use crate::grid::core::{grid_create, grid_default_cell};
     use crate::shared::colour::COLOUR_FLAG_RGB;
 

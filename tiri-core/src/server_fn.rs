@@ -13,14 +13,14 @@ use crate::window::{winlink_find_by_index, winlink_find_by_window, Window as _};
 use crate::window_pane::WindowPane as _;
 use crate::winlink::{winlink_index, winlink_window};
 
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_NO_DETACH_ON_DESTROY, CLIENT_REDRAWBORDERS,
     CLIENT_REDRAWMENU, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
 };
 use crate::shared::pane::window_pane;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
+use crate::shared::sort::SORT_NAME;
 use crate::shared::window::winlink;
 
 pub fn server_redraw_client(c: &ClientRef) {

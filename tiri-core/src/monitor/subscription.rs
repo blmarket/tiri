@@ -23,7 +23,7 @@ impl Drop for MonitorSubscription {
 
 use super::{monitor_get_fire_count, monitor_get_fire_time};
 use crate::options::{options_entry, options_get_monitor_data};
-use crate::shared::abi::*;
+use crate::shared::abi::{time_t, u_int};
 use std::ffi::CStr;
 pub fn subscription_text(name: &CStr, o: &options_entry) -> Option<CString> {
     let mut bytes = name.to_bytes().to_vec();

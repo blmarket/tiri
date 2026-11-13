@@ -1,8 +1,6 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::pty::PanePty;
-use super::{
-    window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event,
-};
+use super::{window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event};
 use crate::actions::queue::client;
 use crate::actions::{log_argv, stringify_argv};
 use crate::compat::fdforkpty::fdforkpty;
@@ -42,9 +40,9 @@ use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString, OsStr};
 
 use crate::actions::Target;
-use crate::shared::abi::*;
+use crate::shared::abi::{cc_t, size_t, tcflag_t, u_int, uint64_t};
 use crate::shared::client::CLIENT_CONTROL;
-use crate::shared::key::*;
+use crate::shared::key::key_code;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
 use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO};
@@ -632,7 +630,8 @@ pub(super) fn install_editor(
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::window_pane::WindowPane as _;
+    use super::{ExitStatusExt, spawn_editor_state, window_pane};
     use crate::shared::spawn::spawn_finish_edit_cb;
     use crate::shared::spawn::EditorHandle;
     use crate::spawn::spawn_editor_finish;

@@ -1,4 +1,7 @@
-use super::model::*;
+use super::model::{
+    TERM_DECFRA, TERM_DECSLRM, TERM_INVALIDMS, TERM_NOAM, TERM_NOREPLACE, TERM_RGBCOLOURS,
+    TERM_SIXEL, TERM_VT100LIKE, tty_code, tty_code_type, tty_term,
+};
 use crate::compat::strtonum::strtonum;
 use crate::compat::unvis::strunvis;
 use crate::compat::vis::strnvis;
@@ -9,11 +12,14 @@ use crate::format::bytes::{cstr_suffix, format_message_with};
 use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::options::OptionsScope;
 use crate::server_client::Client as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_int};
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::limits::INT_MAX;
 use crate::shared::posix_io::STDIN_FILENO;
-use crate::shared::tty::*;
+use crate::shared::tty::{
+    TTYC_ACSC, TTYC_AM, TTYC_CLEAR, TTYC_CLMG, TTYC_CMG, TTYC_CUP, TTYC_MS, TTYC_RECT, TTYC_RGB,
+    TTYC_SETRGBB, TTYC_SETRGBF, TTYC_TC, TTYC_XT, tty_code_code,
+};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::tty::features::{tty_apply_features, tty_parse_client_features};
 use std::ffi::{CStr, CString};
@@ -1609,7 +1615,7 @@ pub(super) fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString
 
 #[cfg(test)]
 mod term_string_owner_tests {
-    use super::*;
+    use super::{CString, tty_term_override_next, tty_term_strip};
 
     #[test]
     fn override_tokens_keep_escaping_limits_and_independent_storage() {

@@ -1,7 +1,7 @@
 use super::model::tty;
-use crate::shared::abi::*;
-use crate::shared::grid::*;
-use crate::shared::tty::*;
+use crate::shared::abi::u_char;
+use crate::shared::grid::utf8_data;
+use crate::shared::tty::TTYC_U8;
 use crate::tty::term::tty_term_owner_ptr;
 use crate::tty::term::{tty_term_has, tty_term_number};
 use std::ffi::CStr;
@@ -606,7 +606,9 @@ pub(super) fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_reverse_get, tty_acs_rounded_borders,
+    };
     use crate::shared::borders::{CELL_LR, CELL_RD};
 
     #[test]

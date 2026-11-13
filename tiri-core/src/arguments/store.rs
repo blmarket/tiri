@@ -2,7 +2,7 @@
 
 use super::value::args_value;
 use crate::actions::{log_argv, replace_template};
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 

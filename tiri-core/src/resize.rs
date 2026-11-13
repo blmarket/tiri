@@ -4,7 +4,7 @@ use crate::options::{options_get_number, options_get_string};
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_int, uint64_t};
 use crate::shared::client::{ClientRef, CLIENT_CONTROL, CLIENT_STATUSOFF};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::session::SessionRef;

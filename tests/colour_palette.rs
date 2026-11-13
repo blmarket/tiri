@@ -1,8 +1,11 @@
 use std::collections::btree_map;
-use tiri::options::*;
+use tiri::options::{OptionsScope, options_empty, options_local_entry};
 use tiri::options::{options, options_entry};
 use tiri::shared::colour::{colour_palette, COLOUR_FLAG_256};
-use tiri::style::colour::*;
+use tiri::style::colour::{
+    colour_palette_clear, colour_palette_from_option, colour_palette_get, colour_palette_init,
+    colour_palette_set,
+};
 
 #[test]
 fn overrides_fall_back_to_defaults_and_clear_preserves_defaults() {

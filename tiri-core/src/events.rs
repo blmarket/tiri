@@ -7,7 +7,7 @@ use crate::events_payload::{
 use crate::format::bytes::write_cstr;
 use crate::log::log_get_level;
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::client::ClientRef;
 use crate::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
 use crate::shared::pane::window_pane;
@@ -285,7 +285,9 @@ pub fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        EVENTS, EventSinkId, event_payload_create, events_add_sink, events_fire, events_remove_sink,
+    };
     use crate::shared::events::events_callback;
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;

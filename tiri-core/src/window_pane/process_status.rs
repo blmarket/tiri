@@ -196,7 +196,7 @@ fn classify(pane: &window_pane, foreground: Option<libc::pid_t>) -> &'static str
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Instant, RECHECK_INTERVAL, emoji, refresh, shell_event, window_pane};
     use tiri_vt::{ProgramState, ProgramStatus};
 
     #[test]

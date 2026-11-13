@@ -596,7 +596,7 @@ impl Drop for Runtime {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Cell, Duration, Future, Instant, Pin, Rc, RefCell, Runtime, Waker};
     use crate::{Handle as _, Runtime as _};
     use std::task::{Context, Poll};
 

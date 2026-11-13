@@ -1,10 +1,40 @@
 //! Operations on retained clients. Component guards are RefCell borrows of the
 //! client, so a reentrant borrow while one is held panics instead of aliasing.
+use crate::compat::imsg::MSG_LOCK;
+use crate::compat::imsg::MSG_READY;
+use crate::shared::abi::gid_t;
+use crate::shared::abi::uid_t;
+use crate::shared::client::CLIENT_CONTROLCONTROL;
+use crate::shared::client::CLIENT_EXIT_SHUTDOWN;
+use crate::shared::client::CLIENT_NOSIZEFLAGS;
+use crate::shared::client::CLIENT_SIZECHANGED;
+use crate::shared::client::CLIENT_STATUSOFF;
+use crate::shared::client::CLIENT_WINDOWSIZECHANGED;
+use crate::shared::event::EV_WRITE;
+use crate::shared::tty::TTY_CTX_INVISIBLE_PANES;
+use crate::shared::tty::TTY_CTX_WINDOW_BIGGER;
+use crate::shared::tty::tty_ctx;
+use crate::window_pane::WindowPane as _;
 use crate::options::OptionsScope;
 use crate::shared::window::WindowWeak;
 
 use super::model::{MouseDragRelease, MouseDragUpdate};
-use super::*;
+use super::{
+    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_PAUSEAFTER,
+    CLIENT_DEAD, CLIENT_EXIT, CLIENT_FOCUSED, CLIENT_IGNORESIZE, CLIENT_READONLY,
+    CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_STATUSFORCE,
+    CLIENT_SUSPENDED, CStr, CString, ClientRegistry, SegmentedBuf, Timer, bufferevent_enable,
+    colour_theme_terminal_colour, configuration_client, configuration_finished,
+    control_pane_offset, fatal, find_home_cstr, format_tree, key_event, key_table, log_cstr,
+    log_debug, msgtype, options_get_number, proc_send, server_client_check_nested,
+    server_client_create, server_client_detach, server_client_exec, server_client_get_cwd,
+    server_client_handle_key, server_client_handle_key_after, server_client_how_many,
+    server_client_loop, server_client_lost, server_client_open, server_client_print,
+    server_client_remove_pane, server_client_set_flags, server_client_set_key_table,
+    server_client_set_session, server_client_set_term_type, server_client_suspend,
+    server_client_update_theme_colours, setblocking, tty, tty_resize, tty_window_offset,
+    tty_window_view, window_pane, window_pane_offset, write_cstr,
+};
 use crate::control::{control_get_window_size, control_write_output};
 use crate::reactor::BufferEvent;
 use crate::session::Session;
@@ -1297,7 +1327,7 @@ impl Client for ClientRef {
 mod tests {
     #[test]
     fn reply_limit_preserves_an_existing_exit_reason_only_after_exit_started() {
-        use super::*;
+        use super::{CLIENT_EXIT, Client};
         {
             for exiting in [false, true] {
                 let owner = client::with_control_for_test(None, None);
@@ -1321,7 +1351,8 @@ mod tests {
             }
         }
     }
-    use super::*;
+    use crate::shared::client::client;
+    use super::{Client};
 
     #[test]
     fn source_file_reservations_preserve_limit_and_explicit_completion() {

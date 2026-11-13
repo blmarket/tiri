@@ -1,6 +1,6 @@
 //! Authoritative grid storage types and grid-related flags.
 
-use super::abi::*;
+use super::abi::{u_char, u_int, u_short};
 
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
@@ -224,7 +224,10 @@ pub const WHITESPACE: &std::ffi::CStr = c"\t ";
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        GridArray, grid_cell, grid_cell_entry, grid_cell_entry_data, grid_cell_entry_storage,
+        grid_extd_entry, grid_line, osc133_data, utf8_data,
+    };
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]

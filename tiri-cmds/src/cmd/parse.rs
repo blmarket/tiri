@@ -4,7 +4,7 @@ use crate::cmd::{cmd_get_alias, cmd_list_new, cmd_list_print_cstring, cmd_parse}
 use crate::environ::environ_put;
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::log::{log_bytes, log_debug};
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::client::ClientRef;
 use crate::shared::command::cmd_parse_input;
 use crate::shared::command::{cmd_find_state, cmd_list, cmdq_state};
@@ -544,7 +544,12 @@ pub fn cmd_parse_from_arguments(
 }
 #[cfg(test)]
 mod parser_collection_tests {
-    use super::*;
+    use super::{
+        CMD_PARSE_NOALIAS, CStr, Rc, cmd_list, cmd_list_print_cstring, cmd_parse_argument,
+        cmd_parse_build_commands, cmd_parse_command, cmd_parse_do_buffer, cmd_parse_from_arguments,
+        cmd_parse_from_argv, cmd_parse_from_buffer, cmd_parse_from_file, cmd_parse_from_string,
+        cmd_parse_input, cmd_parse_new_command, cmd_parse_new_commands, u_int,
+    };
 
     fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
         let mut pi = cmd_parse_input {

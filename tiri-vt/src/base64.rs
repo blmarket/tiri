@@ -91,7 +91,7 @@ fn is_space(byte: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{decode, encode};
 
     #[test]
     fn encode_pads_each_partial_group() {

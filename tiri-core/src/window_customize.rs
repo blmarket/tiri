@@ -41,7 +41,10 @@ use crate::mode_tree::{
     ModeTreeItemData,
 };
 use crate::monitor::{subscription_fire_count, subscription_fire_time, subscription_text};
-use crate::options::*;
+use crate::options::{
+    OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_FLAG, OPTIONS_TABLE_STRING,
+    options_entry,
+};
 use crate::options::{
     options_create, options_default, options_default_to_cstring, options_get_fire_count,
     options_get_fire_time, options_get_number, options_match_owned, options_push_changes,
@@ -56,21 +59,21 @@ use crate::screen_write::{
     screen_write_start, screen_write_stop, screen_write_text,
 };
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{pid_t, size_t, time_t, u_char, u_int, uint64_t};
 use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_LIGHT_GREY};
 use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::environment::{environ, environ_entry};
 use crate::shared::format::format_tree;
-use crate::shared::grid::*;
+use crate::shared::grid::{grid_cell, utf8_data};
 use crate::shared::key::KEY_BINDING_REPEAT;
-use crate::shared::key::*;
+use crate::shared::key::{KEYC_NONE, KEYC_RIGHT, KEYC_UNKNOWN, key_code};
 use crate::shared::key::{key_binding, key_table};
-use crate::shared::layout::*;
+use crate::shared::layout::BOX_LINES_DEFAULT;
 use crate::shared::limits::INT_MAX;
 use crate::shared::menu::menu_item;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
-use crate::shared::prompt::*;
+use crate::shared::prompt::{PROMPT_TYPE_COMMAND, prompt_key_result};
 use crate::shared::prompt::{
     prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
@@ -4459,7 +4462,10 @@ fn window_customize_key(
 
 #[cfg(test)]
 mod tag_tests {
-    use super::*;
+    use super::{
+        CUSTOMIZE_SERVER_OPTIONS, CUSTOMIZE_SESSION_ENVIRONMENT, OPTIONS_TABLE_SERVER,
+        window_customize_top_tag,
+    };
 
     #[test]
     fn section_tags_match_tmux_encoding() {
@@ -4476,7 +4482,17 @@ mod tag_tests {
 
 #[cfg(test)]
 mod item_owner_tests {
-    use super::*;
+    use crate::shared::prompt::PROMPT_CONTINUE;
+    use crate::shared::prompt::PROMPT_KEY_CLOSE;
+    use super::{
+        CStr, CString, ClientRef, CustomizeMode, CustomizePromptItem, ModeCell, ModeTreeItemData,
+        PROMPT_CLOSE, Rc, RefBox, Target, WINDOW_CUSTOMIZE_UNSET, Weak, prompt_key_result,
+        prompt_result, window_customize_add_item, window_customize_copy_item,
+        window_customize_itemdata, window_customize_live_mode,
+        window_customize_mode_prompt_callbacks, window_customize_modedata,
+        window_customize_new_item, window_customize_prompt_callbacks,
+        window_customize_set_item_array_key, window_customize_set_name, window_customize_set_table,
+    };
 
     #[test]
     fn detached_copy_owns_byte_preserving_strings() {

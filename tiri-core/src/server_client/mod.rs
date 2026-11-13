@@ -48,9 +48,7 @@ use crate::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer
 use crate::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
 use crate::names::check_window_name;
 use crate::options::{options_get_command, options_get_number, options_get_string};
-use crate::proc::{
-    bytes_of, imsg_string, proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send,
-};
+use crate::proc::{bytes_of, imsg_string, proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::prompt::prompt_free;
 use crate::reactor::{
     bufferevent_enable, defer, evbuffer_add, evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
@@ -59,20 +57,25 @@ use crate::resize::{recalculate_size, recalculate_sizes};
 use crate::screen::screen_mode_display;
 use crate::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
 use crate::server::{current_time, server_add_accept, server_proc, server_update_socket};
-use crate::server_fn::{
-    server_check_unattached, server_redraw_window_borders, server_status_window,
-};
+use crate::server_fn::{server_check_unattached, server_redraw_window_borders, server_status_window};
 pub use api::Client;
 pub use model::client;
 
 use crate::actions::unpack_argv;
 use crate::actions::Target;
-use crate::actions::*;
+use crate::actions::{Program, TaskOutcome};
 use crate::compat::imsg::imsg;
-use crate::compat::imsg::*;
+use crate::compat::imsg::{
+    MSG_COMMAND, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID,
+    MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES,
+    MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT,
+    MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_READ, MSG_READ_DONE,
+    MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_WAKEUP, MSG_WRITE_DONE,
+    MSG_WRITE_READY, msgtype,
+};
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
-use crate::shared::client::*;
+use crate::shared::abi::{pid_t, size_t, time_t, u_int, uint64_t};
+use crate::shared::client::CLIENT_EXIT_DETACH;
 use crate::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
     CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
@@ -87,11 +90,27 @@ use crate::shared::colour::{
     client_theme, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN,
 };
 use crate::shared::environment::environ_entry;
-use crate::shared::event::*;
+use crate::shared::event::Timer;
 use crate::shared::format::format_tree;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::shared::key::KEY_BINDING_REPEAT;
-use crate::shared::key::*;
+use crate::shared::key::{
+    KEYC_ANY, KEYC_CLICK_TIMEOUT, KEYC_CTRL, KEYC_DOUBLECLICK, KEYC_DRAGGING, KEYC_FOCUS_IN,
+    KEYC_FOCUS_OUT, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS, KEYC_MASK_TYPE, KEYC_META, KEYC_MOUSE,
+    KEYC_MOUSEMOVE_BORDER, KEYC_MOUSEMOVE_PANE, KEYC_MOUSEMOVE_STATUS,
+    KEYC_MOUSEMOVE_STATUS_DEFAULT, KEYC_MOUSEMOVE_STATUS_LEFT, KEYC_MOUSEMOVE_STATUS_RIGHT,
+    KEYC_MOUSE_BUTTON_SHIFT, KEYC_MOUSE_LOCATION_BORDER, KEYC_MOUSE_LOCATION_CONTROL0,
+    KEYC_MOUSE_LOCATION_EMPTY, KEYC_MOUSE_LOCATION_NOWHERE, KEYC_MOUSE_LOCATION_PANE,
+    KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN, KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER,
+    KEYC_MOUSE_LOCATION_SCROLLBAR_UP, KEYC_MOUSE_LOCATION_SHIFT, KEYC_MOUSE_LOCATION_STATUS,
+    KEYC_MOUSE_LOCATION_STATUS_DEFAULT, KEYC_MOUSE_LOCATION_STATUS_LEFT,
+    KEYC_MOUSE_LOCATION_STATUS_RIGHT, KEYC_NONE, KEYC_PASTE_END, KEYC_PASTE_START,
+    KEYC_REPORT_DARK_THEME, KEYC_REPORT_LIGHT_THEME, KEYC_SENT, KEYC_SHIFT, KEYC_TYPE_DOUBLECLICK,
+    KEYC_TYPE_MOUSEDOWN, KEYC_TYPE_MOUSEDRAG, KEYC_TYPE_MOUSEDRAGEND, KEYC_TYPE_MOUSEMOVE,
+    KEYC_TYPE_MOUSEUP, KEYC_TYPE_NOTYPE, KEYC_TYPE_SECONDCLICK, KEYC_TYPE_TRIPLECLICK,
+    KEYC_TYPE_WHEELDOWN, KEYC_TYPE_WHEELUP, KEYC_UNKNOWN, key_code, key_code_mouse_location,
+    key_code_type,
+};
 use crate::shared::key::{key_event, key_table, KeyBindingCommand};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::mouse::{
@@ -109,7 +128,7 @@ use crate::shared::screen::{
     ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_SYNC,
 };
-use crate::shared::tty::*;
+use crate::shared::tty::{TTYC_ENBP, tty_window_view};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
 use crate::shared::window::WINDOW_SIZE_LATEST;
 use crate::shared::window::{window_mode_entry, winlink};
@@ -3727,7 +3746,7 @@ impl Drop for client {
 /// Clients for queue tests elsewhere, built without the server.
 #[cfg(any(test, feature = "test-support"))]
 pub mod queue_test_clients {
-    use super::*;
+    use super::{ClientRef, SessionRef, client, new_queue};
 
     /// A client owning only a command queue.
     pub fn with_queue() -> ClientRef {
@@ -3748,7 +3767,10 @@ pub mod queue_test_clients {
 
 #[cfg(feature = "test-support")]
 pub mod lost_queue_tests {
-    use super::*;
+    use super::{
+        CLIENT_DEAD, ClientRef, Rc, callback, client, drive, enqueue, queue_test_clients,
+        server_client_retire, uint64_t,
+    };
     use crate::actions::TaskOutcome;
     use std::cell::Cell;
 

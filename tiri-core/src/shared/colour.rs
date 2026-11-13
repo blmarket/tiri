@@ -26,7 +26,7 @@ pub const COLOUR_THEME_LIGHT_GREY: colour_theme = 2;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::colour_palette;
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]

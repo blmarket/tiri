@@ -1,5 +1,11 @@
 //! Pane mouse hit testing uses copied geometry across Window operations.
-use super::*;
+use crate::shared::key::KEYC_MOUSE_LOCATION_BORDER;
+use crate::shared::key::KEYC_MOUSE_LOCATION_PANE;
+use crate::shared::key::KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN;
+use crate::shared::key::KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
+use crate::shared::key::KEYC_MOUSE_LOCATION_SCROLLBAR_UP;
+use crate::shared::key::key_code_mouse_location;
+use super::{PANE_SCROLLBARS_LEFT, Rc, RefCell, Window, WindowPane, WindowRef, u_int, window_pane};
 use crate::shared::pane::PANE_SCROLLBARS_RIGHT;
 
 pub(super) fn in_scrollbar_area(

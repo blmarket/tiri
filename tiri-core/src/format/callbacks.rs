@@ -1,4 +1,16 @@
-use super::*;
+use crate::shared::abi::__time_t;
+use crate::server_client::Client as _;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
+use super::{
+    FORMAT_TYPE_PANE, FORMAT_TYPE_SESSION, FORMAT_TYPE_WINDOW, RB_INF, RB_NEGINF,
+    WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE, configuration_files,
+    format_tree, getversion, marked_pane, mouse_pane, paste_buffer_created, paste_buffer_data,
+    paste_buffer_name, paste_make_sample_cstring, server_check_marked, session_groups, sessions,
+    socket_path_cstr, start_time, status_get_range, time_t, u_int, window_buffer_mode,
+    window_client_mode, window_tree_mode, winlink, winlink_find_by_window, winlink_next,
+    winlinks_minmax,
+};
 use crate::options::options_get_number;
 use crate::server_client::ClientRegistry;
 use crate::session::Session;
@@ -2407,7 +2419,11 @@ pub(super) fn format_table_get(key: &CStr) -> Option<&'static FormatTableEntry> 
 
 #[cfg(test)]
 mod owned_callback_tests {
-    use super::*;
+    use crate::format::format_create;
+    use super::{
+        FORMAT_TABLE, format_cb_buffer_full, format_cb_buffer_size, format_table_get,
+        paste_buffer_data,
+    };
 
     #[test]
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {

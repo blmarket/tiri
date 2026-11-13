@@ -1,5 +1,10 @@
 //! Pane rendering operations. Model access ends before terminal or format callbacks.
-use super::*;
+use crate::shared::display::visible_range;
+use super::{
+    PANE_STYLECHANGED, Rc, RefCell, WINDOW_PANE_NO_MODE, Window, WindowPane, grid_cell, log_debug,
+    screen, screen_init, server_redraw_window_borders, style_set_scrollbar_style_from_option,
+    u_int, utf8_data, window_pane, window_pane_mode, window_pane_send_resize,
+};
 use crate::format::{format_create, format_defaults};
 use crate::grid::grid_default_cell;
 use crate::options::OptionsScope;

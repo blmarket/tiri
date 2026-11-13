@@ -1,5 +1,6 @@
 //! Window-owned alert flags, queue membership and silence timer.
-use super::*;
+use crate::reactor::Timer;
+use super::{Window, log_debug, options_get_number};
 use crate::shared::window::WindowRef;
 use crate::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
 use std::time::Duration;

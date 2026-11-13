@@ -19,14 +19,18 @@ use crate::screen::{
     screen_reset_tabs, screen_select_cell,
 };
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, u_short};
 use crate::shared::borders::{
     CELL_BORDERS, CELL_LD, CELL_LR, CELL_LU, CELL_RD, CELL_RU, CELL_UD, CELL_ULD, CELL_URD,
     SIMPLE_BORDERS,
 };
 use crate::shared::display::visible_range;
-use crate::shared::grid::*;
-use crate::shared::layout::*;
+use crate::shared::grid::{
+    GRID_ATTR_CHARSET, GRID_ATTR_DIM, GRID_ATTR_REVERSE, GRID_FLAG_CLEARED, GRID_FLAG_EXTENDED,
+    GRID_FLAG_NOPALETTE, GRID_FLAG_PADDING, GRID_FLAG_SELECTED, GRID_FLAG_TAB, GRID_HISTORY,
+    GRID_LINE_EXTENDED, GRID_LINE_OSC133_FLAGS, GRID_LINE_WRAPPED, grid, grid_cell, utf8_data,
+};
+use crate::shared::layout::box_lines;
 use crate::shared::limits::UINT_MAX;
 use crate::shared::menu::menu;
 use crate::shared::pane::window_pane;
@@ -34,16 +38,14 @@ use crate::shared::screen::{
     screen, EXTENDED_KEY_MODES, MODE_CURSOR, MODE_INSERT, MODE_KEYS_EXTENDED, MODE_ORIGIN,
     MODE_SYNC, MODE_WRAP,
 };
-use crate::shared::screen_write::{
-    screen_write_citem, screen_write_cline, screen_write_items, CLEAR,
-};
+use crate::shared::screen_write::{screen_write_citem, screen_write_cline, screen_write_items, CLEAR};
 use crate::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb, WriteTarget};
 use crate::shared::tty::{tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb};
 use crate::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
     TTY_CTX_SYNC, TTY_CTX_WRAPPED,
 };
-use crate::shared::utf8::*;
+use crate::shared::utf8::{UTF8_DONE, UTF8_MORE};
 use crate::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
 use crate::text::utf8_combined::{
     hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
@@ -3362,7 +3364,11 @@ pub fn screen_write_alternateoff(
 
 #[cfg(test)]
 mod write_ctx_tests {
-    use super::*;
+    use super::{
+        SCREEN_WRITE_SYNC, WindowPane, grid_cells_equal, grid_default_cell, screen,
+        screen_write_collect_add, screen_write_initctx, screen_write_start,
+        screen_write_start_callback, screen_write_stop, tty_ctx, window_pane,
+    };
     use crate::shared::colour::colour_palette;
     use std::{cell::Cell, rc::Rc};
 
@@ -3477,7 +3483,10 @@ mod write_ctx_tests {
 
 #[cfg(test)]
 mod write_cell_tests {
-    use super::*;
+    use super::{
+        grid_cells_equal, grid_default_cell, grid_view_get_cell, grid_view_set_cell,
+        grid_view_set_padding, screen_write_overwrite,
+    };
     use crate::grid::grid_create;
 
     #[test]
@@ -3535,7 +3544,12 @@ mod write_cell_tests {
 
 #[cfg(test)]
 mod write_row_tests {
-    use super::*;
+    use super::{
+        CLEAR, screen, screen_write_collect_insert, screen_write_collect_scroll,
+        screen_write_collect_trim, screen_write_current_item, screen_write_free_list,
+        screen_write_get_citem, screen_write_make_list, screen_write_recycle_items,
+        screen_write_start, screen_write_stop, u_int,
+    };
 
     #[test]
     fn scrolling_a_region_moves_rows_and_resize_rebuilds_the_owned_slice() {

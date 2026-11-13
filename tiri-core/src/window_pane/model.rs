@@ -1,5 +1,15 @@
 //! Pane storage belongs to the pane implementation.
-use super::*;
+use crate::shared::abi::bitstr_t;
+use crate::shared::abi::time_t;
+use crate::shared::colour::colour_palette;
+use crate::shared::style::style;
+use crate::shared::style::style_line_entry;
+use super::{
+    CStr, CString, Completion, PaneScreenSource, RefCell, Timer, WindowRef, client_theme,
+    grid_cell, input_ctx, options, pid_t, screen, size_t, spawn_editor_state, u_int, uint64_t,
+    window_mode, window_mode_entry, window_pane_modes, window_pane_offset, window_pane_resize,
+    window_pane_resizes,
+};
 use crate::shared::window::WindowWeak;
 use std::time::{SystemTime, UNIX_EPOCH};
 

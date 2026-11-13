@@ -21,14 +21,19 @@ use crate::session::Session;
 use std::rc::Rc;
 
 use crate::actions::Target;
-use crate::shared::abi::*;
+use crate::shared::abi::{bitstr_t, u_char, u_int};
 use crate::shared::client::ClientRef;
 use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
-use crate::shared::grid::*;
-use crate::shared::key::*;
+use crate::shared::grid::{grid_cell, utf8_data};
+use crate::shared::key::{
+    KEYC_DOUBLECLICK1_PANE, KEYC_DOWN, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_UP, key_code,
+};
 use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::shared::prompt::*;
+use crate::shared::prompt::{
+    PROMPT_CLOSE, PROMPT_KEY_HANDLED, PROMPT_KEY_NOT_HANDLED, PROMPT_TYPE_SEARCH, prompt_key_result,
+};
 use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::shared::prompt::{
     prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE,
@@ -37,7 +42,7 @@ use crate::shared::prompt::{
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
+use crate::shared::sort::{SORT_ACTIVITY, SORT_NAME};
 
 use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
@@ -1014,7 +1019,11 @@ fn window_switch_key(
 
 #[cfg(test)]
 mod match_tests {
-    use super::*;
+    use super::{
+        CStr, PROMPT_CLOSE, PROMPT_KEY_HANDLED, WINDOW_SWITCH_TYPE_SESSION, u_int,
+        window_mode_entry, window_switch_itemdata, window_switch_matches, window_switch_mode,
+        window_switch_prompt_callback,
+    };
 
     fn row(text: &CStr, order: u_int) -> window_switch_itemdata {
         window_switch_itemdata {

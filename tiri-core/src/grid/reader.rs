@@ -1,7 +1,9 @@
 use crate::grid::{grid_get_cell, grid_in_set, grid_line_length, grid_line_limit};
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::grid::grid_reader;
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_FLAG_PADDING, GRID_FLAG_TAB, GRID_LINE_WRAPPED, grid, grid_cell, utf8_data,
+};
 use std::ffi::CStr;
 pub fn grid_reader_start(gd: &grid, cx: u_int, cy: u_int) -> grid_reader<'_> {
     grid_reader { gd, cx, cy }
@@ -508,10 +510,14 @@ pub fn grid_reader_cursor_back_to_indentation(gr: &mut grid_reader<'_>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::grid::{
-        grid_create, grid_default_cell, grid_set_cell, grid_set_padding, grid_set_tab,
+    use crate::shared::abi::u_short;
+    use super::{
+        GRID_LINE_WRAPPED, grid, grid_reader_cursor_back_to_indentation,
+        grid_reader_cursor_end_of_line, grid_reader_cursor_jump, grid_reader_cursor_jump_back,
+        grid_reader_cursor_left, grid_reader_cursor_right, grid_reader_cursor_start_of_line,
+        grid_reader_get_cursor, grid_reader_start, u_int,
     };
+    use crate::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding, grid_set_tab};
     use crate::text::utf8::utf8_fromcstr_vec;
 
     fn sample_grid() -> Box<grid> {

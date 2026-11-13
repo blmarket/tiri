@@ -118,7 +118,7 @@ pub fn parse_window_name_cstring(in_0: &CStr) -> CString {
 
 #[cfg(test)]
 mod owned_name_tests {
-    use super::*;
+    use super::{Duration, Instant, name_time_left};
 
     #[test]
     fn automatic_name_delay_handles_first_check_and_exact_deadline() {

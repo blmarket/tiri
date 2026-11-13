@@ -8,9 +8,7 @@ mod model;
 mod output;
 mod term;
 
-pub use acs::{
-    tty_acs_double_borders, tty_acs_get, tty_acs_heavy_borders, tty_acs_rounded_borders,
-};
+pub use acs::{tty_acs_double_borders, tty_acs_get, tty_acs_heavy_borders, tty_acs_rounded_borders};
 pub use control::{
     tty_bell, tty_cell, tty_clipboard_query, tty_close, tty_init, tty_lock, tty_open,
     tty_parse_colour_report, tty_repeat_requests, tty_request_clipboard, tty_resize,
@@ -22,6 +20,10 @@ pub use draw::tty_draw_line;
 pub use features::{tty_get_features, tty_parse_features};
 pub use keys::{tty_keys_build, ColourReport};
 pub use model::{tty, TERM_256COLOURS, TERM_RGBCOLOURS};
-pub use output::*;
+pub(crate) use output::{tty_enqueue_bytes};
+pub use output::{
+    tty_cursor, tty_invalidate, tty_margin_off, tty_puts, tty_region_off, tty_reset, tty_set_path,
+    tty_set_progress_bar, tty_set_title, tty_sync_end, tty_sync_start, tty_update_mode,
+};
 pub use term::tty_term_descriptions;
 pub(crate) use term::tty_term_read_list;

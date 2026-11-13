@@ -6,7 +6,9 @@ use tiri::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };
 use tiri::shared::command::cmd_find_state;
-use tiri::shared::prompt::*;
+use tiri::shared::prompt::{
+    PROMPT_CONTINUE, PROMPT_INCREMENTAL, PROMPT_NOFORMAT, prompt, prompt_create_data,
+};
 use tiri::tmux::replace_global_environ;
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {

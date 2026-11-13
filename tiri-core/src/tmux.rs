@@ -17,7 +17,7 @@ use crate::options::options_table;
 use crate::options::{options_set_number, options_set_string, OptionsScope};
 use crate::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
 use crate::shared::abi::uid_t;
-use crate::shared::abi::*;
+use crate::shared::abi::uint64_t;
 use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_DEFAULTSOCKET, CLIENT_LOGIN, CLIENT_NOFORK,
     CLIENT_NOSTARTSERVER, CLIENT_UTF8,

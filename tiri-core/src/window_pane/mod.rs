@@ -6,7 +6,7 @@ use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::window::WindowRef;
 use crate::shared::window::WindowWeak;
-use crate::window::*;
+use crate::window::Window;
 use std::os::fd::AsFd;
 use std::time::Duration;
 mod api;
@@ -86,18 +86,20 @@ use tiri_buffer::SegmentedBuf;
 
 use crate::actions::Target;
 use crate::options::options;
-use crate::shared::abi::*;
+use crate::shared::abi::{pid_t, size_t, u_char, u_int, uint64_t};
 use crate::shared::client::{client_file, client_file_cb};
 use crate::shared::client::{CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS};
-use crate::shared::colour::*;
-use crate::shared::display::*;
-use crate::shared::event::*;
+use crate::shared::colour::{THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, client_theme};
+use crate::shared::event::{Timer, bufferevent_data_callback, bufferevent_event_callback};
 use crate::shared::event::{EV_READ, EV_WRITE};
-use crate::shared::grid::*;
+use crate::shared::grid::{grid_cell, utf8_data};
 use crate::shared::input::input_ctx;
-use crate::shared::key::*;
+use crate::shared::key::{
+    KEYC_MASK_FLAGS, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_PASTE_END, KEYC_PASTE_START,
+    KEYC_TYPE_FUNCTION, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, key_code,
+};
 use crate::shared::layout::layout_geometry;
-use crate::shared::layout::*;
+use crate::shared::layout::{PANE_LINES_NONE, pane_lines};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::shared::pane::{
@@ -110,12 +112,14 @@ use crate::shared::pane::{
 use crate::shared::pane::{window_pane_modes, window_pane_prompt, PaneScreenSource};
 use crate::shared::posix_io::FNM_CASEFOLD;
 use crate::shared::posix_terminal::winsize;
-use crate::shared::prompt::*;
+use crate::shared::prompt::{
+    PROMPT_KEY_CLOSE, PROMPT_KEY_NOT_HANDLED, PROMPT_TYPE_INVALID, prompt_key_result, prompt_type,
+};
 use crate::shared::prompt::{prompt_free_cb, prompt_result, PROMPT_CLOSE};
 use crate::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
 use crate::shared::spawn::spawn_editor_state;
 use crate::shared::status::status_prompt_input_cb;
-use crate::shared::style::*;
+use crate::shared::style::style_range;
 pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::shared::window::{
     WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK,
@@ -2107,7 +2111,13 @@ pub use input::{
 
 #[cfg(test)]
 mod pane_prompt_data_tests {
-    use super::*;
+    use crate::shared::prompt::PROMPT_SINGLE;
+    use crate::shared::prompt::PROMPT_TYPE_COMMAND;
+    use crate::shared::prompt::prompt;
+    use super::{
+        Weak, u_int, window_pane_prompt, window_pane_prompt_free_callback,
+        window_pane_prompt_input_callback,
+    };
 
     use crate::text::utf8::utf8_fromcstr_vec;
 
@@ -2142,7 +2152,10 @@ mod pane_prompt_data_tests {
 
 #[cfg(feature = "test-support")]
 pub mod wait_close_tests {
-    use super::*;
+    use super::{
+        ClientRef, Completion, ExitStatusExt, PANE_EXITED, Rc, SIGHUP, WindowPane, pid_t, pty,
+        window_pane, window_pane_tree,
+    };
     use crate::actions::queue::{callback, drive, enqueue, wait};
     use crate::actions::TaskOutcome;
     use crate::server_client::queue_test_clients as clients;
@@ -2275,7 +2288,10 @@ pub mod wait_close_tests {
 
 #[cfg(feature = "test-support")]
 pub mod input_wait_tests {
-    use super::*;
+    use super::{
+        Client, ClientRef, FileOutcome, Rc, Weak, WindowPane, u_int, uint64_t, window_pane,
+        window_pane_input_complete, window_pane_tree,
+    };
     use crate::actions::queue::{callback, drive, enqueue};
     use crate::actions::TaskOutcome;
     use crate::server_client::queue_test_clients as clients;

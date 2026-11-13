@@ -23,7 +23,7 @@ pub(super) fn options_string_cause(fmt: &CStr, args: &[&CStr]) -> CString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::options_string_cause;
 
     #[test]
     fn formatted_diagnostic_preserves_non_utf8_arguments() {

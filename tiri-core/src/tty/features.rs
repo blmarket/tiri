@@ -1,8 +1,10 @@
 use super::model::tty_term;
-use super::model::*;
+use super::model::{
+    TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOREPLACE, TERM_RGBCOLOURS, TERM_SIXEL,
+};
 use crate::log::{log_bytes, log_cstr, log_debug};
 use crate::server_client::Client as _;
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::client::ClientRef;
 use crate::tty::term::{tty_term_apply, tty_term_has_name};
 use std::ffi::{CStr, CString};

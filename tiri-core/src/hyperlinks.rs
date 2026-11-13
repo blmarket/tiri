@@ -168,7 +168,7 @@ impl Drop for hyperlinks {
 
 #[cfg(test)]
 mod hyperlink_owner_tests {
-    use super::*;
+    use super::{HYPERLINK_HISTORY, Rc, hyperlinks_get, hyperlinks_init, hyperlinks_put};
 
     #[test]
     fn dropping_last_table_owner_removes_its_history() {

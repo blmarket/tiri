@@ -31,20 +31,22 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::actions::Target;
-use crate::actions::*;
-use crate::shared::abi::*;
-use crate::shared::client::{
-    CLIENT_CONTROL, CLIENT_REDRAWSTATUS, CLIENT_STATUSFORCE, CLIENT_STATUSOFF,
-};
+use crate::actions::TaskOutcome;
+use crate::shared::abi::{u_char, u_int, uint64_t};
+use crate::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWSTATUS, CLIENT_STATUSFORCE, CLIENT_STATUSOFF};
 use crate::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
-use crate::shared::grid::*;
-use crate::shared::key::*;
+use crate::shared::grid::{grid_cell, utf8_data};
+use crate::shared::key::{
+    KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, key_code,
+};
 use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::shared::prompt::*;
+use crate::shared::prompt::{PROMPT_KEY_NOT_HANDLED, prompt_key_result, prompt_type};
 use crate::shared::prompt::{prompt_free_cb, PROMPT_ACCEPT, PROMPT_SINGLE};
 use crate::shared::screen::screen;
 use crate::shared::status::{status_line, status_prompt_input_cb};
-use crate::shared::style::*;
+use crate::shared::style::{
+    STYLE_ALIGN_ABSOLUTE_CENTRE, STYLE_ALIGN_CENTRE, STYLE_ALIGN_RIGHT, style_range,
+};
 
 fn status_timer_callback(client: &ClientRef) {
     let session = client.attached_session().upgrade();

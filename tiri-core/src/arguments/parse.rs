@@ -4,7 +4,7 @@ use super::print::args_value_for_log;
 use super::store::{args, args_create, args_push_positional_owned, args_set_value};
 use super::value::{args_value, ParseValue};
 use crate::log::{log_byte, log_bytes, log_debug};
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int};
 use std::ffi::{CStr, CString};
 
 pub type args_parse_type = ::core::ffi::c_uint;

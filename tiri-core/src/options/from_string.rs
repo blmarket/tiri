@@ -1,7 +1,11 @@
 //! Typed option values parsed from text.
 use super::diagnostic::options_string_cause;
-use super::store::*;
-use super::types::*;
+use super::store::{options_get_number, options_get_string, options_set_number, options_set_string};
+use super::types::{
+    OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_FLAG, OPTIONS_TABLE_IS_COLOUR,
+    OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_KEY, OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_STRING, options,
+    options_table_entry,
+};
 use crate::compat::strtonum::strtonum;
 use crate::format::bytes::write_cstr;
 use crate::grid::grid_default_cell;
@@ -12,9 +16,11 @@ use crate::style::colour::colour_parse_cstr;
 use crate::style::{style_parse, style_parse_colour};
 use crate::tmux::checkshell;
 
-use crate::shared::grid::*;
-use crate::shared::key::*;
-use crate::shared::style::*;
+use crate::shared::grid::{grid_cell, utf8_data};
+use crate::shared::key::KEYC_UNKNOWN;
+use crate::shared::style::{
+    STYLE_ALIGN_DEFAULT, STYLE_DEFAULT_BASE, STYLE_LIST_OFF, STYLE_RANGE_NONE, style,
+};
 use std::ffi::{CStr, CString};
 
 fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(), CString> {

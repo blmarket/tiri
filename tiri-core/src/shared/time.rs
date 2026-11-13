@@ -43,7 +43,7 @@ pub fn asctime_text(tm: &tm) -> CString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{UNIX_EPOCH, asctime_text, unix_seconds};
     use std::time::Duration;
 
     #[test]

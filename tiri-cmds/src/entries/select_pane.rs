@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -27,9 +28,9 @@ use tiri_core::winlink::winlink_window;
 
 use tiri_core::window_pane::WindowPane as _;
 
-use crate::shared::command::*;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::uint64_t;
 use tiri_core::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS};
 pub static cmd_select_pane_entry: cmd_entry = {
     cmd_entry {

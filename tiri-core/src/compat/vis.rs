@@ -156,7 +156,10 @@ pub(crate) fn vis_into(output: &mut [u8], byte: u8, flags: i32, next: u8) -> usi
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        VIS_ALL, VIS_CSTYLE, VIS_DQ, VIS_GLOB, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_SP,
+        VIS_TAB, strnvis, strvis_append, vis_byte,
+    };
 
     fn vis(c: u8, flags: i32, next: u8) -> Vec<u8> {
         vis_byte(c, flags, next).as_ref().to_vec()

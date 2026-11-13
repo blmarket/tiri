@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -7,10 +8,10 @@ use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
 use tiri_core::winlink::winlink_window;
 
-use crate::shared::command::*;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use tiri_core::session::Session;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::format::FORMAT_NONE;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::tree::RB_NEGINF;

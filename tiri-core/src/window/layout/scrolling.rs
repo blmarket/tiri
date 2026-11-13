@@ -145,7 +145,7 @@ fn strip_length(widths: impl Iterator<Item = Width>, sx: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::super::content_width as width;
-    use super::*;
+    use super::{Width, cells, layout_geometry, strip_length};
 
     fn starts(cells: &[layout_geometry]) -> Vec<i32> {
         cells.iter().map(|cell| cell.xoff).collect()

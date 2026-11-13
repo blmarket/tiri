@@ -28,8 +28,8 @@ use std::process::ExitStatus;
 use std::time::SystemTime;
 
 use crate::actions::Target;
-use crate::shared::abi::*;
-use crate::shared::grid::*;
+use crate::shared::abi::{pid_t, u_int};
+use crate::shared::grid::{grid_cell, utf8_data};
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN};
 use crate::shared::screen::MODE_CURSOR;

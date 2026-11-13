@@ -1,7 +1,10 @@
 //! Terminal output operates on the retained client holder. Each terminal
 //! access ends before nested output, so no model borrow spans those operations.
 use super::control::tty_start_write;
-use super::model::*;
+use super::model::{
+    TERM_256COLOURS, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS, TTY_BLOCK, TTY_NOCURSOR,
+    TTY_STARTED, TTY_SYNCING, terminal_set, terminal_value, tty, tty_term,
+};
 use crate::options::OptionsScope;
 
 use super::acs::{tty_acs_get, tty_acs_needed};
@@ -13,13 +16,18 @@ use crate::options::options_get_string;
 use crate::reactor::evbuffer_add;
 use crate::screen::screen_mode_display;
 use crate::server_client::Client as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, u_char, u_int, u_short};
 use crate::shared::client::CLIENT_UTF8;
 use crate::shared::client::{ClientRef, ClientWeak};
-use crate::shared::colour::*;
+use crate::shared::colour::{THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, client_theme};
 use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use crate::shared::display::*;
-use crate::shared::grid::*;
+use crate::shared::display::{SCREEN_CURSOR_DEFAULT, progress_bar, screen_cursor_style};
+use crate::shared::grid::{
+    GRID_ATTR_ALL_UNDERSCORE, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_DIM,
+    GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
+    GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
+    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5, GRID_FLAG_NOPALETTE, grid_cell, utf8_data,
+};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::screen::{
     ScreenMode, ALL_MODES, ALL_MOUSE_MODES, CURSOR_MODES, MODE_CURSOR, MODE_CURSOR_BLINKING,
@@ -27,7 +35,16 @@ use crate::shared::screen::{
     MODE_MOUSE_STANDARD,
 };
 use crate::shared::tty::TTY_CTX_WRAPPED;
-use crate::shared::tty::*;
+use crate::shared::tty::{
+    TTYC_AX, TTYC_BLINK, TTYC_BOLD, TTYC_CIVIS, TTYC_CLMG, TTYC_CMG, TTYC_CNORM, TTYC_COLORS,
+    TTYC_CR, TTYC_CS, TTYC_CSR, TTYC_CUB, TTYC_CUB1, TTYC_CUD, TTYC_CUD1, TTYC_CUF, TTYC_CUF1,
+    TTYC_CUP, TTYC_CUU, TTYC_CUU1, TTYC_CVVIS, TTYC_DIM, TTYC_ENMG, TTYC_FSL, TTYC_HLS, TTYC_HOME,
+    TTYC_HPA, TTYC_INVIS, TTYC_KMOUS, TTYC_NOBR, TTYC_OL, TTYC_REV, TTYC_RGB, TTYC_RMACS, TTYC_SE,
+    TTYC_SETAB, TTYC_SETAF, TTYC_SETAL, TTYC_SETRGBB, TTYC_SETRGBF, TTYC_SETULC, TTYC_SETULC1,
+    TTYC_SGR0, TTYC_SITM, TTYC_SMACS, TTYC_SMOL, TTYC_SMSO, TTYC_SMUL, TTYC_SMULX, TTYC_SMXX,
+    TTYC_SPB, TTYC_SS, TTYC_SWD, TTYC_SYNC, TTYC_TSL, TTYC_VPA, tty_code_code, tty_ctx,
+    tty_style_ctx,
+};
 use crate::style::colour::{
     colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
     colour_split_rgb,
@@ -1456,7 +1473,12 @@ pub fn tty_set_progress_bar(client: &ClientRef, pb: &progress_bar) {
 
 #[cfg(test)]
 mod xtermjs_wide_tests {
-    use super::*;
+    use crate::tty::model::TTY_XTERMJS;
+    use crate::server_client::Client as _;
+    use super::{
+        CLIENT_UTF8, ClientRef, OptionsScope, grid_cell, grid_default_cell,
+        tty_xtermjs_ambiguous_wide, tty_xtermjs_cell_bytes, utf8_data,
+    };
     use crate::grid::view::grid_view_set_cell;
     use crate::grid::view::grid_view_set_padding;
     use crate::screen::screen_init;

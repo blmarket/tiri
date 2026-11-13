@@ -42,7 +42,7 @@ pub const CMD_SOURCE_FILE_DEPTH_LIMIT: ::core::ffi::c_int = 50 as ::core::ffi::c
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW, cmd_find_type};
     use ::core::mem::{align_of, size_of};
 
     #[test]

@@ -142,7 +142,7 @@ pub fn strunvis(src: &[u8]) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::strunvis;
 
     fn decoded(src: &[u8]) -> Vec<u8> {
         strunvis(src).expect("valid escapes")

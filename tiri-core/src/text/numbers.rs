@@ -313,7 +313,7 @@ pub(crate) fn hexadecimal_prefix(input: &CStr) -> Option<(u64, &CStr)> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CStr, hexadecimal_prefix, strtonum};
 
     fn parse(input: &CStr) -> Option<(u64, &[u8])> {
         hexadecimal_prefix(input).map(|(value, rest)| (value, rest.to_bytes()))

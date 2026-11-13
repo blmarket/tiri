@@ -15,25 +15,57 @@ use crate::window::Window as _;
 use crate::winlink::winlink_window;
 
 use super::control::tty_update_features;
-use super::model::*;
+use super::model::{
+    TTY_ALL_REQUEST_FLAGS, TTY_BRACKETPASTE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC, TTY_HAVEXDA,
+    TTY_OSC52QUERY, TTY_TIMER, TTY_WAITBG, TTY_WAITFG, TTY_WINSIZEQUERY, TTY_XTERMJS, tty, tty_key,
+};
 use super::output::tty_invalidate;
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::{cc_t, size_t, u_char, u_int};
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_FOCUSED;
 use crate::shared::control_character::{C0_CR, C0_ESC, C0_HT, C0_NUL};
-use crate::shared::grid::*;
+use crate::shared::grid::{utf8_char, utf8_data};
 use crate::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::shared::key::key_event;
-use crate::shared::key::*;
+use crate::shared::key::{
+    KEYC_BSPACE, KEYC_BTAB, KEYC_CTRL, KEYC_CURSOR, KEYC_DC, KEYC_DOWN, KEYC_END, KEYC_F1,
+    KEYC_F10, KEYC_F11, KEYC_F12, KEYC_F2, KEYC_F3, KEYC_F4, KEYC_F5, KEYC_F6, KEYC_F7, KEYC_F8,
+    KEYC_F9, KEYC_FOCUS_IN, KEYC_FOCUS_OUT, KEYC_HOME, KEYC_IC, KEYC_IMPLIED_META, KEYC_KEYPAD,
+    KEYC_KP_EIGHT, KEYC_KP_ENTER, KEYC_KP_FIVE, KEYC_KP_FOUR, KEYC_KP_MINUS, KEYC_KP_NINE,
+    KEYC_KP_ONE, KEYC_KP_PERIOD, KEYC_KP_PLUS, KEYC_KP_SEVEN, KEYC_KP_SIX, KEYC_KP_SLASH,
+    KEYC_KP_STAR, KEYC_KP_THREE, KEYC_KP_TWO, KEYC_KP_ZERO, KEYC_LEFT, KEYC_MASK_KEY,
+    KEYC_MASK_MODIFIERS, KEYC_MASK_TYPE, KEYC_META, KEYC_MOUSE, KEYC_NPAGE, KEYC_NUSER,
+    KEYC_PASTE_END, KEYC_PASTE_START, KEYC_PPAGE, KEYC_REPORT_DARK_THEME, KEYC_REPORT_LIGHT_THEME,
+    KEYC_RIGHT, KEYC_SHIFT, KEYC_TYPE_UNICODE, KEYC_UNKNOWN, KEYC_UP, KEYC_USER, key_code,
+};
 use crate::shared::mouse::{
     mouse_event, MOUSE_MASK_BUTTONS, MOUSE_PARAM_BTN_OFF, MOUSE_PARAM_POS_OFF, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
 use crate::shared::posix_terminal::VERASE;
-use crate::shared::tty::*;
+use crate::shared::tty::{
+    TTYC_KCBT, TTYC_KCUB1, TTYC_KCUD1, TTYC_KCUF1, TTYC_KCUU1, TTYC_KDC2, TTYC_KDC3, TTYC_KDC4,
+    TTYC_KDC5, TTYC_KDC6, TTYC_KDC7, TTYC_KDCH1, TTYC_KDN2, TTYC_KDN3, TTYC_KDN4, TTYC_KDN5,
+    TTYC_KDN6, TTYC_KDN7, TTYC_KEND, TTYC_KEND2, TTYC_KEND3, TTYC_KEND4, TTYC_KEND5, TTYC_KEND6,
+    TTYC_KEND7, TTYC_KF1, TTYC_KF10, TTYC_KF11, TTYC_KF12, TTYC_KF13, TTYC_KF14, TTYC_KF15,
+    TTYC_KF16, TTYC_KF17, TTYC_KF18, TTYC_KF19, TTYC_KF2, TTYC_KF20, TTYC_KF21, TTYC_KF22,
+    TTYC_KF23, TTYC_KF24, TTYC_KF25, TTYC_KF26, TTYC_KF27, TTYC_KF28, TTYC_KF29, TTYC_KF3,
+    TTYC_KF30, TTYC_KF31, TTYC_KF32, TTYC_KF33, TTYC_KF34, TTYC_KF35, TTYC_KF36, TTYC_KF37,
+    TTYC_KF38, TTYC_KF39, TTYC_KF4, TTYC_KF40, TTYC_KF41, TTYC_KF42, TTYC_KF43, TTYC_KF44,
+    TTYC_KF45, TTYC_KF46, TTYC_KF47, TTYC_KF48, TTYC_KF49, TTYC_KF5, TTYC_KF50, TTYC_KF51,
+    TTYC_KF52, TTYC_KF53, TTYC_KF54, TTYC_KF55, TTYC_KF56, TTYC_KF57, TTYC_KF58, TTYC_KF59,
+    TTYC_KF6, TTYC_KF60, TTYC_KF61, TTYC_KF62, TTYC_KF63, TTYC_KF7, TTYC_KF8, TTYC_KF9, TTYC_KHOM2,
+    TTYC_KHOM3, TTYC_KHOM4, TTYC_KHOM5, TTYC_KHOM6, TTYC_KHOM7, TTYC_KHOME, TTYC_KIC2, TTYC_KIC3,
+    TTYC_KIC4, TTYC_KIC5, TTYC_KIC6, TTYC_KIC7, TTYC_KICH1, TTYC_KIND, TTYC_KLFT2, TTYC_KLFT3,
+    TTYC_KLFT4, TTYC_KLFT5, TTYC_KLFT6, TTYC_KLFT7, TTYC_KNP, TTYC_KNXT2, TTYC_KNXT3, TTYC_KNXT4,
+    TTYC_KNXT5, TTYC_KNXT6, TTYC_KNXT7, TTYC_KPP, TTYC_KPRV2, TTYC_KPRV3, TTYC_KPRV4, TTYC_KPRV5,
+    TTYC_KPRV6, TTYC_KPRV7, TTYC_KRI, TTYC_KRIT2, TTYC_KRIT3, TTYC_KRIT4, TTYC_KRIT5, TTYC_KRIT6,
+    TTYC_KRIT7, TTYC_KUP2, TTYC_KUP3, TTYC_KUP4, TTYC_KUP5, TTYC_KUP6, TTYC_KUP7, TTYC_SYNC,
+    tty_code_code,
+};
 use crate::shared::utf8::wchar_t;
-use crate::shared::utf8::*;
+use crate::shared::utf8::{UTF8_DONE, UTF8_MORE, utf8_state};
 use crate::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::text::numbers::{scan_u32_pair, strtol_prefix};
 use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
@@ -2836,7 +2868,7 @@ mod scan {
 
     #[cfg(test)]
     mod tests {
-        use super::*;
+        use super::until_nul;
         use crate::text::numbers::strtol_prefix;
         use std::ffi::CString;
 
@@ -2924,7 +2956,10 @@ mod scan {
 
 #[cfg(test)]
 mod key_tree_tests {
-    use super::*;
+    use super::{
+        KEYC_UNKNOWN, key_code, size_t, tty, tty_key, tty_keys_add, tty_keys_add1, tty_keys_find1,
+        tty_keys_free, tty_keys_next1,
+    };
 
     fn lookup(tree: &Option<Box<tty_key>>, bytes: &[u8]) -> (Option<key_code>, size_t) {
         let mut size = 0;
@@ -3036,7 +3071,16 @@ mod key_tree_tests {
 
 #[cfg(test)]
 mod reply_parser_tests {
-    use super::*;
+    use crate::server_client::Client as _;
+    use super::{
+        CStr, CString, ClientRef, ColourReport, KEYC_BSPACE, KEYC_BTAB, KEYC_CTRL, KEYC_F1,
+        KEYC_IMPLIED_META, KEYC_META, KEYC_SHIFT, OptionsScope, TTY_HAVEDA, TTY_HAVEDA2,
+        TTY_HAVESYNC, TTY_HAVEXDA, TTY_WAITBG, TTY_WAITFG, TTY_WINSIZEQUERY, TTY_XTERMJS, VERASE,
+        colour_parse_x11_logged, key_code, mouse_event, size_t, tty, tty_default_features,
+        tty_keys_build, tty_keys_clipboard, tty_keys_colours, tty_keys_extended_key,
+        tty_keys_mouse, tty_keys_next1, tty_keys_palette, tty_keys_terminal_reply, tty_keys_winsz,
+        tty_parse_client_features,
+    };
     use crate::format::format_create;
     use crate::server_client::queue_test_clients;
 

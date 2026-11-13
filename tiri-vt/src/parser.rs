@@ -1,7 +1,5 @@
 use crate::base64;
-use crate::osc7501::{
-    OSC_7501_QUERY_REPLY_PREFIX, Osc7501Update, ProgramStatus, parse_osc_7501,
-};
+use crate::osc7501::{OSC_7501_QUERY_REPLY_PREFIX, Osc7501Update, ProgramStatus, parse_osc_7501};
 use std::cell::Cell;
 use std::ffi::{CStr, CString, c_char};
 
@@ -1885,7 +1883,11 @@ static INPUT_STATE_CONSUME_ST_TABLE: [InputTransition; 8] = [
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CStr, INPUT_BUF_START, InputEndType, InputParam, Osc133Command, Parser, ProgramStatus,
+        SgrAttr, SgrColor, SgrOp, VtHost, WinOp, c_char, dispatch_sgr_colon, input_input,
+        input_split, osc_133_exit_status,
+    };
 
     #[derive(Default)]
     struct DummyHost {

@@ -363,7 +363,7 @@ pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{TTYC_ACSC, TTYC_CLEAR, TTYC_XT, tty_code_code};
     use ::core::mem::{align_of, size_of};
 
     #[test]

@@ -50,7 +50,7 @@ use std::ffi::{CStr, CString};
 
 use crate::actions::Target;
 use crate::options::OPTIONS_TABLE_IS_HOOK;
-use crate::shared::abi::*;
+use crate::shared::abi::{time_t, u_char, u_int, uint64_t};
 use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::environment::{environ, environ_entry};
@@ -70,7 +70,9 @@ use crate::shared::format::{
     FORMAT_STATUS, FORMAT_TIMESTRING, FORMAT_TIME_LIMIT, FORMAT_TIME_LOOP_CHECK, FORMAT_VERBOSE,
     FORMAT_WIDTH, FORMAT_WINDOW, FORMAT_WINDOWS, FORMAT_WINDOW_NAME,
 };
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_FLAG_PADDING, GRID_FLAG_TAB, GRID_LINE_WRAPPED, grid, grid_cell, utf8_data,
+};
 use crate::shared::job::JOB_NOWAIT;
 use crate::shared::job::{job, job_update_callback, JobCompletion};
 use crate::shared::pane::window_pane;
@@ -78,7 +80,6 @@ use crate::shared::paste::paste_buffer;
 use crate::shared::posix_io::FNM_CASEFOLD;
 use crate::shared::screen::screen;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
 use crate::shared::time::tm;
 use crate::shared::tree::{RB_INF, RB_NEGINF};
 use crate::shared::window::winlink;
@@ -98,18 +99,16 @@ use libc::{REG_EXTENDED, REG_ICASE};
 pub mod bytes;
 mod tree;
 pub use tree::format_add_owned_cb;
-use tree::*;
 pub use tree::{
     format_add, format_add_cstr, format_add_time, format_create, format_each, format_get_pane,
     format_log_debug, format_merge,
 };
 mod jobs;
-use jobs::*;
 pub use jobs::{format_lost_client, format_tidy_jobs};
 mod callbacks;
 pub(crate) use callbacks::window_format_value;
 pub use callbacks::FormatValue;
-use callbacks::*;
+use callbacks::format_table_get;
 
 pub(crate) fn format_is_builtin(key: &CStr) -> bool {
     format_table_get(key).is_some()
@@ -124,7 +123,6 @@ pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::format_quote_shell_single;
 pub(crate) use expression::format_single_from_state_cstring;
-use expression::*;
 pub use expression::{
     format_expand_time_cstring, format_single_cstring, format_single_from_target_cstring,
 };

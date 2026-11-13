@@ -87,7 +87,7 @@ pub type screen_write_init_ctx_cb = Option<Box<dyn FnMut(&mut tty_ctx)>>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{screen_write_citem, screen_write_items};
 
     fn address(item: &screen_write_citem) -> usize {
         item as *const screen_write_citem as usize

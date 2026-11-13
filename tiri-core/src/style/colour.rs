@@ -3,9 +3,9 @@ use crate::format::bytes::cstr_suffix;
 use crate::log::log_cstr;
 use crate::options::OptionsScope;
 use crate::server_client::Client;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int};
 use crate::shared::client::ClientRef;
-use crate::shared::colour::*;
+use crate::shared::colour::{THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, client_theme, colour_palette};
 use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::text::numbers::{scan_f64, scan_hex_u32_width, scan_i32, Scan};
 use crate::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
@@ -3618,7 +3618,7 @@ pub fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{colour_fromstring_impl, colour_join_rgb};
 
     #[test]
     fn hex_colour_from_string() {

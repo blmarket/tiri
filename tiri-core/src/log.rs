@@ -134,7 +134,11 @@ pub fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CStr, File, LOG_FILE, VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB, fmt, format_bytes, log_byte,
+        log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_debug, log_hex, log_message,
+        log_pointer, strvis_append,
+    };
     use libc::snprintf;
     use std::io::{Read, Seek, SeekFrom};
     use std::os::unix::ffi::OsStrExt;

@@ -1,10 +1,16 @@
-use super::types::*;
-use crate::shared::abi::*;
+use super::types::{
+    OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_COMMAND, OPTIONS_TABLE_FLAG,
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
+    OPTIONS_TABLE_KEY, OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER,
+    OPTIONS_TABLE_SESSION, OPTIONS_TABLE_STATUS_FORMAT1, OPTIONS_TABLE_STATUS_FORMAT2,
+    OPTIONS_TABLE_STATUS_FORMAT3, OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW, options_table_entry,
+};
+use crate::shared::abi::u_int;
 use crate::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
 use crate::shared::input::INPUT_BUF_DEFAULT_SIZE;
-use crate::shared::key::*;
+use crate::shared::key::{KEYC_CTRL, KEYC_NONE};
 use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use crate::shared::layout::*;
+use crate::shared::layout::{BOX_LINES_SINGLE, PANE_LINES_SINGLE};
 use crate::shared::limits::{INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX};
 use crate::shared::pane::{
     PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF,

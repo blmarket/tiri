@@ -1,5 +1,5 @@
 //! Session registry ordering; comparison keys stay inside the Session owner.
-use super::*;
+use super::{session, sessions, sort_criteria};
 use crate::shared::session::SessionRef;
 use crate::sort::{sort_by_criteria, sort_ordering};
 use std::cmp::Ordering;

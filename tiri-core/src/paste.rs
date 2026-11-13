@@ -2,7 +2,7 @@ use crate::events::events_fire;
 use crate::events_payload::{event_payload_create, event_payload_set_string};
 use crate::options::options_get_number;
 use crate::options::OptionsScope;
-use crate::shared::abi::*;
+use crate::shared::abi::{time_t, u_int};
 use crate::shared::paste::paste_buffer;
 use crate::shared::tree::{RB_INF, RB_NEGINF};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
@@ -445,7 +445,13 @@ pub(crate) fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        RB_INF, RB_NEGINF, RefBox, RefCell, paste_buffer, paste_free, paste_get_name,
+        paste_name_tree, paste_name_tree_find, paste_name_tree_insert, paste_name_tree_remove,
+        paste_new_owned, paste_rename, paste_set_owned, paste_time_tree, paste_time_tree_insert,
+        paste_time_tree_minmax, paste_time_tree_next, paste_time_tree_prev, paste_time_tree_remove,
+        u_int,
+    };
     use std::{ffi::CString, rc::Rc};
 
     #[test]

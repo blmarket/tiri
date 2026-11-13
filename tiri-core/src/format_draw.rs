@@ -7,12 +7,16 @@ use crate::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_cursormove,
     screen_write_fast_copy, screen_write_putc, screen_write_start, screen_write_stop,
 };
-use crate::shared::abi::*;
-use crate::shared::grid::*;
+use crate::shared::abi::{size_t, u_char, u_int};
+use crate::shared::grid::{grid_cell, utf8_data};
 use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
-use crate::shared::style::*;
-use crate::shared::utf8::*;
+use crate::shared::style::{
+    STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT, STYLE_DEFAULT_BASE, STYLE_DEFAULT_POP,
+    STYLE_DEFAULT_PUSH, STYLE_DEFAULT_SET, STYLE_LIST_OFF, STYLE_RANGE_NONE, style, style_align,
+    style_range, style_range_type, style_ranges,
+};
+use crate::shared::utf8::{UTF8_DONE, UTF8_MORE, utf8_state};
 use crate::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::text::utf8::{utf8_append, utf8_open, utf8_set};
 use std::ffi::{CStr, CString};
@@ -1720,7 +1724,10 @@ pub(crate) fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) -> Vec<
 
 #[cfg(test)]
 mod range_tests {
-    use super::*;
+    use super::{
+        CStr, format_draw, grid_default_cell, screen, screen_init, screen_write_start,
+        screen_write_stop, style_ranges,
+    };
     use crate::options::options_table;
     use crate::options::OptionsScope;
 

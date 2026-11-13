@@ -3,8 +3,11 @@
 use super::diagnostic::options_string_cause;
 use super::from_string::options_from_string;
 use super::scope::OptionsScope;
-use super::store::*;
-use super::types::*;
+use super::store::{options_empty, options_local_entry, options_set_string};
+use super::types::{
+    OPTIONS_TABLE_COMMAND, OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_STRING, OptionCommand,
+    options_array, options_table_entry, options_value,
+};
 use crate::actions::sources::compile;
 use crate::format::bytes::write_cstr;
 use crate::shared::limits::UINT_MAX;

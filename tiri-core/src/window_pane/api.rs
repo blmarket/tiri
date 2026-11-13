@@ -1,5 +1,29 @@
 //! Operations on retained panes. Logical destruction remains explicit.
-use super::*;
+use crate::shared::display::visible_range;
+use crate::shared::key::key_code_mouse_location;
+use super::{
+    BufferEvent, CString, Completion, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_PASTE_END,
+    KEYC_PASTE_START, KEYC_TYPE_FUNCTION, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, MODE_FOCUSON,
+    PANE_CHANGED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_LINES_NONE,
+    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT,
+    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PaneScreenSource, Rc, RefCell,
+    Target, Timer, Window, args, colour_palette_get, events_fire_pane, grid_cell,
+    grid_cells_look_equal, key_code, layout_geometry, lifecycle, log_debug, mouse_event, options,
+    options_get_number, pane_lines, pid_t, process, prompt_free_cb, prompt_key_result, prompt_type,
+    screen, screen_init, sort, spawning, status_prompt_input_cb, style_range,
+    window_fire_pane_moved, window_mode, window_mode_entry, window_pane,
+    window_pane_default_cursor, window_pane_destroy, window_pane_destroy_ready,
+    window_pane_find_by_id, window_pane_find_by_id_str, window_pane_full_size_offset,
+    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_has_prompt,
+    window_pane_key, window_pane_offset, window_pane_paste, window_pane_prompt_key,
+    window_pane_reset_mode, window_pane_reset_mode_all, window_pane_resize,
+    window_pane_scrollbar_hide, window_pane_scrollbar_overlay, window_pane_scrollbar_redraw,
+    window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
+    window_pane_scrollbar_visible, window_pane_search, window_pane_send_resize,
+    window_pane_send_theme_update, window_pane_set_mode, window_pane_set_prompt,
+    window_pane_start_input, window_pane_status_get_range, window_pane_tree,
+    window_pane_update_prompt, window_pane_upgrade, winlink,
+};
 use crate::actions::TaskOutcome;
 use crate::grid::{grid_get_cell, grid_set_cell};
 use crate::hyperlinks::{hyperlinks_get, hyperlinks_put};
@@ -1643,7 +1667,12 @@ fn finish_buffer(owner: &Rc<RefCell<window_pane>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::reactor::bufferevent_new;
+    use super::{
+        BufferEvent, OptionsScope, PANE_CHANGED, Rc, RefCell, WindowPane, grid_cell, grid_get_cell,
+        grid_set_cell, hyperlinks_get, hyperlinks_put, screen, window_pane, window_pane_offset,
+        window_pane_tree, window_pane_upgrade,
+    };
 
     use crate::grid::grid_create;
     use crate::reactor::evbuffer_add;

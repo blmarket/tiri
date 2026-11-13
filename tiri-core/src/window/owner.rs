@@ -85,7 +85,7 @@ impl WindowWeak {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Rc, WindowRef, window};
     use crate::events::{events_add_sink, events_remove_sink};
     use std::cell::Cell;
 

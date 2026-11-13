@@ -2,7 +2,9 @@
 use std::ffi::{CStr, CString};
 use tiri::format::bytes::write_cstr;
 use tiri::options::options_entry;
-use tiri::options::*;
+use tiri::options::{
+    options_create, options_default, options_empty, options_set_string, options_to_cstring,
+};
 
 #[test]
 fn scalar_string_replacement_append_and_default_keep_stable_entry() {

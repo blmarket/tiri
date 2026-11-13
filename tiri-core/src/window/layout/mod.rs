@@ -569,7 +569,10 @@ fn append_pane(output: &mut Vec<u8>, entry: &LayoutEntry) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        Direction, LayoutEntry, LayoutKind, LayoutNode, adjacent, layout_checksum, layout_geometry,
+        layout_string,
+    };
 
     fn entry(xoff: i32, id: u32, index: u32, active: bool, last: Option<u32>) -> LayoutEntry {
         LayoutEntry {

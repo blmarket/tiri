@@ -3,11 +3,11 @@ use crate::log::fatalx;
 use crate::session::Session;
 use crate::shared::session::SessionRef;
 use crate::shared::window::WindowRef;
-use crate::window::*;
+use crate::window::Window;
 
 use crate::server_fn::server_status_session;
 
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::limits::INT_MAX;
 use crate::shared::tree::{RB_INF, RB_NEGINF};
 use crate::shared::window::WINLINK_ALERTFLAGS;
@@ -377,7 +377,10 @@ pub fn winlink_shuffle_up(session: &SessionRef, link: refbox::Weak<winlink>, bef
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        RB_NEGINF, winlink_add, winlink_remove, winlink_weak, winlinks_minmax, winlinks_next,
+        winlinks_reindex,
+    };
     #[test]
     fn winlink_index_keeps_order_and_weak_observers_across_moves() {
         let mut head = Default::default();

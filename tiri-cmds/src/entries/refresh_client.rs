@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_count, args_flag_values, args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
@@ -14,13 +15,13 @@ use tiri_core::resize::recalculate_sizes_now;
 use tiri_core::text::numbers::{scan_u32, scan_u32_pair, Scan};
 use tiri_core::winlink::winlink_window;
 
-use crate::shared::command::*;
+use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
 use tiri_core::server_client::Client as _;
 use tiri_core::server_fn::{server_redraw_client, server_status_client};
 use tiri_core::session::Session;
-use tiri_core::shared::abi::*;
+use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::client::{CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED};
 use tiri_core::shared::layout::Direction;
@@ -321,7 +322,7 @@ fn cmd_refresh_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::*;
+    use super::{CStr, cmd_refresh_parse_pane, u_int};
     use std::ffi::CString;
 
     #[test]

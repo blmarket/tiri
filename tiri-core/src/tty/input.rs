@@ -34,7 +34,7 @@ impl From<TerminalInput> for SegmentedBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::TerminalInput;
     #[test]
     fn appends_preserve_remaining_input_and_empty_chunks_preserve_storage() {
         let mut input = TerminalInput::default();

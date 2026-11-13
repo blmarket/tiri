@@ -1,5 +1,15 @@
 //! Operations on retained session holders. Cleanup remains explicit.
-use super::*;
+use super::{
+    CStr, CString, Rc, Target, WINLINK_ALERTFLAGS, alerts_check_all, environ, event_payload_create,
+    event_payload_set_session, event_payload_set_string, event_payload_set_target, events_fire,
+    events_fire_winlink, options, recalculate_size_state, session_adjacent, session_attach,
+    session_create, session_destroy, session_detach, session_find_by_id_str, session_is_linked,
+    session_last, session_next, session_previous, session_remove_ref, session_renumber_windows,
+    session_replace_name, session_select, session_set_current, session_set_cwd,
+    session_synchronize_windows, session_theme_changed, session_update_activity,
+    session_update_history, sessions, sort_criteria, sort_get_sessions, termios, winlink,
+    winlink_find_by_index, winlink_remove, winlink_stack_remove, winlinks,
+};
 use crate::shared::session::SessionRef;
 use crate::shared::spawn::spawn_context;
 use crate::shared::window::WindowRef;
@@ -374,7 +384,9 @@ impl Session for SessionRef {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::session::status_update_cache;
+    use crate::shared::session::session;
+    use super::{CString, Session};
 
     #[test]
     fn rename_rejects_invalid_utf8_before_touching_the_registry() {

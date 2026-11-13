@@ -1,5 +1,8 @@
 //! Pane-owned synchronized output. Release state before invoking the renderer.
-use super::*;
+#[cfg(test)]
+use super::window_pane_tree;
+use crate::shared::abi::bitstr_t;
+use super::{PANE_REDRAW, Rc, RefCell, Timer, WindowPane, fatal, log_debug, u_int, window_pane};
 use crate::screen_write::{
     screen_write_initctx, screen_write_redraw_line, screen_write_start_base, screen_write_stop,
 };
@@ -135,7 +138,7 @@ fn flush_dirty(pane: &Rc<RefCell<window_pane>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Rc, WindowPane, window_pane};
     use crate::reactor::shutdown_runtime;
 
     #[test]

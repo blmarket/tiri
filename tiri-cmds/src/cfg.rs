@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_client,
@@ -15,11 +16,10 @@ use crate::session::sessions;
 use crate::winlink::winlink_window;
 
 use crate::session::Session as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_int, uint64_t};
 use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::command::cmd_parse_input;
-use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
 use crate::shared::errno::ErrorText;
@@ -338,7 +338,13 @@ pub fn cfg_show_causes(s_owner: Option<&SessionRef>) {
 
 #[cfg(test)]
 mod cfg_wait_tests {
-    use super::*;
+    use crate::cmd::queue::CmdqWaiter;
+    use crate::shared::command::CmdOutcome;
+    use tiri_core::server_client::Client as _;
+    use super::{
+        CFG_FINISHED, CFG_WAITER, ClientRef, cfg_client_done, cfg_done, cfg_finished, cmdq_append,
+        cmdq_get_callback_owned, cmdq_item,
+    };
     use crate::cmd::queue::cmdq_next;
     use crate::options::options_table;
     use crate::options::OptionsScope;

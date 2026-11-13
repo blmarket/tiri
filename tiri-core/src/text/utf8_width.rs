@@ -59,7 +59,7 @@ pub(super) fn parse_width_override(input: &CStr) -> Option<WidthOverride> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::parse_width_override;
 
     #[test]
     fn preserves_numeric_prefixes_signs_and_width_syntax() {

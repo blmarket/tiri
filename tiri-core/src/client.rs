@@ -2,7 +2,15 @@ use crate::actions::pack_argv;
 use crate::actions::sources::compile_argv;
 use crate::compat::imsg::imsg;
 use crate::compat::imsg::msg_command;
-use crate::compat::imsg::*;
+use crate::compat::imsg::{
+    MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING,
+    MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON,
+    MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT,
+    MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READY,
+    MSG_READ_CANCEL, MSG_READ_OPEN, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_STDERR, MSG_STDIN,
+    MSG_STDOUT, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE,
+    MSG_WRITE_OPEN, msgtype,
+};
 use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::systemd_activated;
@@ -18,10 +26,14 @@ use crate::proc::{
     proc_set_signals, proc_start, read_plain,
 };
 use crate::server::server_start;
-use crate::shared::abi::*;
+use crate::shared::abi::{cc_t, pid_t, size_t, tcflag_t, uint64_t};
 use crate::shared::abi::{ssize_t, uint32_t};
 pub use crate::shared::client::client_files;
-use crate::shared::client::*;
+use crate::shared::client::{
+    CLIENT_EXIT_DETACHED, CLIENT_EXIT_DETACHED_HUP, CLIENT_EXIT_EXITED, CLIENT_EXIT_LOST_SERVER,
+    CLIENT_EXIT_LOST_TTY, CLIENT_EXIT_MESSAGE_PROVIDED, CLIENT_EXIT_NONE,
+    CLIENT_EXIT_SERVER_EXITED, CLIENT_EXIT_TERMINATED, client_exit_reason,
+};
 use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,

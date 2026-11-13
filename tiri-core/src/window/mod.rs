@@ -10,8 +10,21 @@ pub use api::Window;
 
 mod layout;
 mod model;
-pub use crate::window_pane::*;
-pub use crate::winlink::*;
+pub use crate::window_pane::{
+    InputRequestReply, WindowPane, input_init, input_parse_screen, input_pending,
+    input_request_reply, input_set_buffer_size, window_mode, window_mode_entry, window_pane,
+};
+#[cfg(feature = "test-support")]
+pub use crate::window_pane::{input_wait_tests, wait_close_tests};
+pub use crate::winlink::{
+    winlink_add, winlink_clear_flags, winlink_count, winlink_find_by_index, winlink_find_by_window,
+    winlink_find_by_window_id, winlink_index, winlink_next, winlink_next_by_number,
+    winlink_previous, winlink_previous_by_number, winlink_remove, winlink_set_window,
+    winlink_shuffle_up, winlink_stack, winlink_stack_append, winlink_stack_first,
+    winlink_stack_indices, winlink_stack_next, winlink_stack_push, winlink_stack_remove,
+    winlink_window, winlinks, winlinks_is_empty, winlinks_minmax, winlinks_next, winlinks_prev,
+    winlinks_reindex,
+};
 pub(crate) use layout::FloatingPane;
 pub use layout::{LayoutAction, LayoutKind};
 pub use model::window;
@@ -41,11 +54,9 @@ use std::rc::{Rc, Weak};
 
 use crate::actions::Target;
 use crate::options::options;
-use crate::shared::abi::*;
-use crate::shared::event::*;
-use crate::shared::grid::*;
+use crate::shared::abi::u_int;
 use crate::shared::layout::layout_geometry;
-use crate::shared::layout::*;
+use crate::shared::layout::pane_lines;
 use crate::shared::limits::UINT_MAX;
 use crate::shared::pane::{window_panes, PaneHistory};
 use crate::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};

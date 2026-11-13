@@ -1,6 +1,6 @@
 use crate::actions::queue::{callback, enqueue};
 use crate::actions::Target;
-use crate::actions::*;
+use crate::actions::{TaskOutcome};
 use crate::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_single_cstring,
@@ -29,17 +29,20 @@ use crate::server_fn::{
 };
 use crate::session::session_group_synchronize_from;
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int, u_short, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::format::format_tree;
 use crate::shared::format::{FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW};
-use crate::shared::grid::*;
-use crate::shared::key::*;
-use crate::shared::layout::*;
+use crate::shared::grid::{GRID_ATTR_CHARSET, grid_cell, utf8_data};
+use crate::shared::key::{
+    KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE, KEYC_NONE, KEYC_RIGHT,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_UNKNOWN, key_code,
+};
+use crate::shared::layout::BOX_LINES_DEFAULT;
 use crate::shared::menu::menu_item;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
-use crate::shared::prompt::*;
+use crate::shared::prompt::{PROMPT_TYPE_COMMAND, prompt_key_result};
 use crate::shared::prompt::{
     prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
@@ -47,7 +50,7 @@ use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
+use crate::shared::sort::{SORT_ACTIVITY, SORT_END, SORT_INDEX, SORT_NAME, sort_order};
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::WindowRef;
 use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeCell};

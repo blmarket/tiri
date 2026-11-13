@@ -1,7 +1,7 @@
 //! Authoritative style value types and style-domain constants.
 
-use super::abi::*;
-use super::grid::*;
+use super::abi::u_int;
+use super::grid::grid_cell;
 
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
@@ -74,7 +74,7 @@ pub struct style_range {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{style, style_line_entry, style_range, style_ranges};
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]

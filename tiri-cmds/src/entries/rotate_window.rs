@@ -1,7 +1,8 @@
+use crate::shared::command::CmdOutcome;
 use crate::arguments::{args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_get_state_owned;
-use crate::shared::command::*;
+use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use tiri_core::server_fn::server_redraw_window;
 use tiri_core::shared::window::winlink;

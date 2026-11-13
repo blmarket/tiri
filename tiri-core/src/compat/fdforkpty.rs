@@ -1,4 +1,4 @@
-use crate::shared::abi::*;
+use crate::shared::abi::pid_t;
 use crate::shared::posix_terminal::winsize;
 use std::os::fd::{AsFd, OwnedFd};
 /// Fork with a new pseudo-terminal using the default attributes. `name`

@@ -1,5 +1,10 @@
 //! Byte-oriented attribute text APIs. Case matching follows the active C locale.
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_DIM, GRID_ATTR_HIDDEN,
+    GRID_ATTR_ITALICS, GRID_ATTR_NOATTR, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
+    GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
+    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5,
+};
 use std::ffi::{CStr, CString};
 
 const NAMES: &[(&[u8], i32)] = &[

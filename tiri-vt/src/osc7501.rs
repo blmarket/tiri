@@ -184,7 +184,7 @@ pub(crate) fn parse_osc_7501(bytes: &[u8]) -> Option<Osc7501Update> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Osc7501Update, ProgramState, ProgramStatus, parse_osc_7501};
 
     #[test]
     fn parses_osc_7501_states_and_clear() {

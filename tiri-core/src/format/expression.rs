@@ -1,6 +1,38 @@
+use crate::format::jobs::format_job_get;
+use crate::format::tree::format_entry_get_value;
+use crate::format::tree::format_entry_tree_find;
+use crate::shared::abi::size_t;
+use crate::shared::sort::SORT_ACTIVITY;
+use crate::shared::sort::SORT_CREATION;
+use crate::shared::sort::SORT_INDEX;
+use crate::shared::sort::SORT_NAME;
+use crate::shared::sort::SORT_ORDER;
 use super::bytes::format_cstring;
 use super::bytes::{cstr_basename, cstr_dirname};
-use super::*;
+use super::{
+    ADD, C2RustUnnamed_44, CLIENT_UNATTACHEDFLAGS, DIVIDE, ENVIRON_HIDDEN, EQUAL, FNM_CASEFOLD,
+    FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,
+    FORMAT_CLIENT_TERMCAP, FORMAT_CLIENT_TERMFEAT, FORMAT_COLOUR, FORMAT_COLOUR_ESC_BG,
+    FORMAT_COLOUR_ESC_FG, FORMAT_CYCLE, FORMAT_CYCLE_PERIOD, FORMAT_DIFFERENCE, FORMAT_DIRNAME,
+    FORMAT_ENVIRON, FORMAT_EXPAND, FORMAT_EXPANDTIME, FORMAT_EXPAND_NOCYCLE, FORMAT_EXPAND_NOJOBS,
+    FORMAT_EXPAND_TIME, FORMAT_LENGTH, FORMAT_LITERAL, FORMAT_LOOP_LIMIT, FORMAT_MAX_PRECISION,
+    FORMAT_MAX_REPEAT, FORMAT_MAX_REPEAT_SIZE, FORMAT_MAX_WIDTH, FORMAT_NOJOBS, FORMAT_NONE,
+    FORMAT_NOT, FORMAT_NOT_NOT, FORMAT_OPTIONS, FORMAT_PANE, FORMAT_PANES, FORMAT_PRETTY,
+    FORMAT_QUOTE_ARGUMENTS, FORMAT_QUOTE_SHELL, FORMAT_QUOTE_SHELL_SQ, FORMAT_QUOTE_STYLE,
+    FORMAT_RELATIVE, FORMAT_REPEAT, FORMAT_SESSIONS, FORMAT_SESSION_NAME, FORMAT_STATUS,
+    FORMAT_TIMESTRING, FORMAT_TIME_LIMIT, FORMAT_TIME_LOOP_CHECK, FORMAT_WIDTH, FORMAT_WINDOW,
+    FORMAT_WINDOWS, FORMAT_WINDOW_NAME, FormatValue, GREATER_THAN, GREATER_THAN_EQUAL, INT64_MAX,
+    LESS_THAN, LESS_THAN_EQUAL, MODULUS, MULTIPLY, NOT_EQUAL, OPTIONS_TABLE_IS_HOOK, RB_NEGINF,
+    REG_EXTENDED, REG_ICASE, REG_NOSUB, RegexStorage, SUBTRACT, Target, args_escape_cstring,
+    colour_force_rgb, colour_format_escape_for_client, colour_parse_cstr, environ, environ_entry,
+    environ_find, environ_iter, fnmatch, format_add, format_add_cstr, format_create,
+    format_create_defaults, format_defaults, format_expand_state, format_log1, format_logging,
+    format_lower, format_message_with, format_modifier, format_plugin_pane, format_table_get,
+    format_tree, format_trim_left_bytes, format_trim_right_bytes, format_upper, format_width,
+    fuzzy_match_owned, get_timer, global_environ, regsub_cstring, sort_criteria, sort_get_clients,
+    sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session, strtonum, target_client,
+    time_t, u_int, uint64_t, utf8_pad_cstring, window_pane, winlink, winlink_next, winlinks_minmax,
+};
 use crate::compat::strtod::strtod;
 use crate::format::bytes::cstr_suffix;
 use crate::format::bytes::write_cstr;
@@ -2675,7 +2707,12 @@ mod format_float_tests {
 
 #[cfg(test)]
 mod format_choose_tests {
-    use super::*;
+    use super::{
+        CStr, CString, FORMAT_EXPAND_TIME, FORMAT_LOOP_LIMIT, FORMAT_TIME_LIMIT, format_add,
+        format_choose, format_choose_loop, format_create, format_expand1_cstring,
+        format_expand_cstring, format_expand_state, format_expand_time_cstring, get_timer, u_int,
+        uint64_t,
+    };
 
     #[test]
     fn expanded_owners_outlive_their_inputs_and_tree() {

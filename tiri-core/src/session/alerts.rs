@@ -1,5 +1,5 @@
 //! Session alert delivery preserves association order and per-cycle deduplication.
-use super::*;
+use super::{Rc, Session, SessionRef, options_get_number, winlink};
 use crate::events::events_fire_winlink;
 use crate::server_client::Client;
 use crate::server_client::ClientRegistry;

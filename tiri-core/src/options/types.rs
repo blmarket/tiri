@@ -156,7 +156,7 @@ impl options_entry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{OPTIONS_TABLE_COMMAND, OPTIONS_TABLE_STRING, options_table_type};
     use ::core::mem::{align_of, size_of};
 
     #[test]

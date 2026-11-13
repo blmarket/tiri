@@ -4,7 +4,9 @@ use crate::input_keys::{input_key, input_key_get_mouse};
 use crate::key_string::key_string_format;
 use crate::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::reactor::BufferEvent;
-use crate::shared::key::*;
+use crate::shared::key::{
+    KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, key_code,
+};
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::screen::ALL_MOUSE_MODES;

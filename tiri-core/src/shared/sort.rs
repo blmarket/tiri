@@ -20,7 +20,7 @@ pub struct sort_criteria {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{SORT_ACTIVITY, SORT_END, sort_order};
     use ::core::mem::{align_of, size_of};
 
     #[test]

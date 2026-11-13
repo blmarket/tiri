@@ -11,11 +11,11 @@ use crate::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_putc, screen_write_puts,
     screen_write_start, screen_write_stop,
 };
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, time_t, u_char, u_int};
 use crate::shared::client::ClientRef;
-use crate::shared::event::*;
-use crate::shared::grid::*;
-use crate::shared::key::*;
+use crate::shared::event::Timer;
+use crate::shared::grid::{GRID_FLAG_NOPALETTE, grid_cell, utf8_data};
+use crate::shared::key::key_code;
 use crate::shared::mouse::mouse_event;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};

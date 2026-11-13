@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::arguments::{args, args_count, args_get, args_has, args_string};
-use crate::compat::imsg::*;
+use crate::compat::imsg::{MSG_DETACH, MSG_DETACHKILL};
 use crate::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
     format_single_cstring, format_true,
@@ -21,13 +21,13 @@ use crate::screen_write::{
 };
 use crate::server_client::Client as _;
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::shared::format::FORMAT_NONE;
-use crate::shared::grid::*;
-use crate::shared::key::*;
-use crate::shared::layout::*;
+use crate::shared::grid::{grid_cell, utf8_data};
+use crate::shared::key::{KEYC_NONE, KEYC_UNKNOWN, key_code};
+use crate::shared::layout::BOX_LINES_DEFAULT;
 use crate::shared::menu::menu_item;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
@@ -35,7 +35,7 @@ use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
-use crate::shared::sort::*;
+use crate::shared::sort::{SORT_ACTIVITY, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, sort_order};
 use crate::shared::window::WindowRef;
 use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::sort_get_clients;

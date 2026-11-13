@@ -113,7 +113,10 @@ pub struct prompt_draw_data {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        PROMPT_KEY_MOVE, PROMPT_KEY_NOT_HANDLED, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID,
+        PROMPT_TYPE_SEARCH, prompt_key_result, prompt_type,
+    };
     use ::core::mem::{align_of, size_of};
 
     #[test]

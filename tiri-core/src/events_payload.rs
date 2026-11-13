@@ -4,7 +4,7 @@ use crate::format::bytes::write_cstr;
 use crate::format::format_add;
 use crate::log::{log_cstr, log_cstr_n, log_debug};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup};
-use crate::shared::abi::*;
+use crate::shared::abi::{size_t, time_t, u_int};
 use crate::shared::client::ClientRef;
 use crate::shared::events::{
     event_payload, event_payload_item, event_payload_tree, event_payload_type,
@@ -425,7 +425,11 @@ pub fn event_payload_get_identity<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        event_payload, event_payload_create, event_payload_find, event_payload_item,
+        event_payload_item_name, event_payload_items, event_payload_set_int,
+        event_payload_set_string, event_payload_tree, write_cstr,
+    };
 
     use std::ffi::CString;
 

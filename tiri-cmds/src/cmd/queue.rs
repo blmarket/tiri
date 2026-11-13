@@ -1,3 +1,4 @@
+use crate::shared::command::CmdOutcome;
 use crate::cmd::find::TargetLookup as _;
 pub use tiri_core::actions::queue::{
     client as cmdq_get_client, event as cmdq_get_event, execution_state as cmdq_get_state_owned,
@@ -28,11 +29,10 @@ use crate::log::{log_cstr, log_debug, log_get_level};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::server::server_add_message;
 use crate::server_client::Client as _;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int, uint64_t};
 use crate::shared::abi::{__uid_t, uid_t};
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
-use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state};
 use crate::shared::command::{
     CMDQ_STATE_CONTROL, CMDQ_STATE_NOHOOKS, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG,
@@ -40,7 +40,7 @@ use crate::shared::command::{
 };
 use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
-use crate::shared::key::*;
+use crate::shared::key::{KEYC_NONE, key_code};
 use crate::shared::session::SessionRef;
 use crate::status::status_message_set;
 use crate::text::utf8::utf8_sanitize_cstring;
@@ -1149,7 +1149,11 @@ pub fn cmdq_error(
 
 #[cfg(test)]
 mod lifecycle_tests {
-    use super::*;
+    use crate::shared::command::CmdOutcome;
+    use super::{
+        CStr, FORMAT_NONE, cmdq_append, cmdq_get_callback_owned, cmdq_item, cmdq_next, cmdq_remove,
+        cmdq_running, format_create,
+    };
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -1302,8 +1306,12 @@ mod lifecycle_tests {
 
 #[cfg(test)]
 mod suspend_tests {
+    use crate::shared::command::CmdOutcome;
     use super::lifecycle_tests::{append_recording, SetOnDrop};
-    use super::*;
+    use super::{
+        CStr, cmdq_append, cmdq_get_callback_owned, cmdq_get_state, cmdq_item, cmdq_next,
+        cmdq_resumed, cmdq_running,
+    };
     use std::cell::{Cell, RefCell};
     use std::future::Future;
     use std::rc::{Rc, Weak};
@@ -1547,7 +1555,11 @@ mod suspend_tests {
 
 #[cfg(test)]
 mod wait_tests {
-    use super::*;
+    use crate::shared::command::CmdOutcome;
+    use super::{
+        CStr, ClientRef, CmdqWaiter, cmdq_append, cmdq_get_callback_owned, cmdq_get_client,
+        cmdq_insert_after, cmdq_item, cmdq_next, cmdq_wait,
+    };
     use crate::session::session_new_for_test;
     use crate::test_support::clients;
     use std::cell::RefCell;

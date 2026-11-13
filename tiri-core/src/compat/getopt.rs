@@ -134,7 +134,7 @@ impl<'a> Iterator for Getopt<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CString, Getopt, GetoptError};
 
     const SPEC: &[u8] = b"2c:CDdf:hlL:NqS:T:uUvV";
 

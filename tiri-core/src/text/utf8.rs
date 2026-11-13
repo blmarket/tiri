@@ -2,10 +2,10 @@ use crate::compat::vis::vis_into;
 use crate::log::{fatalx, log_bytes, log_debug};
 use crate::options::OptionsScope;
 use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
-use crate::shared::grid::*;
+use crate::shared::abi::{size_t, u_char, u_int};
+use crate::shared::grid::{utf8_char, utf8_data};
 use crate::shared::utf8::wchar_t;
-use crate::shared::utf8::*;
+use crate::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE, utf8_state};
 use crate::shared::vis::VIS_DQ;
 use crate::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
 use crate::text::utf8_decode::{decode_utf8, DecodeResult};
@@ -577,7 +577,12 @@ pub fn utf8_cstrhas(s: &CStr, ud: &utf8_data) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CStr, CString, UTF8_DONE, UTF8_ERROR, UTF8_WIDTHS, VIS_DQ, u_char, utf8_add_to_width_cache,
+        utf8_cstrwidth, utf8_data, utf8_find_in_width_cache, utf8_from_data, utf8_fromcstr_vec,
+        utf8_isvalid, utf8_sanitize_cstring, utf8_stravis_cstring, utf8_stravisx_bytes,
+        utf8_strlen, utf8_strvis, utf8_strwidth, utf8_to_data, utf8_tocstr_cstring, wchar_t,
+    };
 
     #[test]
     fn string_validation_and_width_keep_first_nul_and_invalid_byte_rules() {

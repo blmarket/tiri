@@ -4,11 +4,22 @@ use crate::log::{log_cstr, log_cstr_n, log_debug};
 use crate::options::options_get_number;
 use crate::options::OptionsScope;
 use crate::reactor::bufferevent_write;
-use crate::shared::abi::*;
+use crate::shared::abi::{u_char, u_int};
 use crate::shared::control_character::{C0_CR, C0_ESC, C0_HT};
-use crate::shared::event::*;
-use crate::shared::grid::*;
-use crate::shared::key::*;
+use crate::shared::event::bufferevent;
+use crate::shared::grid::{utf8_char, utf8_data};
+use crate::shared::key::{
+    KEYC_BSPACE, KEYC_BTAB, KEYC_BUILD_MODIFIERS, KEYC_CTRL, KEYC_CURSOR, KEYC_DC, KEYC_DOWN,
+    KEYC_END, KEYC_F1, KEYC_F10, KEYC_F11, KEYC_F12, KEYC_F2, KEYC_F3, KEYC_F4, KEYC_F5, KEYC_F6,
+    KEYC_F7, KEYC_F8, KEYC_F9, KEYC_HOME, KEYC_IC, KEYC_IMPLIED_META, KEYC_KEYPAD, KEYC_KP_EIGHT,
+    KEYC_KP_ENTER, KEYC_KP_FIVE, KEYC_KP_FOUR, KEYC_KP_MINUS, KEYC_KP_NINE, KEYC_KP_ONE,
+    KEYC_KP_PERIOD, KEYC_KP_PLUS, KEYC_KP_SEVEN, KEYC_KP_SIX, KEYC_KP_SLASH, KEYC_KP_STAR,
+    KEYC_KP_THREE, KEYC_KP_TWO, KEYC_KP_ZERO, KEYC_LEFT, KEYC_LITERAL, KEYC_MASK_FLAGS,
+    KEYC_MASK_KEY, KEYC_MASK_MODIFIERS, KEYC_MASK_TYPE, KEYC_META, KEYC_MOUSE, KEYC_NPAGE,
+    KEYC_PASTE_END, KEYC_PASTE_START, KEYC_PPAGE, KEYC_RIGHT, KEYC_SHIFT, KEYC_TYPE_FUNCTION,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_TYPE_UNICODE, KEYC_TYPE_USER, KEYC_UP,
+    key_code,
+};
 use crate::shared::mouse::{
     mouse_event, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, MOUSE_PARAM_BTN_OFF, MOUSE_PARAM_MAX,
     MOUSE_PARAM_POS_OFF, MOUSE_PARAM_UTF8_MAX,
@@ -20,7 +31,7 @@ use crate::shared::screen::{
     MODE_MOUSE_SGR, MODE_MOUSE_UTF8,
 };
 use crate::shared::utf8::wchar_t;
-use crate::shared::utf8::*;
+use crate::shared::utf8::UTF8_DONE;
 use crate::text::utf8::{utf8_to_data, utf8_towc};
 use crate::window_pane::WindowPane;
 use std::borrow::Cow;
@@ -856,7 +867,7 @@ pub fn input_key_get_mouse(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{input_key_generated, input_key_tree};
 
     #[test]
     fn generated_entries_keep_first_duplicate() {

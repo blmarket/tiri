@@ -510,7 +510,7 @@ fn is_variable(byte: u8, first: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{EOF, Lexer, ParseSession, RefCell, Token, c_char};
     use crate::shared::command::cmd_parse_input;
 
     fn label(token: Token) -> (String, Vec<u8>) {

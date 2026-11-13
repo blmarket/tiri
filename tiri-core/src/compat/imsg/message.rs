@@ -95,7 +95,7 @@ pub(crate) struct msg_command {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{MSG_COMMAND, MSG_IDENTIFY_FLAGS, MSG_VERSION, MSG_WRITE_DONE, msgtype};
     use ::core::mem::{align_of, size_of};
 
     #[test]

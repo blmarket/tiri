@@ -2,7 +2,7 @@ use crate::actions::queue::print;
 use crate::format::bytes::write_cstr;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
-use crate::shared::abi::*;
+use crate::shared::abi::uint64_t;
 use crate::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;

@@ -90,7 +90,10 @@ fn format_buffer(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        Buf, BufMut, Buffer, SegmentedBuf, c_int, evbuffer_drain, evbuffer_get_length,
+        evbuffer_new, evbuffer_pullup, format_buffer,
+    };
     use crate::format::bytes::write_cstr;
     use std::ffi::CString;
 

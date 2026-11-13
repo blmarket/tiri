@@ -1,5 +1,5 @@
 //! Opaque stream operations. Destruction remains explicit, independent of Drop.
-use super::*;
+use super::{Buf, BufMut, StreamHandle, bufferevent, bufferevent_disable, bufferevent_enable, c_short};
 
 /// Read/write interests, distinct from EOF/error notification flags.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

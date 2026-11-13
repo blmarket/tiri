@@ -1,9 +1,21 @@
 use crate::hyperlinks::hyperlinks_get;
 use crate::log::{fatalx, log_debug};
 use crate::server::current_time;
-use crate::shared::abi::*;
+use crate::shared::abi::{__time_t, time_t, u_char, u_int, u_short};
 pub use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use crate::shared::grid::*;
+use crate::shared::grid::{
+    GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_DIM, GRID_ATTR_HIDDEN,
+    GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE, GRID_ATTR_STRIKETHROUGH,
+    GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3, GRID_ATTR_UNDERSCORE_4,
+    GRID_ATTR_UNDERSCORE_5, GRID_FLAG_BG256, GRID_FLAG_CLEARED, GRID_FLAG_EXTENDED,
+    GRID_FLAG_FG256, GRID_FLAG_NOPALETTE, GRID_FLAG_PADDING, GRID_FLAG_SELECTED, GRID_FLAG_TAB,
+    GRID_HISTORY, GRID_LINE_DEAD, GRID_LINE_END_OUTPUT, GRID_LINE_EXTENDED, GRID_LINE_HYPERLINK,
+    GRID_LINE_SECOND_PROMPT, GRID_LINE_START_COMMAND, GRID_LINE_START_OUTPUT,
+    GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS,
+    GRID_STRING_ESCAPE_SEQUENCES, GRID_STRING_TRIM_SPACES, GRID_STRING_WITH_SEQUENCES, GridArray,
+    grid, grid_cell, grid_cell_entry, grid_cell_entry_data, grid_cell_entry_storage,
+    grid_extd_entry, grid_line, utf8_char, utf8_data,
+};
 pub use crate::shared::limits::UINT_MAX;
 pub use crate::shared::screen::screen;
 use crate::style::colour::{colour_split_rgb, colour_theme_terminal_colour};
@@ -1447,7 +1459,25 @@ pub fn grid_cell_attr_display(attr: i32) -> impl std::fmt::Display {
 
 #[cfg(test)]
 mod storage_tests {
-    use super::*;
+    use crate::shared::grid::GRID_ATTR_NOATTR;
+    use super::{
+        COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET,
+        GRID_ATTR_OVERLINE, GRID_ATTR_UNDERSCORE_2, GRID_FLAG_CLEARED, GRID_FLAG_EXTENDED,
+        GRID_FLAG_PADDING, GRID_FLAG_TAB, GRID_LINE_EXTENDED, GRID_LINE_HYPERLINK,
+        GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED, GRID_STRING_ESCAPE_SEQUENCES,
+        GRID_STRING_WITH_SEQUENCES, GridStringBuffer, UINT_MAX, grid, grid_adjust_lines, grid_cell,
+        grid_cell_attr_display, grid_cell_entry, grid_cell_flags_display, grid_cells_equal,
+        grid_cells_look_equal, grid_clear, grid_clear_cell, grid_clear_history, grid_clear_lines,
+        grid_collect_history, grid_compact_line, grid_compare, grid_create, grid_default_cell,
+        grid_duplicate_lines, grid_extd_entry, grid_extended_cell, grid_get_cell, grid_get_cell1,
+        grid_in_set, grid_line, grid_line_flags_display, grid_line_length, grid_line_limit,
+        grid_line_time, grid_move_cells, grid_move_lines, grid_need_extended_cell, grid_peek_line,
+        grid_reflow, grid_remove_history, grid_scroll_history, grid_scroll_history_region,
+        grid_set_cell, grid_set_cells, grid_set_padding, grid_set_tab,
+        grid_string_cells_add_hyperlink, grid_string_cells_bg, grid_string_cells_bytes,
+        grid_string_cells_code, grid_string_cells_fg, grid_string_cells_us, grid_unwrap_position,
+        grid_wrap_position, screen, start_time, u_char, u_int, u_short, utf8_set,
+    };
 
     #[test]
     fn sequence_buffers_preserve_resets_charset_and_truncated_prefixes() {

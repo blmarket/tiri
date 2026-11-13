@@ -7,9 +7,12 @@ use crate::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::log::{fatal, fatalx, log_debug};
 use crate::options::{options_get_number, OptionsScope};
 use crate::screen_write::{screen_write_free_list, screen_write_make_list};
-use crate::shared::abi::*;
-use crate::shared::display::*;
-use crate::shared::grid::*;
+use crate::shared::abi::{bitstr_t, u_int, u_short};
+use crate::shared::display::{
+    PROGRESS_BAR_HIDDEN, PROGRESS_BAR_INDETERMINATE, SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK,
+    SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE, progress_bar_state, screen_cursor_style,
+};
+use crate::shared::grid::{GRID_ATTR_CHARSET, GRID_ATTR_NOATTR, GRID_HISTORY, grid_cell};
 use crate::shared::key::MODEKEY_EMACS;
 use crate::shared::limits::UINT_MAX;
 pub use crate::shared::screen::{

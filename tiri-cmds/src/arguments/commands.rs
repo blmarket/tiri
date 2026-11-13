@@ -9,7 +9,7 @@ use crate::cmd::{
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
 use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
-use crate::shared::abi::*;
+use crate::shared::abi::u_int;
 use crate::shared::client::ClientRef;
 use crate::shared::command::{cmd, cmd_list, cmd_parse_input, cmdq_item};
 use std::ffi::{CStr, CString};

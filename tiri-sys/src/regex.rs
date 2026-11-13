@@ -72,7 +72,7 @@ impl Drop for CompiledRegex {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{RegexMatch, RegexStorage};
 
     #[test]
     fn compiled_owners_survive_storage_reuse_drop_and_moves() {

@@ -1,6 +1,18 @@
 use super::input::TerminalInput;
-use super::model::*;
-use super::output::*;
+use super::model::{
+    TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_INVALIDMS, TERM_NOAM, TERM_RGBCOLOURS,
+    TERM_VT100LIKE, TTY_ALL_REQUEST_FLAGS, TTY_BLOCK, TTY_BLOCK_INTERVAL, TTY_FREEZE, TTY_HAVEDA,
+    TTY_HAVEDA2, TTY_HAVESYNC, TTY_HAVEXDA, TTY_NOBLOCK, TTY_NOCURSOR, TTY_OPENED, TTY_OSC52QUERY,
+    TTY_QUERY_TIMEOUT, TTY_REQUEST_LIMIT, TTY_STARTED, TTY_TIMER, TTY_WAITBG, TTY_WAITFG,
+    TTY_WINSIZEQUERY, TTY_XTERMJS, terminal_set, terminal_value, tty, tty_term,
+};
+use super::output::{
+    terminal_term, tty_add, tty_attributes, tty_cursor, tty_cursor_pane,
+    tty_cursor_pane_unless_wrap, tty_default_attributes, tty_emulate_repeat,
+    tty_force_cursor_colour, tty_invalidate, tty_margin, tty_margin_off, tty_margin_pane, tty_putc,
+    tty_putcode, tty_putcode_i, tty_putcode_ii, tty_putn, tty_putn_xtermjs_wide, tty_puts,
+    tty_region, tty_region_pane, tty_repeat_space, tty_sync_start, tty_xtermjs_ambiguous_wide,
+};
 use crate::options::OptionsScope;
 use crate::reactor::Timer;
 use crate::server_client::ClientRegistry;
@@ -19,19 +31,26 @@ use crate::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_new};
 use crate::server_client::Client as _;
 use crate::server_fn::server_redraw_client;
 use crate::session::Session;
-use crate::shared::abi::*;
+use crate::shared::abi::{cc_t, size_t, tcflag_t, time_t, u_char, u_int, u_short};
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
     CLIENT_TERMINAL, CLIENT_UTF8,
 };
-use crate::shared::display::*;
-use crate::shared::grid::*;
+use crate::shared::display::{SCREEN_CURSOR_DEFAULT, visible_range, visible_ranges};
+use crate::shared::grid::{GRID_ATTR_CHARSET, GRID_FLAG_PADDING, GRID_FLAG_TAB, grid_cell};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::shared::screen_write::screen_write_ctx;
-use crate::shared::terminal::*;
-use crate::shared::tty::*;
+use crate::shared::terminal::termios;
+use crate::shared::tty::{
+    TTYC_BCE, TTYC_BEL, TTYC_CLEAR, TTYC_CNORM, TTYC_COLORS, TTYC_CR, TTYC_CSR, TTYC_CUP, TTYC_DCH,
+    TTYC_DCH1, TTYC_DL, TTYC_DL1, TTYC_DSBP, TTYC_DSEKS, TTYC_DSESC, TTYC_DSFCS, TTYC_DSMG,
+    TTYC_E3, TTYC_ECH, TTYC_ED, TTYC_EL, TTYC_EL1, TTYC_ENACS, TTYC_ENBP, TTYC_ENEKS, TTYC_ENESC,
+    TTYC_ENFCS, TTYC_ENMG, TTYC_ICH, TTYC_ICH1, TTYC_IL, TTYC_IL1, TTYC_IND, TTYC_INDN, TTYC_KMOUS,
+    TTYC_MS, TTYC_RI, TTYC_RIN, TTYC_RMACS, TTYC_RMCUP, TTYC_RMKX, TTYC_SE, TTYC_SGR0, TTYC_SMCUP,
+    TTYC_SMKX, TTYC_SS, tty_code_code, tty_ctx, tty_style_ctx, tty_window_view,
+};
 use crate::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
     TTY_CTX_SYNC, TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED,
@@ -2177,7 +2196,7 @@ impl tty {
 
 #[cfg(test)]
 mod clipping_tests {
-    use super::*;
+    use super::{TTY_CTX_WINDOW_BIGGER, tty_clamp_area, tty_clamp_line, tty_ctx, tty_follow_cell};
 
     #[test]
     fn the_view_rests_on_the_nearest_pane_start_that_shows_the_pane() {
@@ -2255,7 +2274,7 @@ mod clipping_tests {
 
 #[cfg(test)]
 mod codeset_tests {
-    use super::*;
+    use super::{GRID_ATTR_CHARSET, GRID_FLAG_TAB, grid_cell, grid_default_cell, tty_check_codeset};
 
     fn character(text: &str, width: u8) -> grid_cell {
         let mut cell = grid_default_cell;

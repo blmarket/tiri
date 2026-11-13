@@ -10,9 +10,18 @@ mod buffer;
 mod streams;
 mod tasks;
 mod timers;
-pub use buffer::*;
+pub use buffer::{
+    evbuffer_add, evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_new,
+    evbuffer_pullup, evbuffer_readline, evbuffer_readln,
+};
+pub(crate) use buffer::{buffer_prefix};
 use std::os::fd::BorrowedFd;
-pub use streams::*;
+pub use streams::{
+    BufferEvent, Interests, StreamError, StreamHandle, StreamResult, bufferevent_disable,
+    bufferevent_enable, bufferevent_get_input, bufferevent_get_output, bufferevent_new,
+    bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer,
+};
+pub(crate) use streams::{StreamState};
 pub use tasks::{defer, task_start};
 pub use timers::Timer;
 

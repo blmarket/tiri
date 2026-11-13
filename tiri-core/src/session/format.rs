@@ -1,5 +1,10 @@
 //! Session-owned lazy formatting. Returned values own their bytes or timestamp.
-use super::*;
+use crate::shared::abi::time_t;
+use super::{
+    CStr, CString, RB_INF, RB_NEGINF, Rc, WINLINK_ALERTFLAGS, marked_pane,
+    session_group_attached_count, session_group_count, session_groups, u_int, winlink_next,
+    winlinks_minmax,
+};
 use crate::format::bytes::format_bytes;
 use crate::format::FORMAT_TYPE_SESSION;
 use crate::format::{format_tree, FormatValue};
@@ -431,7 +436,14 @@ fn format_cb_window_stack_index(ft: &mut format_tree) -> Option<CString> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::session::Duration;
+    use crate::session::UNIX_EPOCH;
+    use crate::shared::session::session;
+    use crate::winlink::winlink_add;
+    use crate::winlink::winlink_remove;
+    use crate::winlink::winlink_stack_push;
+    use crate::winlink::winlink_stack_remove;
+    use super::{FormatValue, Rc, format_cb_session_id, format_cb_session_name, format_tree};
     use crate::format::format_create;
 
     #[test]
