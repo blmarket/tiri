@@ -1,0 +1,99 @@
+#![feature(local_waker)]
+#![allow(dead_code)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(static_mut_refs)]
+#![allow(unused_assignments)]
+#![allow(unused_mut)]
+#![allow(clippy::eq_op)]
+#![allow(clippy::self_assignment)]
+#![allow(clippy::while_immutable_condition)]
+
+pub use {libc, refbox, tiri_buffer, tiri_rt, tiri_sys};
+
+pub mod alerts;
+pub mod arguments;
+pub mod bracketed_paste;
+pub mod client;
+pub mod ffi;
+#[allow(unused_imports)]
+pub mod compat {
+    pub mod fdforkpty;
+    pub mod getopt;
+    pub mod getprogname;
+    pub mod imsg;
+    pub mod setproctitle;
+    pub mod strtod;
+    pub mod strtonum;
+    #[cfg(target_os = "linux")]
+    pub mod systemd;
+    pub mod unvis;
+    pub mod vis;
+}
+pub mod control;
+pub mod control_notify;
+pub mod environ;
+pub mod events;
+pub mod events_payload;
+pub mod file;
+pub mod format;
+pub mod format_draw;
+pub mod fuzzy;
+pub mod grid;
+pub mod hyperlinks;
+pub mod input;
+pub mod input_keys;
+pub mod job;
+pub mod json;
+pub mod key_string;
+pub mod log;
+pub mod menu;
+pub mod mode_tree;
+pub mod monitor;
+pub mod names;
+pub mod options;
+pub mod osdep;
+pub mod paste;
+pub mod plugin;
+pub mod r#proc;
+pub mod prompt;
+pub mod prompt_history;
+pub mod regsub;
+pub mod resize;
+pub mod screen;
+pub mod screen_redraw;
+pub mod screen_write;
+pub mod server;
+pub mod server_acl;
+pub mod server_client;
+pub mod server_fn;
+pub mod session;
+pub mod session_group;
+pub mod shared;
+pub mod sort;
+pub mod spawn;
+pub mod status;
+pub mod style;
+pub mod text;
+pub mod tmux;
+pub mod tty;
+pub mod window;
+pub mod window_border;
+pub mod window_buffer;
+pub mod window_client;
+pub mod window_clock;
+pub mod window_copy;
+pub mod window_customize;
+pub mod window_pane;
+pub mod window_panes;
+pub mod window_switch;
+pub mod window_tree;
+pub mod window_visible;
+pub mod winlink;
+
+pub mod reactor;
+
+pub mod actions;
+
+pub mod bindings;

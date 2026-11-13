@@ -116,7 +116,8 @@ fn misplaced_foreign_blocks(root: &Path, files: &[PathBuf]) -> Vec<String> {
         .iter()
         .filter_map(|path| {
             let relative = path.strip_prefix(root).unwrap().to_str().unwrap();
-            if relative.starts_with("src/ffi/") || FOREIGN_OUTSIDE_FFI.contains(&relative) {
+            if relative.starts_with("tiri-core/src/ffi/") || FOREIGN_OUTSIDE_FFI.contains(&relative)
+            {
                 return None;
             }
             let mut symbols = Symbols::default();
@@ -166,10 +167,12 @@ fn rust_implementations_do_not_define_c_variadic_functions() {
         }
     }
     let mut files = Vec::new();
-    rust_files(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-        &mut files,
-    );
+    for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
+        rust_files(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join(directory),
+            &mut files,
+        );
+    }
     for path in files {
         NoVariadics.visit_file(&parse(&path));
     }
@@ -181,6 +184,8 @@ fn foreign_declarations_live_under_src_ffi() {
     let mut files = Vec::new();
     for crate_dir in [
         "",
+        "tiri-core",
+        "tiri-cmds",
         "tiri-buffer",
         "tiri-cmdparse",
         "tiri-refbox",

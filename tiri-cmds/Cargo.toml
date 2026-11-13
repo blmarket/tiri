@@ -1,0 +1,16 @@
+[package]
+name = "tiri-cmds"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+tiri-core = { path = "../tiri-core" }
+tiri-cmdparse = { path = "../tiri-cmdparse" }
+
+[dev-dependencies]
+tiri-core = { path = "../tiri-core", features = ["test-support"] }
+
+[lints.clippy]
+missing_safety_doc = "allow"
+too_many_arguments = "allow"

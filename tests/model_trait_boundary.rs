@@ -207,30 +207,30 @@ fn rejects_projection_references_pointer_helpers_and_representation_casts() {
 #[test]
 fn migrated_consumers_do_not_project_model_storage() {
     for path in [
-        "src/alerts.rs",
-        "src/control_notify.rs",
-        "src/events_payload.rs",
-        "src/names.rs",
-        "src/resize.rs",
-        "src/status.rs",
-        "src/tty/acs.rs",
-        "src/tty/features.rs",
-        "src/tty/term.rs",
-        "src/tty/output.rs",
-        "src/tty/input.rs",
-        "src/tty/draw.rs",
-        "src/tty/keys.rs",
-        "src/tty/control.rs",
-        "src/screen_redraw.rs",
-        "src/screen_write.rs",
-        "src/shared/screen_write.rs",
-        "src/window_border.rs",
-        "src/window_visible.rs",
-        "src/options/store.rs",
-        "src/options/select.rs",
-        "src/options/from_string.rs",
-        "src/options/changes.rs",
-        "src/format/jobs.rs",
+        "tiri-core/src/alerts.rs",
+        "tiri-core/src/control_notify.rs",
+        "tiri-core/src/events_payload.rs",
+        "tiri-core/src/names.rs",
+        "tiri-core/src/resize.rs",
+        "tiri-core/src/status.rs",
+        "tiri-core/src/tty/acs.rs",
+        "tiri-core/src/tty/features.rs",
+        "tiri-core/src/tty/term.rs",
+        "tiri-core/src/tty/output.rs",
+        "tiri-core/src/tty/input.rs",
+        "tiri-core/src/tty/draw.rs",
+        "tiri-core/src/tty/keys.rs",
+        "tiri-core/src/tty/control.rs",
+        "tiri-core/src/screen_redraw.rs",
+        "tiri-core/src/screen_write.rs",
+        "tiri-core/src/shared/screen_write.rs",
+        "tiri-core/src/window_border.rs",
+        "tiri-core/src/window_visible.rs",
+        "tiri-core/src/options/store.rs",
+        "tiri-core/src/options/select.rs",
+        "tiri-core/src/options/from_string.rs",
+        "tiri-core/src/options/changes.rs",
+        "tiri-core/src/format/jobs.rs",
     ] {
         let source =
             std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap();
@@ -240,7 +240,7 @@ fn migrated_consumers_do_not_project_model_storage() {
 
 #[test]
 fn format_callbacks_do_not_retain_cache_or_entry_pointers() {
-    let source = std::fs::read_to_string("src/format/jobs.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-core/src/format/jobs.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     struct CachePointers;
     impl<'ast> Visit<'ast> for CachePointers {
@@ -262,7 +262,7 @@ fn format_callbacks_do_not_retain_cache_or_entry_pointers() {
 
 #[test]
 fn screen_mode_snapshot_owns_only_copied_scalar_state() {
-    let source = std::fs::read_to_string("src/shared/screen.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-core/src/shared/screen.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     let snapshot = syntax
         .items
@@ -291,7 +291,8 @@ fn screen_mode_snapshot_owns_only_copied_scalar_state() {
 
 #[test]
 fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty/control.rs").unwrap()).unwrap();
+    let syntax =
+        syn::parse_file(&std::fs::read_to_string("tiri-core/src/tty/control.rs").unwrap()).unwrap();
     for item in &syntax.items {
         let Item::Fn(function) = item else { continue };
         let mut check = Audit {
@@ -308,7 +309,7 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
     }
     for (path, expected) in [
         (
-            "src/tty/control.rs",
+            "tiri-core/src/tty/control.rs",
             vec![
                 "tty_init",
                 "tty_initialize_component",
@@ -321,7 +322,7 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
             ],
         ),
         (
-            "src/tty/keys.rs",
+            "tiri-core/src/tty/keys.rs",
             vec![
                 "tty_keys_next1",
                 "tty_keys_extended_key",
@@ -333,7 +334,7 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
             ],
         ),
         (
-            "src/window_pane/input.rs",
+            "tiri-core/src/window_pane/input.rs",
             vec![
                 "input_request_reply",
                 "input_request_matches",
@@ -376,11 +377,11 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
 fn migrated_name_and_window_notification_helpers_use_holders() {
     for (path, expected) in [
         (
-            "src/window_border.rs",
+            "tiri-core/src/window_border.rs",
             &["window_render_fill_cell", "window_get_fill_cell"][..],
         ),
         (
-            "src/format/callbacks.rs",
+            "tiri-core/src/format/callbacks.rs",
             &[
                 "format_cb_window_layout",
                 "format_cb_pane_at_bottom",
@@ -389,16 +390,19 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             ][..],
         ),
         (
-            "src/format/expression.rs",
+            "tiri-core/src/format/expression.rs",
             &["format_add_window_neighbour"][..],
         ),
-        ("src/window_pane/input.rs", &["input_exit_rename"][..]),
         (
-            "src/window_tree.rs",
+            "tiri-core/src/window_pane/input.rs",
+            &["input_exit_rename"][..],
+        ),
+        (
+            "tiri-core/src/window_tree.rs",
             &["window_tree_pull_item", "window_tree_border_cell"][..],
         ),
         (
-            "src/window_panes.rs",
+            "tiri-core/src/window_panes.rs",
             &[
                 "window_panes_pane_geometry",
                 "window_panes_scaled_geometry",
@@ -408,19 +412,22 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
                 "window_panes_draw_format",
             ][..],
         ),
-        ("src/spawn.rs", &["initialize_spawned_window"][..]),
+        ("tiri-core/src/spawn.rs", &["initialize_spawned_window"][..]),
         (
-            "src/cmd/entries/join_pane.rs",
+            "tiri-cmds/src/entries/join_pane.rs",
             &["cmd_join_pane_finish"][..],
         ),
-        ("src/session/mod.rs", &["session_is_linked"][..]),
-        ("src/monitor/set.rs", &["monitor_check_window"][..]),
+        ("tiri-core/src/session/mod.rs", &["session_is_linked"][..]),
         (
-            "src/cmd/entries/select_pane.rs",
+            "tiri-core/src/monitor/set.rs",
+            &["monitor_check_window"][..],
+        ),
+        (
+            "tiri-cmds/src/entries/select_pane.rs",
             &["cmd_select_pane_redraw"][..],
         ),
         (
-            "src/screen_redraw.rs",
+            "tiri-core/src/screen_redraw.rs",
             &[
                 "redraw_set_context",
                 "redraw_reset_cell",
@@ -432,7 +439,7 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             ][..],
         ),
         (
-            "src/server_fn.rs",
+            "tiri-core/src/server_fn.rs",
             &[
                 "server_redraw_window",
                 "server_redraw_window_borders",
@@ -471,9 +478,10 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
 
 #[test]
 fn notification_helpers_do_not_project_client_storage() {
-    let source =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/control.rs"))
-            .unwrap();
+    let source = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tiri-core/src/control.rs"),
+    )
+    .unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     let expected = [
         "control_write_line",
@@ -521,16 +529,18 @@ fn no_model_representation_casts_anywhere_in_application() {
             }
         }
     }
-    check(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+    for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
+        check(&Path::new(env!("CARGO_MANIFEST_DIR")).join(directory));
+    }
 }
 
 #[test]
 fn model_traits_do_not_return_raw_components_or_whole_models() {
     for path in [
-        "src/session/api.rs",
-        "src/window/api.rs",
-        "src/window_pane/api.rs",
-        "src/server_client/api.rs",
+        "tiri-core/src/session/api.rs",
+        "tiri-core/src/window/api.rs",
+        "tiri-core/src/window_pane/api.rs",
+        "tiri-core/src/server_client/api.rs",
     ] {
         let source =
             std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap();
@@ -564,7 +574,7 @@ fn model_traits_do_not_return_raw_components_or_whole_models() {
 
 #[test]
 fn client_fields_remain_private_to_the_implementation_module() {
-    let source = std::fs::read_to_string("src/server_client/model.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-core/src/server_client/model.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     let model = syntax
         .items
@@ -583,7 +593,8 @@ fn client_fields_remain_private_to_the_implementation_module() {
         );
     }
     let syntax =
-        syn::parse_file(&std::fs::read_to_string("src/server_client/mod.rs").unwrap()).unwrap();
+        syn::parse_file(&std::fs::read_to_string("tiri-core/src/server_client/mod.rs").unwrap())
+            .unwrap();
     struct ClientStorage;
     impl<'ast> Visit<'ast> for ClientStorage {
         fn visit_type_reference(&mut self, ty: &'ast syn::TypeReference) {
@@ -611,7 +622,7 @@ fn client_fields_remain_private_to_the_implementation_module() {
 
 #[test]
 fn queued_items_do_not_retain_raw_queue_component_pointers() {
-    let source = std::fs::read_to_string("src/cmd/queue.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-cmds/src/cmd/queue.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     struct QueuePointers;
     impl<'ast> Visit<'ast> for QueuePointers {
@@ -636,7 +647,7 @@ fn queued_items_do_not_retain_raw_queue_component_pointers() {
 
 #[test]
 fn session_state_visibility_cannot_widen_silently() {
-    let source = std::fs::read_to_string("src/session/model.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-core/src/session/model.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     let model = syntax
         .items
@@ -654,7 +665,8 @@ fn session_state_visibility_cannot_widen_silently() {
             "Session::{name} visibility widened"
         );
     }
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/session/mod.rs").unwrap()).unwrap();
+    let syntax =
+        syn::parse_file(&std::fs::read_to_string("tiri-core/src/session/mod.rs").unwrap()).unwrap();
     for item in &syntax.items {
         let Item::Fn(function) = item else { continue };
         if matches!(function.vis, syn::Visibility::Inherited) {
@@ -687,7 +699,7 @@ fn session_state_visibility_cannot_widen_silently() {
 
 #[test]
 fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
-    let source = std::fs::read_to_string("src/window/model.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-core/src/window/model.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     let model = syntax
         .items
@@ -705,7 +717,8 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
             field.ident
         );
     }
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/window/mod.rs").unwrap()).unwrap();
+    let syntax =
+        syn::parse_file(&std::fs::read_to_string("tiri-core/src/window/mod.rs").unwrap()).unwrap();
     for item in &syntax.items {
         if let Item::Mod(module) = item {
             assert!(
@@ -745,9 +758,9 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
             "whole-model swap helpers must not be reintroduced"
         );
     }
-    assert!(Path::new("src/window_pane/mod.rs").exists());
-    assert!(Path::new("src/window_pane/api.rs").exists());
-    assert!(Path::new("src/winlink.rs").exists());
+    assert!(Path::new("tiri-core/src/window_pane/mod.rs").exists());
+    assert!(Path::new("tiri-core/src/window_pane/api.rs").exists());
+    assert!(Path::new("tiri-core/src/winlink.rs").exists());
 }
 
 fn rust_sources(directory: &Path) -> Vec<std::path::PathBuf> {
@@ -766,10 +779,10 @@ fn rust_sources(directory: &Path) -> Vec<std::path::PathBuf> {
 #[test]
 fn four_model_fields_and_inherent_helpers_remain_owner_private() {
     for (model, path) in [
-        ("session", "src/session/model.rs"),
-        ("window", "src/window/model.rs"),
-        ("window_pane", "src/window_pane/model.rs"),
-        ("client", "src/server_client/model.rs"),
+        ("session", "tiri-core/src/session/model.rs"),
+        ("window", "tiri-core/src/window/model.rs"),
+        ("window_pane", "tiri-core/src/window_pane/model.rs"),
+        ("client", "tiri-core/src/server_client/model.rs"),
     ] {
         let syntax = syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap();
         let owner_private = |visibility: &syn::Visibility| {
@@ -822,8 +835,13 @@ fn external_client_types_use_holders_without_exposing_model_storage() {
             visit::visit_type_path(self, ty);
         }
     }
-    for path in rust_sources(Path::new("src")) {
-        if path.starts_with("src/server_client") || path == Path::new("src/shared/client.rs") {
+    for path in ["src", "tiri-core/src", "tiri-cmds/src"]
+        .into_iter()
+        .flat_map(|directory| rust_sources(Path::new(directory)))
+    {
+        if path.starts_with("tiri-core/src/server_client")
+            || path == Path::new("tiri-core/src/shared/client.rs")
+        {
             continue;
         }
         let syntax = syn::parse_file(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -846,7 +864,8 @@ fn terminal_registry_results_do_not_retain_component_pointers() {
             visit::visit_type_path(self, ty);
         }
     }
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty/term.rs").unwrap()).unwrap();
+    let syntax =
+        syn::parse_file(&std::fs::read_to_string("tiri-core/src/tty/term.rs").unwrap()).unwrap();
     let mut checked = 0;
     for item in &syntax.items {
         if let Item::Struct(item) = item {
@@ -900,9 +919,10 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
     }
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let scope =
-        syn::parse_file(&std::fs::read_to_string(root.join("src/options/scope.rs")).unwrap())
-            .unwrap();
+    let scope = syn::parse_file(
+        &std::fs::read_to_string(root.join("tiri-core/src/options/scope.rs")).unwrap(),
+    )
+    .unwrap();
     let identity = scope
         .items
         .iter()
@@ -940,9 +960,10 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
     audit.visit_file(&scope);
     assert!(audit.findings.is_empty(), "{:?}", audit.findings);
 
-    let shared =
-        syn::parse_file(&std::fs::read_to_string(root.join("src/options/types.rs")).unwrap())
-            .unwrap();
+    let shared = syn::parse_file(
+        &std::fs::read_to_string(root.join("tiri-core/src/options/types.rs")).unwrap(),
+    )
+    .unwrap();
     let table = shared
         .items
         .iter()
@@ -961,9 +982,10 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
         "option parent must retain only its scope identity"
     );
 
-    let functions =
-        syn::parse_file(&std::fs::read_to_string(root.join("src/options/store.rs")).unwrap())
-            .unwrap();
+    let functions = syn::parse_file(
+        &std::fs::read_to_string(root.join("tiri-core/src/options/store.rs")).unwrap(),
+    )
+    .unwrap();
     let constructors = ["options_create"];
     let mut checked = 0;
     for item in &functions.items {

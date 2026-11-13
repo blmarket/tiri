@@ -144,14 +144,16 @@ fn grid_storage_candidates(source: &str) -> Vec<(String, &'static str)> {
 #[test]
 fn grid_storage_roles_have_only_authoritative_definitions() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("build.rs")];
-    source_files(&root.join("src"), &mut files);
+    let mut files = vec![root.join("tiri-core/build.rs")];
+    for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
+        source_files(&root.join(directory), &mut files);
+    }
     let mut count = 0;
     for path in files {
         for (name, role) in grid_storage_candidates(&fs::read_to_string(&path).unwrap()) {
             assert_eq!(
                 path.strip_prefix(root).unwrap(),
-                Path::new("src/shared/grid.rs"),
+                Path::new("tiri-core/src/shared/grid.rs"),
                 "redundant or unaudited grid-storage candidate {name} ({role})"
             );
             assert_eq!(name, role);

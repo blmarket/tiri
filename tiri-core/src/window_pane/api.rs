@@ -1,0 +1,1776 @@
+//! Operations on retained panes. Logical destruction remains explicit.
+use super::*;
+use crate::actions::TaskOutcome;
+use crate::grid::{grid_get_cell, grid_set_cell};
+use crate::hyperlinks::{hyperlinks_get, hyperlinks_put};
+use crate::options::OptionsScope;
+use crate::reactor::Interests;
+use crate::server_client::Client;
+use crate::server_client::ClientRegistry;
+use crate::shared::client::ClientRef;
+use crate::shared::colour::colour_palette;
+use crate::shared::pane::{
+    PANE_ACTIVITY, PANE_DROP, PANE_MINIMUM, PANE_NEWSTATUS, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
+};
+use crate::shared::screen::MODE_SYNC;
+use crate::shared::window::{WindowRef, WindowWeak};
+use std::ffi::CStr;
+use std::time::Duration;
+
+/// The size and offset of a pane placed in the layout rectangle `geometry` of
+/// `window`, with border status `status`: a row less for a status line at the
+/// window's edge, and less width for a scrollbar when `reserve`.
+fn window_pane_placement(
+    pane: &Rc<RefCell<window_pane>>,
+    geometry: layout_geometry,
+    window: &WindowRef,
+    status: i32,
+    reserve: bool,
+) -> (u32, u32, i32, i32) {
+    let (mut sx, mut sy) = (geometry.sx, geometry.sy);
+    let (mut xoff, mut yoff) = (geometry.xoff, geometry.yoff);
+    let at_edge = match status {
+        PANE_STATUS_TOP => yoff == 0,
+        PANE_STATUS_BOTTOM => (yoff as u32).saturating_add(sy) >= window.size().1,
+        _ => false,
+    };
+    if at_edge && sy > 1 {
+        if status == PANE_STATUS_TOP {
+            yoff += 1;
+        }
+        sy -= 1;
+    }
+    if pane.is_floating() && !window.zoomed_pane().ptr_eq(&Rc::downgrade(pane)) {
+        let border = u32::from(pane.pane_lines() != PANE_LINES_NONE);
+        sx = sx.saturating_sub(border * 2).max(1);
+        sy = geometry.sy.saturating_sub(border * 2).max(1);
+        xoff = geometry.xoff + border as i32;
+        yoff = geometry.yoff + border as i32;
+    }
+    if reserve {
+        let (width, pad) = {
+            let pane = pane.borrow();
+            (
+                pane.scrollbar_style.width.max(1),
+                pane.scrollbar_style.pad.max(0),
+            )
+        };
+        if window.scrollbar_position() == PANE_SCROLLBARS_LEFT {
+            if sx as i32 - width - pad < PANE_MINIMUM {
+                xoff += sx as i32 - PANE_MINIMUM;
+                sx = PANE_MINIMUM as u32;
+            } else {
+                sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
+                xoff += width + pad;
+            }
+        } else if sx as i32 - width - pad < PANE_MINIMUM {
+            sx = PANE_MINIMUM as u32;
+        } else {
+            sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
+        }
+    }
+    (sx, sy, xoff, yoff)
+}
+
+/// Access a pane without lending its model storage.
+///
+/// Methods retain the legacy event-loop exclusivity and logical-lifetime
+/// preconditions. Component closures must not reenter model code, destroy an
+/// owner, alter component parent links, or let component references escape.
+pub trait WindowPane {
+    fn is_floating(&self) -> bool;
+    fn is_modal(&self) -> bool;
+    fn set_modal(&self, close_on_cancel: bool);
+    fn captures_all_keys(&self) -> bool;
+    fn closes_on_cancel(&self) -> bool;
+    /// Visible geometry including the reserved scrollbar area, copied for hit testing.
+    fn outer_geometry(&self) -> (i32, i32, u32, u32);
+    fn pane_lines(&self) -> pane_lines;
+    /// This pane's layout metadata; only the Window writes it. The guard
+    /// permits metadata-only work and must end before dispatch.
+    fn borrow_layout_meta(&self) -> std::cell::RefMut<'_, Option<Box<dyn std::any::Any>>>;
+    fn border_status(&self) -> i32;
+    fn has_pending_change(&self) -> bool;
+    fn acknowledge_change(&self);
+    /// Output copy mode has not yet refreshed from; kept apart from
+    /// [`Self::has_pending_change`], which automatic rename consumes.
+    fn has_unseen_changes(&self) -> bool;
+    fn acknowledge_unseen_changes(&self);
+    /// Derive an owned default Window name from this pane's command or shell.
+    fn default_window_name(&self) -> CString;
+    fn current_path(&self) -> Option<CString>;
+    /// A borrow can become Ref::map on one RefCell containing the whole pane.
+    /// Do not reenter the pane, dispatch callbacks or let component pointers
+    /// escape while the returned guard is alive.
+    fn borrow_palette(&self) -> std::cell::Ref<'_, colour_palette>;
+    /// The mutation guard permits palette-only work and must end before dispatch.
+    fn borrow_palette_mut(&self) -> std::cell::RefMut<'_, colour_palette>;
+
+    fn id(&self) -> u32;
+    fn find_by_id(id: u32) -> Option<Self>
+    where
+        Self: Sized;
+    fn find_by_id_str(id: &CStr) -> Option<Self>
+    where
+        Self: Sized;
+    fn from_observer(observer: &std::rc::Weak<RefCell<window_pane>>) -> Option<Self>
+    where
+        Self: Sized;
+    fn tty_name(&self) -> CString;
+    fn control_colours(&self) -> (i32, i32);
+    fn update_control_colours(&self, fg: i32, bg: i32);
+    fn has_prompt(&self) -> bool;
+    fn set_prompt(
+        &self,
+        client: Option<&ClientRef>,
+        find: Option<&Target>,
+        message: &CStr,
+        input: Option<&CStr>,
+        inputcb: status_prompt_input_cb,
+        freecb: prompt_free_cb,
+        flags: i32,
+        kind: prompt_type,
+    );
+    fn update_prompt(&self, message: &CStr, input: Option<&CStr>);
+    /// Write a paste buffer to the pane stream with explicit line separators.
+    fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool);
+    fn capture(
+        &self,
+        arguments: &args,
+        item: &dyn crate::actions::ContextSource,
+    ) -> Result<Vec<u8>, CString>;
+    /// Clear complete history after retiring modes; optionally reset link identities.
+    fn clear_history(&self, reset_links: bool);
+    fn window_observer(&self) -> WindowWeak;
+    /// Whether the pane is shown in its window: false while the window is
+    /// zoomed to another pane, or once the pane has no window.
+    fn is_visible(&self) -> bool;
+    /// The size the pane has, or would have, in its place in the layout
+    /// with the window unzoomed.
+    fn unzoomed_size(&self) -> Option<(u32, u32)>;
+    /// Move the parent identity and option inheritance together, before the
+    /// caller publishes membership or dispatches move/layout notifications.
+    fn reparent(&self, window: &WindowRef);
+    fn geometry(&self) -> (u32, u32, i32, i32);
+    fn send_theme_update(&self);
+    fn mark_theme_changed(&self);
+    fn update_history_limit(&self, limit: u32);
+    fn compare_for_sort(
+        &self,
+        other: &Self,
+        criteria: &crate::shared::sort::sort_criteria,
+    ) -> std::cmp::Ordering;
+    fn matches_terminal_name(&self, name: &CStr) -> bool;
+    fn close_after_key(&self, key: key_code) -> bool;
+    fn has_exited(&self) -> bool;
+    fn mode_entry(&self) -> refbox::Weak<window_mode_entry>;
+    fn notify_style_changed(&self);
+    fn needs_redraw(&self, scrollbar: bool) -> bool;
+    /// `None` when the displayed mode has no screen; the base screen always has one.
+    fn screen_mode(&self, displayed: bool) -> Option<crate::shared::screen::ScreenMode>;
+    fn prompt_position(&self, top: bool) -> Option<(i32, i32)>;
+    fn screen_path(&self) -> CString;
+    fn screen_progress(&self) -> crate::shared::display::progress_bar;
+
+    fn in_scrollbar_area(&self, x: i32, y: i32) -> bool;
+    fn mouse_location(&self, x: i32, y: i32, slider: &mut u32) -> key_code_mouse_location;
+    fn update_scrollbar_hover(&self, x: i32, y: i32);
+
+    /// Apply a strip rectangle, including pane border and scrollbar policy.
+    /// Only the Window's arrange step calls this. Returns whether the visible
+    /// geometry changed; resize callbacks run after the pane's placement
+    /// fields have been released.
+    fn apply_layout(
+        &self,
+        geometry: layout_geometry,
+        scrollbars: &crate::shared::window::WindowRef,
+    ) -> bool;
+    /// Mark redraw when the cached active and inactive appearance differs.
+    fn redraw_selection_change(&self);
+    fn refresh_palette(&self);
+    fn mark_changed(&self);
+    fn invalidate_style(&self);
+    fn mark_style_changed(&self, theme: bool);
+    fn set_input_enabled(&self, enabled: bool);
+    fn set_title(&self, title: &CStr) -> bool;
+    /// Trim history below the base cursor when no mode owns the displayed screen.
+    fn trim_history(&self);
+    /// Finish `waiter` with the exit status once this pane closes.
+    fn wait_for(&self, event: crate::shared::pane::PaneWaitFor, waiter: Completion);
+    /// Start stdin delivery to an empty pane. The command suspends on the
+    /// returned continuation, or does not wait without one.
+    fn start_input(
+        &self,
+        item: &dyn crate::actions::ContextSource,
+    ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString>;
+    /// Translate a mouse report after copying pane geometry; no pane borrow
+    /// survives the coordinate calculation or the caller's following work.
+    fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)>;
+    /// Visible cursor in window coordinates, for terminal viewport following.
+    fn visible_cursor_in_window(&self) -> Option<(u32, u32)>;
+    /// Whether the pane still has a PTY, including an exited process being drained.
+    fn has_tty(&self) -> bool;
+    fn is_synchronized(&self) -> bool;
+    /// Read the base screen; the pane stays borrowed until `read` returns.
+    fn read_base<R>(&self, read: impl FnOnce(&screen) -> R) -> R;
+    /// Mutable form of [`Self::read_base`].
+    fn write_base<R>(&self, write: impl FnOnce(&mut screen) -> R) -> R;
+    /// Enter sync mode on the pane's base screen.
+    fn start_sync(&self);
+    /// Cancel the timer and leave sync mode before drawing the accumulated rows.
+    /// No pane reference is retained during terminal callbacks.
+    fn stop_sync(&self);
+    fn clear_sync_dirty(&self);
+    /// Decide whether a screen write draws immediately; synchronized writes
+    /// mark rows in the pane-owned bitmap, including resize invalidation.
+    fn should_draw_rows(&self, synchronized: bool, y: u32, count: u32, height: u32) -> bool;
+
+    fn resize(&self, sx: u32, sy: u32);
+    fn update_focus(&self, focused: bool);
+    /// Return 0 for a pane outside its window's strip or hidden by a zoom, -1 for deferred drawing, or 1 after
+    /// installing pane offsets. Client applies terminal/status offsets afterward.
+    /// With `window_redraw` false, the pane is never changed; a disposable context
+    /// can therefore probe placement even when dirty drawing would be deferred.
+    fn prepare_render(&self, context: &mut crate::shared::tty::tty_ctx, window_redraw: bool)
+        -> i32;
+    fn request_redraw(&self, scrollbar: bool);
+    /// Copied appearance and slider geometry; no pane storage is lent.
+    fn scrollbar_visible(&self) -> bool;
+    fn scrollbar_overlay(&self) -> bool;
+    fn scrollbar_width(&self) -> i32;
+    fn scrollbar_pad(&self) -> i32;
+    fn scrollbar_slider_y(&self) -> u32;
+    fn scrollbar_slider_height(&self) -> u32;
+    fn redraw_scrollbar(&self);
+    fn hide_scrollbar(&self);
+    fn refresh_scrollbar_style(&self);
+    fn reset_default_cursor(&self);
+    /// Record the pane in utmp while it runs a command and the server option
+    /// allows it; otherwise drop its record. Closing the pty drops it too.
+    fn refresh_utmp(&self);
+    fn reset_border_cache(&self);
+    /// Draw a separator of `cell_type`, a `CELL_*` line kind, in this pane's
+    /// border lines.
+    fn border_cell(&self, cell_type: i32, cell: &mut grid_cell);
+    fn border_style(&self, client: &ClientRef) -> grid_cell;
+    /// Build the status line for a `width`-column status row whose border
+    /// cells are `spans` from `first`; returns whether it changed.
+    fn make_status(
+        &self,
+        client: &ClientRef,
+        width: u32,
+        spans: &crate::shared::redraw::redraw_spans,
+        first: usize,
+    ) -> bool;
+    fn has_new_status(&self) -> bool;
+    fn set_new_status(&self, redraw: bool);
+    fn default_colours(&self) -> (grid_cell, u32);
+    fn is_obscured(&self) -> bool;
+    fn visible_ranges(
+        base: Option<&Self>,
+        x: i32,
+        y: i32,
+        width: u32,
+        ranges: &mut Vec<visible_range>,
+    ) where
+        Self: Sized;
+    fn draws_inactive_screen(&self) -> bool;
+    fn window_size(&self) -> (u32, u32);
+    fn schedule_offset_update(&self);
+    fn output_suppressed(&self) -> bool;
+    fn alternate_screen_allowed(&self) -> bool;
+    fn alternate_screen_changed(&self, entered: bool);
+    /// Draw with screen ownership temporarily removed from pane storage, from
+    /// the status line when `status`, else the displayed screen.
+    fn draw_line(
+        &self,
+        client: &ClientRef,
+        source: (u32, u32),
+        width: u32,
+        destination: (u32, u32),
+        status: bool,
+    );
+    fn draw_scrollbar(
+        &self,
+        client: &ClientRef,
+        span: &crate::shared::redraw::redraw_span,
+        x: u32,
+        y: u32,
+        width: u32,
+    );
+    fn draw_prompt(&self, context: &mut crate::screen_redraw::redraw_draw_ctx<'_>);
+
+    /// Normal selection records activity; fallback selection only marks change.
+    fn on_selected(&self, record_activity: bool);
+    fn key(
+        &self,
+        client: Option<&ClientRef>,
+        link: refbox::Weak<winlink>,
+        key: key_code,
+        mouse: Option<&mut mouse_event>,
+    ) -> i32;
+    fn paste(&self, key: key_code, bytes: &[u8]);
+    fn set_mode(
+        &self,
+        source: Option<&Rc<RefCell<window_pane>>>,
+        mode: &'static window_mode,
+        item: Option<&dyn crate::actions::ContextSource>,
+        find: Option<&Target>,
+        arguments: Option<&args>,
+    ) -> i32;
+    fn reset_mode(&self);
+    fn reset_all_modes(&self);
+    /// Replace destination with an independent rectangular copy. Coordinates
+    /// are relative to the visible screen, excluding history. `displayed`
+    /// selects the active mode screen; false selects the process's base screen.
+    /// The destination must not alias any pane screen; caller must drop it.
+    fn copy_screen(
+        &self,
+        destination: &mut screen,
+        x: u32,
+        y: u32,
+        sx: u32,
+        sy: u32,
+        displayed: bool,
+    );
+    fn copy_output(&self, offset: &window_pane_offset, destination: &mut [u8]) -> usize;
+    /// Start a new output consumer at the parser's current position.
+    fn output_offset(&self) -> window_pane_offset;
+    fn advance_output(&self, offset: &mut window_pane_offset, count: usize);
+    /// Run once after all clients have consumed the current event-loop cycle.
+    fn finish_cycle(&self);
+    /// Borrow the option table through the model. Borrowing it again while held panics.
+    fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
+    fn format_value(
+        &self,
+        key: &CStr,
+        context: &mut crate::shared::format::format_tree,
+    ) -> Option<crate::format::FormatValue>;
+    /// Execute pipe-pane while process descriptors and callbacks stay owned here.
+    fn pipe(
+        &self,
+        command: &crate::arguments::args,
+        item: &dyn crate::actions::ContextSource,
+    ) -> TaskOutcome;
+    fn process_id(&self) -> pid_t;
+    /// Record an exit before finishing waits/editors; false means a different process.
+    fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool;
+    fn kill_process(&self);
+    /// Close descriptors before exit notifications and remain-on-exit rendering.
+    fn finish_process(&self, notify: i32);
+    /// Create a pane beside the context's source pane (before it with
+    /// SPAWN_BEFORE), or as the first pane of an empty window, place it and
+    /// start its process; with SPAWN_RESPAWN restart the context's source
+    /// pane instead. The layout's refusal or the spawn's failure comes back
+    /// as the error; a refusal comes before any side effect.
+    fn spawn_process(context: &mut crate::shared::spawn::spawn_context) -> Result<Self, CString>
+    where
+        Self: Sized;
+    fn install_editor(
+        &self,
+        editor: Box<crate::shared::spawn::spawn_editor_state>,
+    ) -> crate::shared::spawn::EditorHandle;
+    fn finish_editing(&self);
+    fn editor_identity(&self) -> Option<crate::shared::spawn::EditorId>;
+    fn cancel_editor(&self, identity: crate::shared::spawn::EditorId);
+    fn editor_process_id(&self, identity: crate::shared::spawn::EditorId) -> pid_t;
+    /// Encode a key or mouse report for this pane's process stream.
+    fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32;
+    /// Compare the active mode with its immutable descriptor.
+    fn is_mode(&self, mode: &'static window_mode) -> bool;
+    /// Invoke the active mode's format callback after releasing pane storage.
+    fn add_mode_formats(&self, context: &mut crate::shared::format::format_tree);
+    /// Reset palette/parser state and invalidate pane styling as one operation.
+    fn reset_input(&self);
+    fn screen_size(&self, displayed: bool) -> (u32, u32);
+    fn clone_history(
+        &self,
+        hint: &screen,
+        cursor: Option<(&mut u32, &mut u32)>,
+        trim: bool,
+    ) -> Box<screen>;
+    fn sync_history(&self, target: &mut screen, sync: (u32, u32, u32)) -> bool;
+    fn history_scroll(&self) -> (u32, u32, u32);
+    fn share_screen_hyperlinks(&self, target: &mut screen);
+    fn grid_hyperlink(&self, grid: &crate::shared::grid::grid, x: u32, y: u32) -> Option<CString>;
+    fn saved_search(&self) -> (Option<CString>, i32);
+    fn save_search(&self, value: CString, regex: i32);
+    fn show_scrollbar(&self);
+    fn take_pending_redraw(&self) -> bool;
+    fn process_name(&self) -> Option<CString>;
+    /// Draw the editor wait indicator on the currently displayed screen.
+    fn draw_editor_waiting(&self, pid: pid_t);
+    fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32;
+    fn status_range(&self, x: u32, y: u32) -> Option<style_range>;
+    fn prompt_key(
+        &self,
+        client: Option<&ClientRef>,
+        key: key_code,
+        mouse: Option<&mut mouse_event>,
+    ) -> prompt_key_result;
+    fn notify_moved(
+        &self,
+        old_window: &WindowRef,
+        old_index: i32,
+        new_window: &WindowRef,
+        new_index: i32,
+    );
+    fn destroy_ready(&self) -> bool;
+    fn destroy(&self);
+}
+
+impl WindowPane for Rc<RefCell<window_pane>> {
+    fn is_floating(&self) -> bool {
+        self.borrow()
+            .layout_meta
+            .as_deref()
+            .is_some_and(|meta| meta.is::<crate::window::FloatingPane>())
+    }
+    fn is_modal(&self) -> bool {
+        self.borrow().flags & crate::shared::pane::PANE_MODAL != 0
+    }
+    fn set_modal(&self, close_on_cancel: bool) {
+        let mut pane = self.borrow_mut();
+        pane.flags |= crate::shared::pane::PANE_MODAL | crate::shared::pane::PANE_CAPTUREALLKEYS;
+        pane.flags &= !crate::shared::pane::PANE_CLOSEONCANCEL;
+        if close_on_cancel {
+            pane.flags |= crate::shared::pane::PANE_CLOSEONCANCEL;
+        }
+    }
+    fn captures_all_keys(&self) -> bool {
+        let pane = self.borrow();
+        pane.flags & crate::shared::pane::PANE_CAPTUREALLKEYS != 0
+            && pane.flags & PANE_EXITED == 0
+            && pane.modes.is_empty()
+    }
+    fn closes_on_cancel(&self) -> bool {
+        self.borrow().flags & crate::shared::pane::PANE_CLOSEONCANCEL != 0
+    }
+    fn send_theme_update(&self) {
+        window_pane_send_theme_update(self);
+    }
+    fn mark_theme_changed(&self) {
+        self.borrow_mut().flags |= PANE_THEMECHANGED;
+    }
+    fn update_history_limit(&self, limit: u32) {
+        let mut pane = self.borrow_mut();
+        let id = pane.id;
+        let grid = pane.base.grid_mut();
+        let old_size = grid.hsize;
+        grid.hlimit = limit;
+        crate::grid::grid_collect_history(grid, 1);
+        if grid.hsize != old_size {
+            log_debug(format_args!(
+                "session_update_history: %{} {} -> {}",
+                id, old_size, grid.hsize
+            ));
+        }
+    }
+    fn compare_for_sort(
+        &self,
+        other: &Self,
+        criteria: &crate::shared::sort::sort_criteria,
+    ) -> std::cmp::Ordering {
+        sort::compare(self, other, criteria)
+    }
+    fn matches_terminal_name(&self, name: &CStr) -> bool {
+        self.borrow().tty() == name
+    }
+    fn close_after_key(&self, key: key_code) -> bool {
+        if !self.has_exited()
+            || key & KEYC_MASK_KEY == KEYC_MOUSE
+            || (KEYC_TYPE_MOUSEMOVE as key_code) << 32 <= key & KEYC_MASK_TYPE
+                && key & KEYC_MASK_TYPE <= (KEYC_TYPE_TRIPLECLICK as key_code) << 32
+            || key & KEYC_MASK_TYPE == (KEYC_TYPE_FUNCTION as key_code) << 32
+                && (key & KEYC_MASK_KEY == KEYC_PASTE_START
+                    || key & KEYC_MASK_KEY == KEYC_PASTE_END)
+        {
+            return false;
+        }
+        let close = {
+            let mut options = self.borrow_options_mut();
+            let remain = options_get_number(&options, c"remain-on-exit");
+            if remain == 3 || remain == 4 {
+                crate::options::options_set_number(&mut options, c"remain-on-exit", 0);
+                true
+            } else {
+                false
+            }
+        };
+        if close {
+            self.finish_process(0);
+        }
+        close
+    }
+    fn has_exited(&self) -> bool {
+        self.borrow().flags & PANE_EXITED != 0
+    }
+    fn mode_entry(&self) -> refbox::Weak<window_mode_entry> {
+        self.borrow().active_mode_entry()
+    }
+    fn notify_style_changed(&self) {
+        if self.borrow().flags & PANE_STYLECHANGED == 0 {
+            return;
+        }
+        let entry = self.mode_entry();
+        if !entry.is_alive() {
+            return;
+        }
+        let callback = entry
+            .try_borrow()
+            .expect("style mode not borrowed")
+            .mode
+            .style_changed;
+        if let Some(callback) = callback {
+            callback(entry);
+        }
+    }
+    fn needs_redraw(&self, scrollbar: bool) -> bool {
+        self.borrow().flags
+            & if scrollbar {
+                PANE_REDRAWSCROLLBAR
+            } else {
+                PANE_REDRAW
+            }
+            != 0
+    }
+    fn screen_mode(&self, displayed: bool) -> Option<crate::shared::screen::ScreenMode> {
+        let pane = self.borrow();
+        if displayed {
+            pane.with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
+        } else {
+            Some(crate::shared::screen::ScreenMode::from(&pane.base))
+        }
+    }
+    fn prompt_position(&self, top: bool) -> Option<(i32, i32)> {
+        let pane = self.borrow();
+        if window_pane_has_prompt(&pane) == 0 {
+            return None;
+        }
+        let y = if top {
+            pane.yoff
+        } else {
+            (pane.yoff as u32).wrapping_add(pane.sy).wrapping_sub(1) as i32
+        };
+        Some(((pane.xoff as u32).wrapping_add(pane.prompt_cx) as i32, y))
+    }
+    fn screen_path(&self) -> CString {
+        self.borrow().base.path.as_deref().unwrap_or(c"").to_owned()
+    }
+    fn screen_progress(&self) -> crate::shared::display::progress_bar {
+        self.borrow().base.progress_bar
+    }
+
+    fn in_scrollbar_area(&self, x: i32, y: i32) -> bool {
+        super::mouse::in_scrollbar_area(self, x, y) != 0
+    }
+    fn mouse_location(&self, x: i32, y: i32, slider: &mut u32) -> key_code_mouse_location {
+        super::mouse::mouse_location(self, x, y, slider)
+    }
+    fn update_scrollbar_hover(&self, x: i32, y: i32) {
+        if self.in_scrollbar_area(x, y) {
+            window_pane_scrollbar_show(self);
+        } else {
+            window_pane_scrollbar_start_timer(self);
+        }
+    }
+
+    fn scrollbar_visible(&self) -> bool {
+        window_pane_scrollbar_visible(&self.borrow()) != 0
+    }
+    fn scrollbar_overlay(&self) -> bool {
+        window_pane_scrollbar_overlay(&self.borrow()) != 0
+    }
+    fn scrollbar_width(&self) -> i32 {
+        self.borrow().scrollbar_style.width
+    }
+    fn scrollbar_pad(&self) -> i32 {
+        self.borrow().scrollbar_style.pad
+    }
+    fn scrollbar_slider_y(&self) -> u32 {
+        self.borrow().sb_slider_y
+    }
+    fn scrollbar_slider_height(&self) -> u32 {
+        self.borrow().sb_slider_h
+    }
+    fn redraw_scrollbar(&self) {
+        window_pane_scrollbar_redraw(self);
+    }
+    fn hide_scrollbar(&self) {
+        window_pane_scrollbar_hide(self);
+    }
+    fn refresh_scrollbar_style(&self) {
+        super::render::refresh_scrollbar_style(self);
+    }
+    fn reset_default_cursor(&self) {
+        window_pane_default_cursor(self);
+    }
+
+    fn refresh_utmp(&self) {
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        let mut pane = self.borrow_mut();
+        let pane = &mut *pane;
+        let Some(pty) = pane.fd.as_mut() else { return };
+        if pane.flags & (PANE_EMPTY | PANE_EXITED) == 0
+            && OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"utmp")) != 0
+        {
+            pty.utmp_add(pane.id);
+        } else {
+            pty.utmp_remove();
+        }
+    }
+
+    fn reset_border_cache(&self) {
+        let mut pane = self.borrow_mut();
+        pane.border_gc_set = 0;
+        pane.active_border_gc_set = 0;
+    }
+    fn border_cell(&self, cell_type: i32, cell: &mut grid_cell) {
+        super::border::cell(self, cell_type, cell);
+    }
+    fn border_style(&self, client: &ClientRef) -> grid_cell {
+        super::border::border_style(self, client)
+    }
+    fn make_status(
+        &self,
+        client: &ClientRef,
+        width: u32,
+        spans: &crate::shared::redraw::redraw_spans,
+        first: usize,
+    ) -> bool {
+        super::border::make_status(self, client, width, spans, first)
+    }
+    fn has_new_status(&self) -> bool {
+        self.borrow().flags & PANE_NEWSTATUS != 0
+    }
+    fn set_new_status(&self, redraw: bool) {
+        if redraw {
+            self.borrow_mut().flags |= PANE_NEWSTATUS;
+        } else {
+            self.borrow_mut().flags &= !PANE_NEWSTATUS;
+        }
+    }
+    fn default_colours(&self) -> (grid_cell, u32) {
+        super::render::default_colours(self)
+    }
+    fn is_obscured(&self) -> bool {
+        super::render::is_obscured(self)
+    }
+    fn visible_ranges(
+        base: Option<&Self>,
+        x: i32,
+        y: i32,
+        width: u32,
+        ranges: &mut Vec<visible_range>,
+    ) {
+        super::render::visible_ranges(base, x, y, width, ranges);
+    }
+    fn window_size(&self) -> (u32, u32) {
+        let window = self.window_observer().upgrade().expect("live pane parent");
+        let size = window.logical_size();
+        drop(window);
+        size
+    }
+    fn schedule_offset_update(&self) {
+        let window = self.window_observer().upgrade().expect("live pane parent");
+        window.schedule_offset_update();
+        drop(window);
+    }
+    fn draws_inactive_screen(&self) -> bool {
+        let window = self.window_observer().upgrade().expect("live pane parent");
+        let inactive = !window.active_pane().ptr_eq(&Rc::downgrade(self));
+        drop(window);
+        inactive || !matches!(self.borrow().screen_source, PaneScreenSource::Base)
+    }
+    fn output_suppressed(&self) -> bool {
+        self.borrow().flags & (PANE_REDRAW | PANE_DROP) != 0
+    }
+    fn alternate_screen_allowed(&self) -> bool {
+        options_get_number(&self.borrow_options_mut(), c"alternate-screen") != 0
+    }
+    fn alternate_screen_changed(&self, entered: bool) {
+        super::render::alternate_screen_changed(self, entered);
+    }
+    fn draw_line(
+        &self,
+        client: &ClientRef,
+        source: (u32, u32),
+        width: u32,
+        destination: (u32, u32),
+        status: bool,
+    ) {
+        super::render::draw_line(self, client, source, width, destination, status);
+    }
+    fn draw_scrollbar(
+        &self,
+        client: &ClientRef,
+        span: &crate::shared::redraw::redraw_span,
+        x: u32,
+        y: u32,
+        width: u32,
+    ) {
+        super::render::draw_scrollbar(self, client, span, x, y, width);
+    }
+    fn draw_prompt(&self, context: &mut crate::screen_redraw::redraw_draw_ctx<'_>) {
+        super::render::draw_prompt(self, context);
+    }
+
+    fn find_by_id(id: u32) -> Option<Self> {
+        window_pane_find_by_id(id)
+    }
+    fn find_by_id_str(id: &CStr) -> Option<Self> {
+        window_pane_find_by_id_str(id)
+    }
+    fn from_observer(observer: &std::rc::Weak<RefCell<window_pane>>) -> Option<Self> {
+        window_pane_upgrade(observer)
+    }
+    fn tty_name(&self) -> CString {
+        self.borrow().tty().to_owned()
+    }
+    fn control_colours(&self) -> (i32, i32) {
+        (self.borrow().control_fg, self.borrow().control_bg)
+    }
+    fn update_control_colours(&self, fg: i32, bg: i32) {
+        let mut pane = self.borrow_mut();
+        if bg != pane.control_bg {
+            pane.flags |= PANE_THEMECHANGED;
+        }
+        pane.control_fg = fg;
+        pane.control_bg = bg;
+    }
+    fn has_prompt(&self) -> bool {
+        self.borrow().prompt.is_some()
+    }
+    fn set_prompt(
+        &self,
+        client: Option<&ClientRef>,
+        find: Option<&Target>,
+        message: &CStr,
+        input: Option<&CStr>,
+        inputcb: status_prompt_input_cb,
+        freecb: prompt_free_cb,
+        flags: i32,
+        kind: prompt_type,
+    ) {
+        window_pane_set_prompt(
+            self, client, find, message, input, inputcb, freecb, flags, kind,
+        );
+    }
+    fn update_prompt(&self, message: &CStr, input: Option<&CStr>) {
+        window_pane_update_prompt(self, message, input);
+    }
+    fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool) {
+        let pane = self.borrow();
+        if pane.flags & PANE_INPUTOFF != 0 {
+            return;
+        }
+        let bracket = bracket
+            && pane
+                .with_screen(|screen| screen.mode & crate::shared::screen::MODE_BRACKETPASTE != 0)
+                .expect("displayed pane screen");
+        let write = |bytes: &[u8]| {
+            let _ = pane
+                .event
+                .with_stream(|event| crate::reactor::bufferevent_write(event, bytes));
+        };
+        if bracket {
+            write(b"\x1b[200~");
+        }
+        for chunk in bytes.split_inclusive(|&byte| byte == b'\n') {
+            let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
+            if raw {
+                write(line);
+            } else {
+                let escaped = crate::text::utf8::utf8_stravisx_bytes(
+                    line,
+                    crate::shared::vis::VIS_SAFE | crate::shared::vis::VIS_NOSLASH,
+                );
+                write(&escaped);
+            }
+            if line.len() != chunk.len() {
+                write(separator);
+            }
+        }
+        if bracket {
+            write(b"\x1b[201~");
+        }
+    }
+    fn capture(
+        &self,
+        arguments: &args,
+        item: &dyn crate::actions::ContextSource,
+    ) -> Result<Vec<u8>, CString> {
+        super::capture::capture(self, arguments, item)
+    }
+    fn clear_history(&self, reset_links: bool) {
+        super::capture::clear_history(self, reset_links);
+    }
+    fn refresh_palette(&self) {
+        // The option lookup borrows the pane, so the palette is updated
+        // outside it and put back.
+        let mut palette = std::mem::take(&mut self.borrow_mut().palette);
+        crate::style::colour::colour_palette_from_option(
+            Some(&mut palette),
+            &OptionsScope::Pane(Rc::downgrade(self)),
+        );
+        self.borrow_mut().palette = palette;
+    }
+    fn mark_changed(&self) {
+        self.borrow_mut().flags |= PANE_CHANGED;
+    }
+    fn mark_style_changed(&self, theme: bool) {
+        let mut pane = self.borrow_mut();
+        pane.flags |= PANE_STYLECHANGED;
+        if theme {
+            pane.flags |= PANE_THEMECHANGED;
+        }
+    }
+    fn invalidate_style(&self) {
+        self.borrow_mut().flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
+    }
+    fn set_input_enabled(&self, enabled: bool) {
+        if enabled {
+            self.borrow_mut().flags &= !PANE_INPUTOFF;
+        } else {
+            self.borrow_mut().flags |= PANE_INPUTOFF;
+        }
+    }
+    fn set_title(&self, title: &CStr) -> bool {
+        crate::screen::screen_set_title(&mut self.borrow_mut().base, title, 0) != 0
+    }
+    fn trim_history(&self) {
+        let mut pane = self.borrow_mut();
+        if !pane.modes.is_empty() {
+            return;
+        }
+        let adjust = pane
+            .base
+            .grid()
+            .sy
+            .wrapping_sub(1)
+            .wrapping_sub(pane.base.cy)
+            .min(pane.base.grid().hsize);
+        crate::grid::grid_remove_history(pane.base.grid_mut(), adjust);
+        pane.base.cy = pane.base.cy.wrapping_add(adjust);
+        pane.flags |= PANE_REDRAW;
+    }
+    fn wait_for(&self, event: crate::shared::pane::PaneWaitFor, waiter: Completion) {
+        let old = self.borrow_mut().wait_close.replace((event, waiter));
+        drop(old);
+    }
+    fn start_input(
+        &self,
+        item: &dyn crate::actions::ContextSource,
+    ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString> {
+        window_pane_start_input(self, item)
+    }
+    fn apply_layout(
+        &self,
+        geometry: layout_geometry,
+        scrollbars: &crate::shared::window::WindowRef,
+    ) -> bool {
+        let old_geometry = self.geometry();
+        let reserve = window_pane_scrollbar_reserve(&self.borrow()) != 0;
+        let (sx, sy, xoff, yoff) =
+            window_pane_placement(self, geometry, scrollbars, self.border_status(), reserve);
+        {
+            let mut pane = self.borrow_mut();
+            pane.xoff = xoff;
+            pane.yoff = yoff;
+            if reserve {
+                pane.flags |= PANE_REDRAWSCROLLBAR;
+            }
+        }
+        self.resize(sx, sy);
+        self.geometry() != old_geometry
+    }
+    fn redraw_selection_change(&self) {
+        let mut pane = self.borrow_mut();
+        if !grid_cells_look_equal(&pane.cached_gc, &pane.cached_active_gc)
+            || pane.cached_dim != pane.cached_active_dim
+            || colour_palette_get(Some(&pane.palette), pane.cached_gc.fg)
+                != colour_palette_get(Some(&pane.palette), pane.cached_active_gc.fg)
+            || colour_palette_get(Some(&pane.palette), pane.cached_gc.bg)
+                != colour_palette_get(Some(&pane.palette), pane.cached_active_gc.bg)
+        {
+            pane.flags |= PANE_REDRAW;
+        }
+    }
+    fn outer_geometry(&self) -> (i32, i32, u32, u32) {
+        let (x, y, width, height) = window_pane_full_size_offset(self);
+        let zoomed = self
+            .window_observer()
+            .upgrade()
+            .is_some_and(|window| window.zoomed_pane().ptr_eq(&Rc::downgrade(self)));
+        if self.is_floating() && !zoomed {
+            let border = i32::from(self.pane_lines() != PANE_LINES_NONE);
+            (
+                x - border,
+                y - border,
+                width + 2 * border as u32,
+                height + 2 * border as u32,
+            )
+        } else {
+            (x, y, width, height)
+        }
+    }
+    fn pane_lines(&self) -> pane_lines {
+        window_pane_get_pane_lines(&self.borrow())
+    }
+    fn borrow_layout_meta(&self) -> std::cell::RefMut<'_, Option<Box<dyn std::any::Any>>> {
+        std::cell::RefMut::map(self.borrow_mut(), |pane| &mut pane.layout_meta)
+    }
+    fn border_status(&self) -> i32 {
+        window_pane_get_pane_status(self)
+    }
+    fn has_pending_change(&self) -> bool {
+        self.borrow().flags & PANE_CHANGED != 0
+    }
+    fn acknowledge_change(&self) {
+        self.borrow_mut().flags &= !PANE_CHANGED;
+    }
+    fn has_unseen_changes(&self) -> bool {
+        self.borrow().flags & PANE_UNSEENCHANGES != 0
+    }
+    fn acknowledge_unseen_changes(&self) {
+        self.borrow_mut().flags &= !PANE_UNSEENCHANGES;
+    }
+    fn current_path(&self) -> Option<CString> {
+        let pane = self.borrow();
+        crate::osdep::osdep_get_cwd(std::os::fd::AsFd::as_fd(pane.fd.as_ref()?))
+    }
+
+    fn default_window_name(&self) -> CString {
+        let pane = self.borrow();
+        let command = crate::actions::stringify_argv(&pane.argv);
+        let source = command
+            .as_deref()
+            .filter(|text| !text.to_bytes().is_empty())
+            .unwrap_or_else(|| pane.shell.as_deref().expect("pane shell"));
+        crate::names::parse_window_name_cstring(source)
+    }
+    fn borrow_palette_mut(&self) -> std::cell::RefMut<'_, colour_palette> {
+        std::cell::RefMut::map(self.borrow_mut(), |pane| &mut pane.palette)
+    }
+    fn borrow_palette(&self) -> std::cell::Ref<'_, colour_palette> {
+        std::cell::Ref::map(self.borrow(), |pane| &pane.palette)
+    }
+
+    fn is_synchronized(&self) -> bool {
+        self.borrow().base.mode & MODE_SYNC != 0
+    }
+    fn read_base<R>(&self, read: impl FnOnce(&screen) -> R) -> R {
+        read(&self.borrow().base)
+    }
+    fn write_base<R>(&self, write: impl FnOnce(&mut screen) -> R) -> R {
+        write(&mut self.borrow_mut().base)
+    }
+    fn start_sync(&self) {
+        super::pane_sync::start(self);
+    }
+    fn stop_sync(&self) {
+        super::pane_sync::stop(self);
+    }
+    fn clear_sync_dirty(&self) {
+        super::pane_sync::clear_dirty(&mut self.borrow_mut());
+    }
+    fn should_draw_rows(&self, synchronized: bool, y: u32, count: u32, height: u32) -> bool {
+        super::pane_sync::should_draw_rows(&mut self.borrow_mut(), synchronized, y, count, height)
+    }
+
+    fn id(&self) -> u32 {
+        self.borrow().id
+    }
+
+    fn window_observer(&self) -> WindowWeak {
+        self.borrow().window.clone()
+    }
+    fn is_visible(&self) -> bool {
+        self.window_observer().upgrade().is_some_and(|window| {
+            let zoomed = window.zoomed_pane();
+            zoomed.strong_count() == 0 || zoomed.ptr_eq(&Rc::downgrade(self)) || self.is_floating()
+        })
+    }
+    fn unzoomed_size(&self) -> Option<(u32, u32)> {
+        let window = self.window_observer().upgrade()?;
+        let observer = Rc::downgrade(self);
+        let (_, cell) = window
+            .pane_cells()
+            .into_iter()
+            .find(|(pane, _)| pane.ptr_eq(&observer))?;
+        // Unzoomed, no mode hides the pane status line or the scrollbars:
+        // the pane reserves a scrollbar unless on its alternate screen.
+        let reserve = self.borrow().base.saved_grid.is_none()
+            && window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS;
+        let (sx, sy, ..) =
+            window_pane_placement(self, cell, &window, window.pane_border_status(), reserve);
+        Some((sx, sy))
+    }
+    fn reparent(&self, window: &WindowRef) {
+        {
+            let mut pane = self.borrow_mut();
+            if !pane.window.ptr_eq(&WindowRef::downgrade(window)) {
+                pane.flags &= !crate::shared::pane::PANE_MODAL;
+            }
+            pane.window = WindowRef::downgrade(window);
+        }
+        self.borrow_options_mut().parent = Some(crate::options::OptionsScope::Window(
+            WindowRef::downgrade(window),
+        ));
+        self.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+    }
+
+    fn geometry(&self) -> (u32, u32, i32, i32) {
+        let pane = self.borrow();
+        (pane.sx, pane.sy, pane.xoff, pane.yoff)
+    }
+
+    fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)> {
+        let (width, height, xoff, yoff) = self.geometry();
+        let (mx, my) = if last {
+            (mouse.lx, mouse.ly)
+        } else {
+            (mouse.x, mouse.y)
+        };
+        let x = mx.wrapping_add(mouse.ox);
+        let mut y = my.wrapping_add(mouse.oy);
+        if mouse.statusat == 0 && y >= mouse.statuslines {
+            y = y.wrapping_sub(mouse.statuslines);
+        }
+        if (x as i32) < xoff
+            || (x as i32) >= xoff + width as i32
+            || (y as i32) < yoff
+            || (y as i32) >= yoff + height as i32
+        {
+            return None;
+        }
+        Some((x.wrapping_sub(xoff as u32), y.wrapping_sub(yoff as u32)))
+    }
+
+    fn visible_cursor_in_window(&self) -> Option<(u32, u32)> {
+        let pane = self.borrow();
+        let screen = pane
+            .with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
+            .expect("displayed pane screen");
+        (screen.mode & crate::shared::screen::MODE_CURSOR != 0).then_some((
+            (pane.xoff as u32).wrapping_add(screen.cx),
+            (pane.yoff as u32).wrapping_add(screen.cy),
+        ))
+    }
+
+    fn has_tty(&self) -> bool {
+        self.borrow().fd.is_some()
+    }
+
+    fn resize(&self, sx: u32, sy: u32) {
+        window_pane_resize(self, sx, sy);
+    }
+
+    fn update_focus(&self, focused: bool) {
+        let flags = self.borrow().flags;
+        if flags & PANE_EXITED != 0 {
+            return;
+        }
+        let was_focused = flags & PANE_FOCUSED != 0;
+        if focused == was_focused {
+            log_debug(format_args!(
+                "window_pane_update_focus: %{} focus unchanged",
+                self.id()
+            ));
+            return;
+        }
+        log_debug(format_args!(
+            "window_pane_update_focus: %{} focus {}",
+            self.id(),
+            if focused { "in" } else { "out" }
+        ));
+        {
+            let pane = self.borrow();
+            if pane.base.mode & MODE_FOCUSON != 0 {
+                let _ = pane
+                    .event
+                    .write(if focused { b"\x1b[I" } else { b"\x1b[O" });
+            }
+        }
+        events_fire_pane(
+            if focused {
+                c"pane-focus-in"
+            } else {
+                c"pane-focus-out"
+            },
+            Rc::clone(self),
+        );
+        if focused {
+            self.borrow_mut().flags |= PANE_FOCUSED;
+        } else {
+            self.borrow_mut().flags &= !PANE_FOCUSED;
+        }
+    }
+
+    fn on_selected(&self, record_activity: bool) {
+        let point = record_activity.then(window_pane_tree::next_active_point);
+        let mut pane = self.borrow_mut();
+        if let Some(point) = point {
+            pane.active_point = point;
+        }
+        pane.flags |= PANE_CHANGED;
+    }
+
+    fn prepare_render(
+        &self,
+        context: &mut crate::shared::tty::tty_ctx,
+        window_redraw: bool,
+    ) -> i32 {
+        if !self
+            .window_observer()
+            .upgrade()
+            .is_some_and(|window| window.contains_pane(&Rc::downgrade(self)))
+            || !self.is_visible()
+        {
+            return 0;
+        }
+        if self.borrow().flags & (PANE_REDRAW | crate::shared::pane::PANE_DROP) != 0 {
+            return -1;
+        }
+        if window_redraw {
+            log_debug(format_args!(
+                "screen_write_set_client_cb: adding %{} to deferred redraw",
+                self.id()
+            ));
+            self.request_redraw(true);
+            return -1;
+        }
+        let (_, _, xoff, yoff) = self.geometry();
+        context.rxoff = xoff;
+        context.xoff = context.rxoff;
+        context.ryoff = yoff;
+        context.yoff = context.ryoff;
+        1
+    }
+
+    fn request_redraw(&self, scrollbar: bool) {
+        let mut pane = self.borrow_mut();
+        pane.flags |= PANE_REDRAW;
+        if scrollbar {
+            pane.flags |= PANE_REDRAWSCROLLBAR;
+        }
+    }
+
+    fn key(
+        &self,
+        client: Option<&ClientRef>,
+        link: refbox::Weak<winlink>,
+        key: key_code,
+        mouse: Option<&mut mouse_event>,
+    ) -> i32 {
+        window_pane_key(self, client, link, key, mouse)
+    }
+
+    fn paste(&self, key: key_code, bytes: &[u8]) {
+        window_pane_paste(self, key, bytes);
+    }
+
+    fn set_mode(
+        &self,
+        source: Option<&Rc<RefCell<window_pane>>>,
+        mode: &'static window_mode,
+        item: Option<&dyn crate::actions::ContextSource>,
+        find: Option<&Target>,
+        arguments: Option<&args>,
+    ) -> i32 {
+        window_pane_set_mode(self, source, mode, item, find, arguments)
+    }
+
+    fn reset_mode(&self) {
+        window_pane_reset_mode(self);
+    }
+    fn reset_all_modes(&self) {
+        window_pane_reset_mode_all(self);
+    }
+
+    fn copy_screen(
+        &self,
+        destination: &mut screen,
+        x: u32,
+        y: u32,
+        sx: u32,
+        sy: u32,
+        displayed: bool,
+    ) {
+        let pane = self.borrow();
+        let mut copy = |source: &screen| {
+            assert!(
+                !std::ptr::eq(source, destination),
+                "screen copy cannot alias its source"
+            );
+            assert!(x <= source.grid().sx && sx <= source.grid().sx - x);
+            assert!(y <= source.grid().sy && sy <= source.grid().sy - y);
+            let mut cells = Vec::with_capacity(sx as usize * sy as usize);
+            let mut links = std::collections::HashMap::new();
+            for row in 0..sy {
+                for column in 0..sx {
+                    let mut cell = grid_cell::default();
+                    grid_get_cell(
+                        source.grid(),
+                        x + column,
+                        source.grid().hsize + y + row,
+                        &mut cell,
+                    );
+                    if crate::screen::screen_check_selection(source, x + column, y + row) != 0 {
+                        if let Some(selected) = crate::screen::screen_select_cell(source, &cell) {
+                            cell = selected;
+                        }
+                    }
+                    if cell.link != 0 {
+                        links.entry(cell.link).or_insert_with(|| {
+                            source.hyperlinks.as_ref().and_then(|table| {
+                                hyperlinks_get(table, cell.link)
+                                    .map(|link| (link.uri.clone(), link.internal_id.clone()))
+                            })
+                        });
+                    }
+                    cells.push(cell);
+                }
+            }
+            drop(std::mem::take(destination));
+            screen_init(destination, sx, sy, 0);
+            destination.title = source.title.clone();
+            destination.path = source.path.clone();
+            destination.mode = source.mode;
+            destination.cstyle = source.cstyle;
+            destination.default_cstyle = source.default_cstyle;
+            destination.ccolour = source.ccolour;
+            destination.default_ccolour = source.default_ccolour;
+            destination.cx = source.cx.saturating_sub(x).min(sx.saturating_sub(1));
+            destination.cy = source.cy.saturating_sub(y).min(sy.saturating_sub(1));
+            if source.cx < x || source.cy < y || source.cx >= x + sx || source.cy >= y + sy {
+                destination.mode &= !crate::shared::screen::MODE_CURSOR;
+            }
+            let links: std::collections::HashMap<_, _> = links
+                .into_iter()
+                .map(|(id, text)| {
+                    let copied = text.map_or(0, |(uri, internal_id)| {
+                        hyperlinks_put(
+                            destination
+                                .hyperlinks
+                                .as_ref()
+                                .expect("copy hyperlink table"),
+                            &uri,
+                            Some(&internal_id),
+                        )
+                    });
+                    (id, copied)
+                })
+                .collect();
+            for (index, mut cell) in cells.into_iter().enumerate() {
+                if cell.link != 0 {
+                    cell.link = links[&cell.link];
+                }
+                grid_set_cell(
+                    destination.grid_mut(),
+                    index as u32 % sx,
+                    index as u32 / sx,
+                    &cell,
+                );
+            }
+        };
+        if displayed {
+            pane.with_screen(copy).expect("displayed pane screen");
+        } else {
+            copy(&pane.base);
+        }
+    }
+
+    fn copy_output(&self, offset: &window_pane_offset, destination: &mut [u8]) -> usize {
+        let pane = self.borrow();
+        let used = offset.used.wrapping_sub(pane.base_offset);
+        match pane.event.copy_input(used, destination) {
+            Ok(copied) => copied,
+            Err(crate::reactor::StreamError::Freed) => 0,
+            Err(crate::reactor::StreamError::InvalidRange) => {
+                panic!("pane offset is within input buffer")
+            }
+        }
+    }
+
+    fn output_offset(&self) -> window_pane_offset {
+        self.borrow().offset
+    }
+
+    fn advance_output(&self, offset: &mut window_pane_offset, count: usize) {
+        let pane = self.borrow();
+        if let Ok(available) = pane.event.input_len() {
+            let used = offset.used.wrapping_sub(pane.base_offset);
+            offset.used = offset
+                .used
+                .wrapping_add(count.min(available.saturating_sub(used)));
+        }
+    }
+
+    fn finish_cycle(&self) {
+        if self.has_tty() {
+            finish_resize(self);
+            finish_buffer(self);
+        }
+        self.borrow_mut().flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
+    }
+
+    fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        std::cell::RefMut::map(std::cell::RefCell::borrow_mut(self), |model| {
+            model.options.as_mut().expect("live pane options")
+        })
+    }
+
+    fn format_value(
+        &self,
+        key: &CStr,
+        context: &mut crate::shared::format::format_tree,
+    ) -> Option<crate::format::FormatValue> {
+        super::format::format_value(self, key, context)
+    }
+
+    fn pipe(
+        &self,
+        command: &crate::arguments::args,
+        item: &dyn crate::actions::ContextSource,
+    ) -> TaskOutcome {
+        process::pipe_pane(self, command, item)
+    }
+    fn process_id(&self) -> pid_t {
+        self.borrow().pid
+    }
+    fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool {
+        lifecycle::process_exited(self, pid, status)
+    }
+    fn kill_process(&self) {
+        lifecycle::kill_process(self)
+    }
+    fn finish_process(&self, notify: i32) {
+        lifecycle::finish_process(self, notify)
+    }
+    fn spawn_process(context: &mut crate::shared::spawn::spawn_context) -> Result<Self, CString> {
+        spawning::spawn_pane(context)
+    }
+    fn install_editor(
+        &self,
+        editor: Box<crate::shared::spawn::spawn_editor_state>,
+    ) -> crate::shared::spawn::EditorHandle {
+        spawning::install_editor(self, editor)
+    }
+    fn finish_editing(&self) {
+        spawning::finish_editing(self)
+    }
+    fn editor_identity(&self) -> Option<crate::shared::spawn::EditorId> {
+        self.borrow().editor.as_ref().map(|editor| editor.id)
+    }
+    fn cancel_editor(&self, identity: crate::shared::spawn::EditorId) {
+        let mut pane = self.borrow_mut();
+        if let Some(editor) = pane.editor.as_mut().filter(|editor| editor.id == identity) {
+            editor.cb = None;
+        }
+    }
+    fn editor_process_id(&self, identity: crate::shared::spawn::EditorId) -> pid_t {
+        self.borrow()
+            .editor
+            .as_ref()
+            .filter(|editor| editor.id == identity)
+            .map_or(-1, |editor| editor.pid)
+    }
+    fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32 {
+        super::keys::write_key(self, key, mouse)
+    }
+    fn is_mode(&self, mode: &'static window_mode) -> bool {
+        let entry = self.mode_entry();
+        entry.is_alive() && std::ptr::eq(entry.try_borrow().expect("live mode entry").mode, mode)
+    }
+    fn add_mode_formats(&self, context: &mut crate::shared::format::format_tree) {
+        let entry = self.mode_entry();
+        let callback = entry
+            .is_alive()
+            .then(|| entry.try_borrow().expect("live mode entry").mode.formats)
+            .flatten();
+        if let Some(callback) = callback {
+            callback(entry, context);
+        }
+    }
+    fn reset_input(&self) {
+        crate::style::colour::colour_palette_clear(Some(&mut self.borrow_mut().palette));
+        let context = self
+            .borrow()
+            .ictx
+            .as_ref()
+            .map(refbox::RefBox::downgrade)
+            .expect("pane input context");
+        super::input::input_reset(
+            &mut context
+                .try_borrow_mut()
+                .expect("pane input context not already borrowed"),
+            1,
+        );
+        self.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
+    }
+    fn screen_size(&self, displayed: bool) -> (u32, u32) {
+        let pane = self.borrow();
+        let size = |source: &screen| (source.grid().sx, source.grid().sy);
+        if displayed {
+            pane.with_screen(size).expect("displayed pane screen")
+        } else {
+            size(&pane.base)
+        }
+    }
+    fn clone_history(
+        &self,
+        hint: &screen,
+        cursor: Option<(&mut u32, &mut u32)>,
+        trim: bool,
+    ) -> Box<screen> {
+        crate::window_copy::window_copy_clone_screen(&self.borrow().base, hint, cursor, trim)
+    }
+    fn sync_history(&self, target: &mut screen, sync: (u32, u32, u32)) -> bool {
+        crate::window_copy::window_copy_sync_screen(&self.borrow().base, target, sync)
+    }
+    fn history_scroll(&self) -> (u32, u32, u32) {
+        let pane = self.borrow();
+        let grid = pane.base.grid();
+        (
+            grid.scroll_added,
+            grid.scroll_collected,
+            grid.scroll_generation,
+        )
+    }
+    fn share_screen_hyperlinks(&self, target: &mut screen) {
+        let pane = self.borrow();
+        if pane.base.hyperlinks.is_some() {
+            crate::screen::screen_share_hyperlinks(target, &pane.base);
+        }
+    }
+    fn grid_hyperlink(&self, grid: &crate::shared::grid::grid, x: u32, y: u32) -> Option<CString> {
+        self.borrow()
+            .with_screen(|screen| crate::format::format_grid_hyperlink_cstring(grid, x, y, screen))
+            .expect("displayed pane screen")
+    }
+    fn saved_search(&self) -> (Option<CString>, i32) {
+        let pane = self.borrow();
+        (pane.searchstr.clone(), pane.searchregex)
+    }
+    fn save_search(&self, value: CString, regex: i32) {
+        let mut pane = self.borrow_mut();
+        pane.searchstr = Some(value);
+        pane.searchregex = regex;
+    }
+    fn show_scrollbar(&self) {
+        window_pane_scrollbar_show(self);
+    }
+    fn take_pending_redraw(&self) -> bool {
+        let mut pane = self.borrow_mut();
+        let pending = pane.flags & PANE_REDRAW != 0;
+        pane.flags &= !PANE_REDRAW;
+        pending
+    }
+    fn process_name(&self) -> Option<CString> {
+        let pane = self.borrow();
+        crate::osdep::osdep_get_name_cstring(std::os::fd::AsFd::as_fd(pane.fd.as_ref()?))
+    }
+    fn draw_editor_waiting(&self, pid: pid_t) {
+        super::mode_visuals::draw_editor_waiting(self, pid);
+    }
+    fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32 {
+        window_pane_search(&self.borrow(), term, regex as i32, ignore as i32)
+    }
+    fn status_range(&self, x: u32, y: u32) -> Option<style_range> {
+        window_pane_status_get_range(self, x, y)
+    }
+    fn prompt_key(
+        &self,
+        client: Option<&ClientRef>,
+        key: key_code,
+        mouse: Option<&mut mouse_event>,
+    ) -> prompt_key_result {
+        window_pane_prompt_key(self, client, key, mouse)
+    }
+    fn notify_moved(
+        &self,
+        old_window: &WindowRef,
+        old_index: i32,
+        new_window: &WindowRef,
+        new_index: i32,
+    ) {
+        window_fire_pane_moved(self, old_window, old_index, new_window, new_index);
+    }
+    fn destroy_ready(&self) -> bool {
+        window_pane_destroy_ready(self) != 0
+    }
+    fn destroy(&self) {
+        window_pane_destroy(self);
+    }
+}
+
+fn finish_resize(owner: &Rc<RefCell<window_pane>>) {
+    {
+        let pane = owner.borrow();
+        if pane.resize_queue.is_empty() {
+            return;
+        }
+        if pane.resize_timer.is_some() {
+            return;
+        }
+    }
+    log_debug(format_args!(
+        "server_client_check_pane_resize: %{} needs to be resized",
+        owner.id()
+    ));
+    let (sx, sy, keep) = {
+        let pane = owner.borrow();
+        let queue = &pane.resize_queue;
+        for resize in queue {
+            log_debug(format_args!(
+                "queued resize: {}x{} -> {}x{}",
+                resize.osx, resize.osy, resize.sx, resize.sy
+            ));
+        }
+        let first = queue.front().expect("nonempty resize queue");
+        let last = queue.back().expect("nonempty resize queue");
+        if queue.len() == 1 || last.sx != first.osx || last.sy != first.osy {
+            (last.sx, last.sy, false)
+        } else {
+            let previous = &queue[queue.len() - 2];
+            (previous.sx, previous.sy, true)
+        }
+    };
+    window_pane_send_resize(&owner.borrow(), sx, sy);
+    owner.borrow_mut().clear_resizes(keep);
+    let delay = Duration::from_micros((if keep { 10000 } else { 250000 }) as u64);
+    let observer = Rc::downgrade(owner);
+    let timer = Timer::new(delay, move || {
+        if let Some(owner) = observer.upgrade() {
+            log_debug(format_args!(
+                "server_client_resize_timer: %{} resize timer expired",
+                owner.id()
+            ));
+            let timer = owner.borrow_mut().resize_timer.take();
+            drop(timer);
+        }
+    })
+    .expect("arm timer");
+    owner.borrow_mut().resize_timer = Some(timer);
+}
+
+fn finish_buffer(owner: &Rc<RefCell<window_pane>>) {
+    let mut minimum = {
+        let pane = owner.borrow();
+        let mut minimum = pane.offset.used;
+        if pane.pipe_event.is_alive() {
+            minimum = minimum.min(pane.pipe_offset.used);
+        }
+        minimum
+    };
+    let mut off = true;
+    let mut attached = false;
+    let mut cursor = ClientRegistry::first();
+    while let Some(client) = cursor {
+        if client.attached_session().upgrade().is_some() {
+            attached = true;
+            if !client.is_control() {
+                off = false;
+            } else {
+                let (offset, blocked) = client
+                    .with_output_offset(owner.id(), |offset, blocked| (offset.copied(), blocked));
+                if !blocked {
+                    off = false;
+                }
+                if let Some(offset) = offset {
+                    minimum = minimum.min(offset.used);
+                }
+            }
+        }
+        cursor = ClientRegistry::next(&client);
+    }
+    if !attached {
+        off = false;
+    }
+    let base = owner.borrow().base_offset;
+    let count = minimum.wrapping_sub(base);
+    if count != 0 {
+        let id = owner.id();
+        let stream = owner.borrow().event.clone();
+        log_debug(format_args!(
+            "server_client_check_pane_buffer: %{} has {} minimum (of {}) bytes used",
+            id,
+            count,
+            stream.input_len().unwrap_or(0)
+        ));
+        let _ = stream.drain_input(count);
+        if base > usize::MAX.wrapping_sub(count) {
+            {
+                let mut pane = owner.borrow_mut();
+                pane.offset.used = pane.offset.used.wrapping_sub(base);
+                if pane.pipe_event.is_alive() {
+                    pane.pipe_offset.used = pane.pipe_offset.used.wrapping_sub(base);
+                }
+            }
+            let mut cursor = ClientRegistry::first();
+            while let Some(client) = cursor {
+                if client.attached_session().upgrade().is_some() && client.is_control() {
+                    client.with_output_offset(id, |offset, blocked| {
+                        if !blocked {
+                            if let Some(offset) = offset {
+                                offset.used = offset.used.wrapping_sub(base);
+                            }
+                        }
+                    });
+                }
+                cursor = ClientRegistry::next(&client);
+            }
+            owner.borrow_mut().base_offset = count;
+        } else {
+            owner.borrow_mut().base_offset = base.wrapping_add(count);
+        }
+    }
+    log_debug(format_args!(
+        "server_client_check_pane_buffer: pane %{} is {}",
+        owner.id(),
+        if off { "off" } else { "on" }
+    ));
+    let stream = owner.borrow().event.clone();
+    if off {
+        let _ = stream.disable(Interests::READ);
+    } else {
+        let _ = stream.enable(Interests::READ);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::grid::grid_create;
+    use crate::reactor::evbuffer_add;
+
+    fn buffered_pane(bytes: &[u8]) -> Rc<RefCell<window_pane>> {
+        let pane = window_pane::new();
+        pane.borrow_mut().fd = None;
+        let stream = bufferevent_new(None, None, None, None).unwrap();
+        stream.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
+        pane.borrow_mut().event = stream;
+        pane
+    }
+
+    #[test]
+    fn fallback_selection_preserves_the_last_activity_point() {
+        let pane = window_pane::new();
+        pane.borrow_mut().fd = None;
+        let previous = window_pane_tree::peek_active_point();
+        pane.on_selected(true);
+        assert_eq!(pane.borrow().active_point, previous);
+        assert_eq!(
+            window_pane_tree::peek_active_point(),
+            previous.wrapping_add(1)
+        );
+        pane.borrow_mut().flags &= !PANE_CHANGED;
+        pane.on_selected(false);
+        assert_eq!(pane.borrow().active_point, previous);
+        assert_eq!(
+            window_pane_tree::peek_active_point(),
+            previous.wrapping_add(1)
+        );
+        assert_ne!(pane.borrow().flags & PANE_CHANGED, 0);
+        drop(pane);
+    }
+
+    #[test]
+    fn output_cursors_preserve_unread_bytes_and_clamp_skips() {
+        let pane = buffered_pane(b"abcdef");
+        pane.borrow_mut().base_offset = usize::MAX - 2;
+        let mut first = window_pane_offset {
+            used: usize::MAX - 2,
+        };
+        let second = first;
+        let mut bytes = [0; 3];
+        assert_eq!(pane.copy_output(&first, &mut bytes), 3);
+        assert_eq!(&bytes, b"abc");
+        pane.advance_output(&mut first, 3);
+        assert_eq!(first.used, 0);
+        assert_eq!(pane.copy_output(&first, &mut bytes), 3);
+        assert_eq!(&bytes, b"def");
+        assert_eq!(pane.copy_output(&second, &mut bytes), 3);
+        assert_eq!(&bytes, b"abc");
+        pane.advance_output(&mut first, usize::MAX);
+        assert_eq!(first.used, 3);
+        assert_eq!(pane.copy_output(&first, &mut bytes), 0);
+        let event = std::mem::take(&mut pane.borrow_mut().event);
+        event.free();
+        assert_eq!(pane.copy_output(&first, &mut bytes), 0);
+        pane.advance_output(&mut first, usize::MAX);
+        assert_eq!(first.used, 3);
+        drop(pane);
+    }
+
+    #[test]
+    fn copied_screen_and_hyperlinks_survive_source_changes() {
+        let definition = crate::options::options_table
+            .iter()
+            .find(|entry| entry.name == Some(c"extended-keys"))
+            .unwrap();
+        OptionsScope::GlobalServer.reset_default(definition);
+        let pane = window_pane::new();
+        pane.borrow_mut().fd = None;
+        {
+            let mut state = pane.borrow_mut();
+            let source = &mut state.base;
+            source.grid = Some(grid_create(3, 2, 0));
+            source.hyperlinks = Some(crate::hyperlinks::hyperlinks_init());
+            source.mode = crate::shared::screen::MODE_CURSOR;
+            source.cx = 2;
+            source.cy = 1;
+            let mut cell = grid_cell::default();
+            crate::text::utf8::utf8_set(&mut cell.data, b'X');
+            cell.link = hyperlinks_put(
+                source.hyperlinks.as_ref().unwrap(),
+                c"https://example.test/pane",
+                Some(c"pane-link"),
+            );
+            grid_set_cell(source.grid_mut(), 1, 1, &cell);
+        }
+        let mut copied = screen::empty();
+        pane.copy_screen(&mut copied, 1, 1, 2, 1, true);
+        assert_eq!(
+            (copied.grid().sx, copied.grid().sy, copied.cx, copied.cy),
+            (2, 1, 1, 0)
+        );
+        grid_set_cell(
+            pane.borrow_mut().base.grid_mut(),
+            1,
+            1,
+            &grid_cell::default(),
+        );
+        crate::hyperlinks::hyperlinks_reset(pane.borrow().base.hyperlinks.as_ref().unwrap());
+        drop(pane);
+        let mut copied_cell = grid_cell::default();
+        grid_get_cell(copied.grid(), 0, 0, &mut copied_cell);
+        assert_eq!(copied_cell.data.data[0], b'X');
+        assert_eq!(
+            hyperlinks_get(copied.hyperlinks.as_ref().unwrap(), copied_cell.link)
+                .unwrap()
+                .uri
+                .as_c_str(),
+            c"https://example.test/pane"
+        );
+        drop(copied);
+    }
+
+    #[test]
+    fn destroy_closes_streams_before_the_last_holder_is_dropped() {
+        let pane = buffered_pane(b"pending");
+        let stream = pane.borrow().event.clone();
+        let observer = Rc::downgrade(&pane);
+        window_pane_tree::insert(Rc::clone(&pane));
+        pane.destroy();
+        assert!(!stream.is_alive());
+        assert!(window_pane_upgrade(&observer).is_none());
+        assert!(observer.upgrade().is_some());
+        drop(pane);
+        assert!(observer.upgrade().is_none());
+    }
+}

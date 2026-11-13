@@ -1,0 +1,33 @@
+[package]
+name = "tiri-core"
+authors = ["C2Rust"]
+version = "0.0.0"
+publish = false
+edition = "2021"
+autobins = false
+
+[lib]
+name = "tiri_core"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[features]
+test-support = []
+
+[dependencies]
+tiri-vt = { path = "../tiri-vt" }
+futures-core = "0.3"
+tiri-rt = { path = "../tiri-rt" }
+tiri-sys = { path = "../tiri-sys" }
+tiri-buffer = { path = "../tiri-buffer" }
+libc = "0.2"
+refbox = { package = "tiri-refbox", path = "../tiri-refbox" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+systemd = { version = "0.10", default-features = false }
+tiri-sdbus = { path = "../tiri-sdbus" }
+
+[lints.clippy]
+missing_safety_doc = "allow"
+too_many_arguments = "allow"
+

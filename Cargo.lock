@@ -557,12 +557,12 @@ dependencies = [
  "libc",
  "quote",
  "syn 2.0.106",
- "systemd",
  "tiri-buffer",
  "tiri-cmdparse",
+ "tiri-cmds",
+ "tiri-core",
  "tiri-refbox",
  "tiri-rt",
- "tiri-sdbus",
  "tiri-sys",
  "tiri-vt",
 ]
@@ -580,6 +580,29 @@ version = "0.1.0"
 dependencies = [
  "lalrpop",
  "lalrpop-util",
+]
+
+[[package]]
+name = "tiri-cmds"
+version = "0.0.0"
+dependencies = [
+ "tiri-cmdparse",
+ "tiri-core",
+]
+
+[[package]]
+name = "tiri-core"
+version = "0.0.0"
+dependencies = [
+ "futures-core",
+ "libc",
+ "systemd",
+ "tiri-buffer",
+ "tiri-refbox",
+ "tiri-rt",
+ "tiri-sdbus",
+ "tiri-sys",
+ "tiri-vt",
 ]
 
 [[package]]

@@ -1,3 +1,3 @@
 fn main() {
-    tiri::tmux::main()
+    tiri::main()
 }

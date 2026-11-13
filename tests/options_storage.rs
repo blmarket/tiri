@@ -198,6 +198,7 @@ fn table_entry(name: &CStr) -> &'static tiri::options::options_table_entry {
 
 #[test]
 fn command_arrays_parse_items_and_assign_unseparated_values() {
+    tiri::initialize();
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut oo_owner;

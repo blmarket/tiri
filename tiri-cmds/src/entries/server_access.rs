@@ -1,0 +1,179 @@
+use crate::arguments::{args_count, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args;
+use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::shared::command::CMD_CLIENT_CANFAIL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::tiri_sys::{group_id_by_name, user_id, user_id_by_name};
+use std::ffi::CStr;
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::format::format_single_cstring;
+use tiri_core::server_acl::{
+    server_acl_allow, server_acl_allow_write, server_acl_deny, server_acl_deny_write,
+    server_acl_display, server_acl_find,
+};
+use tiri_core::shared::abi::id_t;
+use tiri_core::shared::abi::*;
+use tiri_core::shared::client::ClientRef;
+use tiri_core::shared::server_acl::SERVER_ACL_IS_GROUP;
+pub static cmd_server_access_entry: cmd_entry = {
+    cmd_entry {
+        name: c"server-access",
+        alias: None,
+        args: args_parse {
+            template: c"adglrw",
+            lower: 0 as ::core::ffi::c_int,
+            upper: 1 as ::core::ffi::c_int,
+            cb: None,
+        },
+        usage: c"[-adglrw] [-t target-pane] [user|group]",
+        source: cmd_entry_flag {
+            flag: 0,
+            type_0: CMD_FIND_PANE,
+            flags: 0,
+        },
+        target: cmd_entry_flag {
+            flag: 0,
+            type_0: CMD_FIND_PANE,
+            flags: 0,
+        },
+        flags: CMD_CLIENT_CANFAIL,
+        exec: Some(cmd_server_access_exec),
+    }
+};
+fn cmd_server_access_deny(
+    item_handle: &std::rc::Rc<cmdq_item>,
+    mut id: id_t,
+    mut flags: ::core::ffi::c_int,
+    type_0: &CStr,
+    name: &CStr,
+) -> CmdOutcome {
+    if server_acl_find(id, flags) == 0 {
+        cmdq_error(item_handle, |out| {
+            write_cstr(out, Some(&*type_0))?;
+            out.write_all(b" ")?;
+            write_cstr(out, Some(&*name))?;
+            out.write_all(b" not found")
+        });
+        return CmdOutcome::Error;
+    }
+    server_acl_deny(id, flags);
+    CmdOutcome::Normal
+}
+fn cmd_server_access_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+    let item = item_handle.borrow();
+    let args = cmd_get_args(self_0);
+    let c_owner = cmdq_get_target_client(Some(&*item));
+    let mut c: Option<ClientRef> = c_owner.clone();
+    let mut name: Option<std::ffi::CString> = None;
+    let mut type_0: &CStr = c"";
+    let mut id: id_t = 0;
+    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    if args_has(args, 'l' as i32 as u_char) != 0 {
+        server_acl_display(item_handle);
+        return CmdOutcome::Normal;
+    }
+    if args_count(args) == 0 as u_int {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"missing user or group argument")
+        });
+        return CmdOutcome::Error;
+    }
+    let arg = format_single_cstring(
+        Some(item_handle),
+        args_string(args, 0 as u_int).unwrap_or(c""),
+        c.as_ref(),
+        None,
+        (crate::refbox::Weak::new()).clone(),
+        None,
+    );
+    if args_has(args, 'g' as i32 as u_char) != 0 {
+        type_0 = c"group";
+        if let Some(gid) = group_id_by_name(&arg) {
+            id = gid as id_t;
+            name = Some(arg.clone());
+            flags |= SERVER_ACL_IS_GROUP;
+        }
+    } else {
+        type_0 = c"user";
+        if let Some(uid) = user_id_by_name(&arg) {
+            id = uid as id_t;
+            name = Some(arg.clone());
+        }
+    }
+    let Some(name) = name else {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"unknown ")?;
+            write_cstr(out, type_0)?;
+            out.write_all(b": ")?;
+            write_cstr(out, &*arg)
+        });
+        return CmdOutcome::Error;
+    };
+    if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == user_id()) {
+        cmdq_error(item_handle, |out| {
+            write_cstr(out, name.as_c_str())?;
+            out.write_all(b" owns the server, can't change access")
+        });
+        return CmdOutcome::Error;
+    }
+    if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'd' as i32 as u_char) != 0 {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"-a and -d cannot be used together")
+        });
+        return CmdOutcome::Error;
+    }
+    if args_has(args, 'w' as i32 as u_char) != 0 && args_has(args, 'r' as i32 as u_char) != 0 {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"-r and -w cannot be used together")
+        });
+        return CmdOutcome::Error;
+    }
+    if args_has(args, 'd' as i32 as u_char) != 0 {
+        return cmd_server_access_deny(item_handle, id, flags, type_0, &name);
+    }
+    if args_has(args, 'a' as i32 as u_char) != 0 {
+        if server_acl_find(id, flags) != 0 {
+            cmdq_error(item_handle, |out| {
+                write_cstr(out, type_0)?;
+                out.write_all(b" ")?;
+                write_cstr(out, name.as_c_str())?;
+                out.write_all(b" is already added")
+            });
+            return CmdOutcome::Error;
+        }
+        server_acl_allow(id, flags);
+    } else if (args_has(args, 'r' as i32 as u_char) != 0
+        || args_has(args, 'w' as i32 as u_char) != 0)
+        && server_acl_find(id, flags) == 0
+    {
+        server_acl_allow(id, flags);
+    }
+    if args_has(args, 'w' as i32 as u_char) != 0 {
+        if server_acl_find(id, flags) == 0 {
+            cmdq_error(item_handle, |out| {
+                write_cstr(out, type_0)?;
+                out.write_all(b" ")?;
+                write_cstr(out, name.as_c_str())?;
+                out.write_all(b" not found")
+            });
+            return CmdOutcome::Error;
+        }
+        server_acl_allow_write(id, flags);
+        return CmdOutcome::Normal;
+    }
+    if args_has(args, 'r' as i32 as u_char) != 0 {
+        if server_acl_find(id, flags) == 0 {
+            cmdq_error(item_handle, |out| {
+                write_cstr(out, type_0)?;
+                out.write_all(b" ")?;
+                write_cstr(out, name.as_c_str())?;
+                out.write_all(b" not found")
+            });
+            return CmdOutcome::Error;
+        }
+        server_acl_deny_write(id, flags);
+        return CmdOutcome::Normal;
+    }
+    CmdOutcome::Normal
+}

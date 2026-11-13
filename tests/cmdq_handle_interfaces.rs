@@ -92,8 +92,10 @@ fn inspect(path: &Path) {
 
 #[test]
 fn queue_item_interfaces_express_ownership_without_raw_transfers() {
-    inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
-    let queue = include_str!("../src/cmd/queue.rs");
+    for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
+        inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join(directory));
+    }
+    let queue = include_str!("../tiri-cmds/src/cmd/queue.rs");
     assert!(!queue.contains("Rc::into_raw"));
     assert!(!queue.contains("Rc::from_raw"));
 }

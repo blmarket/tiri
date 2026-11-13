@@ -90,10 +90,12 @@ fn rejects_format_pointers_and_retired_helpers() {
 #[test]
 fn sources_do_not_reintroduce_format_pointers() {
     let mut paths = Vec::new();
-    rust_sources(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-        &mut paths,
-    );
+    for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
+        rust_sources(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join(directory),
+            &mut paths,
+        );
+    }
     assert!(!paths.is_empty());
     for path in paths {
         let source = std::fs::read_to_string(&path).unwrap();

@@ -1,6 +1,7 @@
 # Plan: the command system as a Future
 
-Status: feasibility study, nothing implemented.
+Status: feasibility study; the prerequisite crate split is implemented. The
+Future refactor below is not implemented.
 
 Constraint: this refactor must not change any observable behavior. Existing
 control clients, including iTerm2, must work without modifications. Preserve
@@ -12,7 +13,7 @@ behavior-changing alternatives are outside this refactor.
 ## Verdict
 
 Feasible, and most of the hard part already exists: each queue is already driven
-by one future (`cmdq_drain` in [queue.rs](src/cmd/queue.rs)), and waiting
+by one future (`cmdq_drain` in [queue.rs](tiri-cmds/src/cmd/queue.rs)), and waiting
 commands already hand back a future (`CmdOutcome::Suspend`). The refactor is an
 inversion of the interface, not a new execution model.
 
@@ -41,15 +42,15 @@ from async code, and dropping the future cancels.
 
 | Piece | Where | Role |
 | --- | --- | --- |
-| `cmdq_list` | one per client, one global thread-local | FIFO of `Rc<RefCell<cmdq_item>>` plus the drain future |
+| `cmdq_list` | one per client, one global thread-local | FIFO of `Rc<cmdq_item>` plus the drain future |
 | `cmdq_item` | built by `cmdq_get_command` / `cmdq_get_callback_owned` | one command or one callback, plus its context: client, target client, source/target `cmd_find_state`, shared `cmdq_state` |
 | `cmdq_next` | `server_loop`, `server_client_lost` | polls the drain inline until the head suspends; the loop repeats until no queue made progress, then redraws |
 | `QueueWake` | `LocalWaker` | re-polls the drain inline on wake, never through the runtime |
-| `cmd_exec_fn` | 89 entries | sync `fn(&cmd, &Rc<RefCell<cmdq_item>>) -> CmdOutcome` |
+| `cmd_exec_fn` | 89 entries | sync `fn(&cmd, &Rc<cmdq_item>) -> CmdOutcome` |
 | `CmdOutcome::Suspend(fut)` | 11 entry files | continuation holding a `Weak` item, re-acquired with `cmdq_resumed` |
 | `CmdqWaiter` | `wait-for`, pane waits, `cfg` | oneshot sender that resumes a suspended item |
 | `cmdq_insert_after` | 5 entry files, hooks, key bindings, cfg, server_client | composition by queue mutation |
-| callback items | ~36 lines outside `src/cmd` | sequencing arbitrary code behind commands (`server_client_command_done`, `cfg_done`, key callbacks) |
+| callback items | ~36 lines outside `tiri-cmds/src/cmd` | sequencing arbitrary code behind commands (`server_client_command_done`, `cfg_done`, key callbacks) |
 
 Details that constrain the design:
 
@@ -65,7 +66,7 @@ Details that constrain the design:
   fired the event.
 - The item handle leaks widely as read-only context: `format`, `cmd::find`,
   `arguments::commands`, `window_pane` (capture, start_input, pipe, spawn),
-  mode init functions, `server_acl`, `job`. About 100 mentions outside `src/cmd`.
+  mode init functions, `server_acl`, `job`. About 100 mentions outside `tiri-cmds/src/cmd`.
 
 ## Target interface
 
@@ -260,16 +261,37 @@ ExecOutcome {
   narrow accessor for that, set only during a body's first poll on the server
   lane, matching today's "hidden while suspended" rule.
 
+## Crate boundary
+
+`tiri-core` owns sessions, windows, panes, terminal state, and model operations.
+`tiri-cmds` owns `cmd`, `cmd_list`, `cmd_entry`, command parsing, target-language
+lookup, queue execution, hooks, configuration loading, and binding initialization
+and dispatch. The scripting layer depends on core and the existing
+`tiri-cmdparse` grammar crate. Core depends on neither the scripting layer nor
+its grammar. `tiri` depends on both and installs the scripting runtime at startup.
+
+Core's `actions` module is the integration contract: retained `Program` values,
+read-only context views, generic work ownership, and callbacks installed by the
+application. Model storage contains those interfaces, never concrete command
+objects or queues. Ordinary target snapshots and the shared flag scanner remain
+core services; command-name lookup, command construction, target-language parsing,
+and execution belong to cmds. There is no command-table registration API.
+
+Keep this direction through the phases below. The Future runner and its owned
+context and invocation belong in cmds. As queue APIs disappear, replace their
+runtime adapter callbacks in the same phase; core should consume resolved model
+parameters or ordinary callbacks rather than acquire interpreter behavior.
+
 ## Module boundary
 
 ```
-src/cmd/
+tiri-cmds/src/cmd/
   mod.rs         run, Context, CmdResult, CmdFailed, parse and print helpers
   run.rs         list -> future: target resolution, guards, after-hook, group error rule, tails
   invocation.rs  Invocation, print, error
-  entries/       unchanged layout, new signature
   find.rs parse.rs core.rs
-src/reactor/lane.rs   Lane
+tiri-cmds/src/entries/ unchanged layout, new signature
+tiri-core/src/reactor/lane.rs   Lane
 ```
 
 | Removed | Replaced by |
@@ -279,7 +301,7 @@ src/reactor/lane.rs   Lane
 | `cmdq_get_callback_owned`, `cmdq_get_error` | code after `.await`, or a plain async block on the lane |
 | `cmdq_insert_after` | the `Tail` a body returns |
 | `cmdq_next` | `Lane::drive` |
-| `cmdq_running`, `EventPayloadIdentity::QueueItem` | runner-awaited hook commands; one narrow accessor for `NOHOOKS` and monitor hooks |
+| `cmdq_running`, `EventPayloadIdentity::Operation` | runner-awaited hook commands; one narrow accessor for `NOHOOKS` and monitor hooks |
 | `CmdOutcome::{Suspend, Stop}`, `cmdq_resumed` | `.await` inside the body |
 | `cmdq_wait`, `CmdqWaiter` | `tiri_rt::oneshot` awaited in the body; `pane.wait(event) -> impl Future` |
 | `cmdq_new_state`, `cmdq_copy_state`, `cmdq_add_format(s)`, `cmdq_state`, `Rc<cmdq_state>` | owned `Context`, borrowed sequentially by invocations and tails |
@@ -313,7 +335,8 @@ src/reactor/lane.rs   Lane
 4. **`RefCell` borrows across `.await`.** A new hazard class once bodies are
    async. Turn on `clippy::await_holding_refcell_ref` before converting entries.
 5. **Stored `Weak` items.** `format_tree.item`, `cmd_parse_input.item` and
-   `spawn_context.item` store a `Weak<RefCell<cmdq_item>>`. If every use is
+   `spawn_context.item` store a nonowning context handles (`ContextWeak` in core and `Weak<cmdq_item>` in
+   the scripting parser). If every use is
    inside one sync call they become `Option<&Invocation>`; `format_tree` needs
    checking since format jobs may outlive the call.
 6. **Running-command visibility.** Preserve today's global-queue visibility,
@@ -350,7 +373,7 @@ deletes the old API.
 1. **Lane.** Extract the drain driver from `queue.rs` into `reactor::Lane`
    holding boxed futures. `cmdq_append` becomes a thin push of a per-item
    future. No behaviour change.
-2. **Context and Invocation.** Replace `Rc<RefCell<cmdq_item>>` with
+2. **Context and Invocation.** Replace `Rc<cmdq_item>` with
    borrowed invocation/context access in the exec signature and in the external
    context users (`format`, `find`, `window_pane`, modes). Still sync, still
    `CmdOutcome`. Audit state sharing, copying and retained observers here;

@@ -54,7 +54,9 @@ fn inspect(path: &Path) {
 
 #[test]
 fn jobs_have_no_raw_pointer_storage_arguments_returns_or_casts() {
-    inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+    for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
+        inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join(directory));
+    }
 }
 
 #[test]
