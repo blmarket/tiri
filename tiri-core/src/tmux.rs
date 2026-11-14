@@ -6,7 +6,10 @@
     unused_assignments,
     unused_mut
 )]
-use crate::actions::config::{report_missing_configuration, set_configuration_files};
+use crate::cfg::{
+    cfg_report_missing as report_missing_configuration,
+    cfg_set_files as set_configuration_files,
+};
 use crate::client::client_main;
 use crate::compat::getopt::Getopt;
 use crate::compat::getprogname::getprogname;

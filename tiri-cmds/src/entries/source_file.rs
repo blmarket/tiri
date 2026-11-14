@@ -1,8 +1,14 @@
-use crate::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
-use crate::cmd::queue::{cmdq_error, cmdq_get_callback_owned, cmdq_insert_after, cmdq_resumed};
+use crate::cmd::parse::cmd_parse_from_buffer;
+use crate::cmd::queue::{
+    cmdq_append, cmdq_copy_state, cmdq_error, cmdq_get_callback_owned, cmdq_get_command,
+    cmdq_insert_after, cmdq_resumed,
+};
 use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
 use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
+use tiri_core::actions::queue::{
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned, new_state as cmdq_new_state,
+};
+use tiri_core::cfg::{cfg_add_cause, cfg_finished, cfg_print_causes};
 use tiri_core::arguments::{args_count, args_has, args_parse, args_string};
 use tiri_core::file::{FileOutcome, FileWait, file_read_wait};
 use tiri_core::format::bytes::write_cstr;
@@ -17,7 +23,7 @@ use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_parse_input};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 use tiri_core::libc::{EINVAL, ENOENT, ENOMEM};
@@ -25,6 +31,7 @@ use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::CLIENT_CONTROL;
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::errno::ErrorText;
+use tiri_core::shared::target::Target as cmd_find_state;
 
 pub struct cmd_source_file_data {
     pub client: Option<ClientRef>,
@@ -200,7 +207,7 @@ fn cmd_source_file_done(
             .after
             .upgrade()
             .unwrap_or_else(|| Rc::clone(item_owner));
-        if load_cfg_from_buffer(
+        if load_source_buffer(
             bdata,
             path.expect("file read sets the path"),
             cdata.client.as_ref(),
@@ -215,6 +222,58 @@ fn cmd_source_file_done(
             cdata.after = new_item;
         }
     }
+}
+
+fn load_source_buffer(
+    buf: &[u8],
+    path: &CStr,
+    c: Option<&ClientRef>,
+    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    current: Option<&cmd_find_state>,
+    flags: ::core::ffi::c_int,
+    mut new_item: Option<&mut std::rc::Weak<cmdq_item>>,
+) -> ::core::ffi::c_int {
+    let mut pi = cmd_parse_input {
+        flags,
+        file: Some(path.to_owned()),
+        line: 1 as u_int,
+        item: std::rc::Weak::new(),
+        c: c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+        fs: Default::default(),
+    };
+    pi.set_item(item_handle);
+    if let Some(new_item) = new_item.as_deref_mut() {
+        *new_item = std::rc::Weak::new();
+    }
+    log_debug(format_args!("loading {}", log_cstr(path)));
+    let commands = match cmd_parse_from_buffer(buf, Some(&mut pi)) {
+        Ok(commands) => commands,
+        Err(error) => {
+            cfg_add_cause(|out| write_cstr(out, error.as_c_str()));
+            return -1;
+        }
+    };
+    if flags & CMD_PARSE_PARSEONLY != 0 {
+        drop(commands);
+        return 0;
+    }
+    let state = if let Some(item) = item_handle {
+        cmdq_copy_state(&cmdq_get_state_owned(&item.borrow()), current)
+    } else {
+        cmdq_new_state(None, None, 0)
+    };
+    state.add_format(c"current_file", pi.file.as_deref().unwrap_or(c"(null)"));
+    let task = cmdq_get_command(&commands, Some(&state));
+    let last = if let Some(item) = item_handle {
+        cmdq_insert_after(item, task)
+    } else {
+        cmdq_append(None, task)
+    };
+    drop(commands);
+    if let Some(new_item) = new_item {
+        *new_item = last;
+    }
+    0
 }
 fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
     log_debug(format_args!(

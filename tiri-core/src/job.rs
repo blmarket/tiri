@@ -1,4 +1,4 @@
-use crate::actions::config::configuration_finished;
+use crate::cfg::cfg_finished as configuration_finished;
 use crate::actions::queue::print;
 use crate::actions::{log_argv, stringify_argv};
 use crate::compat::fdforkpty::fdforkpty;

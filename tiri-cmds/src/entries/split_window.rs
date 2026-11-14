@@ -160,7 +160,7 @@ fn cmd_split_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         if empty != 0 {
             flags |= SPAWN_EMPTY;
         }
-        sc.item = crate::runtime::context(item_handle.clone()).downgrade();
+        sc.item = crate::engine::context(item_handle.clone()).downgrade();
         sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
         sc.set_wl(wl.clone());
         sc.wp0 = std::rc::Rc::downgrade(&original_pane);

@@ -12,16 +12,13 @@
 
 mod arguments;
 mod catalog;
-mod cfg;
 mod cmd;
+mod engine;
 mod entries;
-mod hooks;
-mod key_bindings;
-mod runtime;
 mod shared;
 
 pub fn initialize() {
-    tiri_core::actions::install(&runtime::RUNTIME);
+    tiri_core::actions::install(&engine::ENGINE);
 }
 
 #[cfg(test)]

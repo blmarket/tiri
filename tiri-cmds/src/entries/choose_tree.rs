@@ -1,5 +1,7 @@
+use crate::arguments::{args_make_commands, args_make_commands_prepare};
 use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
+use tiri_core::actions::ProgramRef;
 use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_get, args_has, args_parse,
@@ -21,7 +23,7 @@ use tiri_core::window_buffer::window_buffer_mode;
 use tiri_core::window_client::window_client_mode;
 use tiri_core::window_customize::window_customize_mode;
 use tiri_core::window_pane::WindowPane as _;
-use tiri_core::window_panes::window_panes_mode;
+use tiri_core::window_panes::window_panes_enter;
 use tiri_core::window_switch::window_switch_mode;
 use tiri_core::window_tree::window_tree_mode;
 pub static cmd_choose_tree_entry: cmd_entry = {
@@ -200,6 +202,29 @@ fn cmd_choose_tree_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CmdOutcome::Error;
     }
+    if std::ptr::eq(cmd_get_entry(self_0), &cmd_display_panes_entry) {
+        window_panes_enter(
+            wp.as_ref().expect("mode target pane"),
+            item_handle,
+            target,
+            args,
+            || {
+                let mut state = args_make_commands_prepare(
+                    self_0,
+                    item_handle,
+                    0,
+                    Some(c"select-pane -t \"%%%\""),
+                    0,
+                    0,
+                );
+                Box::new(move |arguments| {
+                    args_make_commands(&mut state, arguments)
+                        .map(|program| program as ProgramRef)
+                })
+            },
+        );
+        return CmdOutcome::Normal;
+    }
     let mode: &'static window_mode =
         if std::ptr::eq(cmd_get_entry(self_0), &cmd_choose_buffer_entry) {
             if paste_is_empty() != 0 {
@@ -215,8 +240,6 @@ fn cmd_choose_tree_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             &window_customize_mode
         } else if std::ptr::eq(cmd_get_entry(self_0), &cmd_switch_mode_entry) {
             &window_switch_mode
-        } else if std::ptr::eq(cmd_get_entry(self_0), &cmd_display_panes_entry) {
-            &window_panes_mode
         } else {
             &window_tree_mode
         };

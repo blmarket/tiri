@@ -12,11 +12,12 @@ use std::{cell::RefCell, rc::Rc};
 mod api;
 mod format;
 mod model;
-use crate::actions::client_lost;
-use crate::actions::config::{
-    configuration_client, configuration_finished, forget_configuration_client, start_configuration,
+use crate::wait::wait_for_client_lost as client_lost;
+use crate::cfg::{
+    cfg_client as configuration_client, cfg_finished as configuration_finished,
+    cfg_forget_client as forget_configuration_client, start_cfg as start_configuration,
 };
-use crate::actions::dispatch_binding;
+use crate::bindings::key_bindings_dispatch as dispatch_binding;
 use crate::actions::log_argv;
 use crate::actions::queue::{
     callback, client, drive, enqueue, error_task, insert_after, new_queue, program_task,

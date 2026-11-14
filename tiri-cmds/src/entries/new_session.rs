@@ -1,4 +1,4 @@
-use crate::cfg::{cfg_finished, cfg_show_causes};
+use tiri_core::cfg::{cfg_finished, cfg_show_causes};
 use crate::cmd::queue::{cmdq_error, cmdq_get_flags, cmdq_insert_hook, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::entries::attach_session::cmd_attach_session;
@@ -527,7 +527,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                     let session_owner = tiri_core::shared::session::SessionRef::create(prefix.as_deref(), sname_owned.as_deref(), cwd.as_deref().expect("client working directory is set at identify"), env.take()
                                                             .expect("new session environment"), oo.take(), tio.as_ref());
                                                     s = Some(session_owner.clone());
-                                                    sc.item = crate::runtime::context(
+                                                    sc.item = crate::engine::context(
                                                         item_handle.clone(),
                                                     )
                                                     .downgrade();

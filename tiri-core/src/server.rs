@@ -1,6 +1,6 @@
-use crate::actions::build_hooks as hooks_build_events;
-use crate::actions::flush;
-use crate::actions::initialize_bindings;
+use crate::hooks::hooks_build_events;
+use crate::wait::wait_for_flush as flush;
+use crate::bindings::key_bindings_init as initialize_bindings;
 use crate::actions::queue::drive;
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::{systemd_activated, systemd_create_socket};

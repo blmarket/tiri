@@ -16,7 +16,9 @@ use std::rc::{Rc, Weak};
 
 use crate::actions::sources::{capitalize_error, compile};
 use crate::actions::Target;
-use crate::actions::{is_hook_event, register_hook_event};
+use crate::hooks::{
+    hooks_add_event as register_hook_event, hooks_is_event as is_hook_event,
+};
 use crate::arguments::{args, args_get, args_has};
 use crate::bindings::{
     key_bindings_add, key_bindings_get, key_bindings_get_default, key_bindings_remove,

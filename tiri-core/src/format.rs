@@ -1,4 +1,4 @@
-use crate::actions::config::configuration_files;
+use crate::cfg::cfg_files as configuration_files;
 use crate::actions::mouse_pane;
 use crate::actions::queue::{client, event, merge_formats, print, target_client};
 use crate::arguments::args_escape_cstring;

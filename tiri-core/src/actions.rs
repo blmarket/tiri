@@ -34,9 +34,22 @@ pub struct ExecutionState {
     pub current: std::cell::RefCell<Target>,
 }
 impl ExecutionState {
-    /// Copy the weak target handles and release the borrow before callbacks run.
     pub fn current_snapshot(&self) -> Target {
         self.current.borrow().clone()
+    }
+    pub fn add_format(&self, key: &CStr, value: &CStr) {
+        let mut formats = self.formats.borrow_mut();
+        let formats = formats.get_or_insert_with(|| {
+            crate::format::format_create(None, None, crate::shared::format::FORMAT_NONE, 0)
+        });
+        crate::format::format_add_cstr(formats, key, value);
+    }
+    pub fn add_formats(&self, ft: &crate::shared::format::format_tree) {
+        let mut formats = self.formats.borrow_mut();
+        let formats = formats.get_or_insert_with(|| {
+            crate::format::format_create(None, None, crate::shared::format::FORMAT_NONE, 0)
+        });
+        crate::format::format_merge(formats, ft);
     }
 }
 
@@ -91,6 +104,13 @@ impl ContextWeak {
             .as_ref()
             .map_or(0, |owner| owner.as_ptr().cast::<()>().addr())
     }
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (Some(left), Some(right)) => Weak::ptr_eq(left, right),
+            (None, None) => true,
+            _ => false,
+        }
+    }
 }
 
 pub trait WorkQueue: Any {
@@ -98,10 +118,6 @@ pub trait WorkQueue: Any {
 }
 
 pub type Callback = Option<Box<dyn FnOnce(&ContextRef) -> TaskOutcome>>;
-
-pub trait PreparedAction {
-    fn materialize(&mut self, arguments: &Vec<CString>) -> Result<ProgramRef, Option<CString>>;
-}
 
 pub trait ContextSource {
     fn context_ref(&self) -> ContextRef;
@@ -160,9 +176,21 @@ impl Completion {
     }
 }
 
-use crate::shared::key::{key_event as KeyEvent, KeyBindingCommand};
+#[derive(Default)]
+pub struct ParseOrigin<'a> {
+    pub file: Option<&'a CStr>,
+    pub line: u32,
+    pub client: Option<&'a ClientRef>,
+    pub flags: i32,
+}
 
-pub struct Runtime {
+pub const PARSE_QUIET: i32 = 0x1;
+pub const PARSE_ONLY: i32 = 0x2;
+pub const PARSE_NOALIAS: i32 = 0x4;
+pub const PARSE_VERBOSE: i32 = 0x8;
+pub const PARSE_ONEGROUP: i32 = 0x10;
+
+pub struct CommandEngine {
     pub queue_new: fn() -> Box<dyn WorkQueue>,
     pub queue_append: fn(Option<&ClientRef>, ContextRef) -> ContextWeak,
     pub queue_insert: fn(&ContextRef, ContextRef) -> ContextWeak,
@@ -176,69 +204,59 @@ pub struct Runtime {
     pub report:
         fn(&ContextRef, &mut dyn FnMut(&mut dyn std::io::Write) -> std::io::Result<()>, bool),
     pub guard: fn(&ContextRef, &'static CStr, i32),
-    pub parse_source: fn(&CStr) -> Result<ProgramRef, CString>,
+    pub parse: fn(&[u8], ParseOrigin<'_>) -> Result<ProgramRef, CString>,
     pub parse_argv: fn(&[CString]) -> Result<ProgramRef, CString>,
     pub command_names: fn() -> Vec<&'static CStr>,
-    pub has_command: fn(&ContextRef) -> bool,
-    pub prepare: fn(&ContextRef, u32, Option<&'static CStr>, i32, i32) -> Box<dyn PreparedAction>,
-    pub config_finished: fn() -> bool,
-    pub config_client: fn() -> Option<ClientRef>,
-    pub config_forget: fn(&ClientRef),
-    pub config_start: fn(),
-    pub config_files: fn() -> &'static [CString],
-    pub config_set_files: fn(Vec<CString>),
-    pub config_report_missing: fn(),
-    pub hooks_build: fn(),
-    pub hook_add: fn(&CStr),
-    pub hook_is_event: fn(&CStr) -> i32,
-    pub bindings_init: fn(),
-    pub binding_dispatch: fn(
-        &KeyBindingCommand,
-        Option<&ClientRef>,
-        Option<&ContextRef>,
-        Option<&KeyEvent>,
-        &Target,
-    ) -> ContextWeak,
-    pub client_lost: fn(&ClientRef),
-    pub flush: fn(),
-    pub target_resolve: fn(&mut Target, Option<&ContextRef>, Option<&CStr>, u32, i32) -> i32,
 }
 
-static RUNTIME: std::sync::OnceLock<&'static Runtime> = std::sync::OnceLock::new();
-pub fn install(runtime: &'static Runtime) {
-    let installed = RUNTIME.get_or_init(|| runtime);
+static ENGINE: std::sync::OnceLock<&'static CommandEngine> = std::sync::OnceLock::new();
+pub fn install(engine: &'static CommandEngine) {
+    let installed = ENGINE.get_or_init(|| engine);
     assert!(
-        std::ptr::eq(*installed, runtime),
-        "action runtime already installed"
+        std::ptr::eq(*installed, engine),
+        "command engine already installed"
     );
 }
-pub fn runtime() -> &'static Runtime {
-    RUNTIME.get().expect("action runtime is installed")
+pub fn engine() -> &'static CommandEngine {
+    ENGINE.get().expect("command engine is installed")
 }
 
-pub fn client_lost(client: &ClientRef) {
-    (runtime().client_lost)(client);
-}
-pub fn flush() {
-    (runtime().flush)();
-}
-pub fn build_hooks() {
-    (runtime().hooks_build)();
-}
-pub fn initialize_bindings() {
-    (runtime().bindings_init)();
-}
 pub fn command_names() -> Vec<&'static CStr> {
-    (runtime().command_names)()
+    (engine().command_names)()
 }
 
 pub mod sources {
-    use super::{CStr, CString, ClientRef, ExecutionState, ProgramRef, Rc, queue, runtime};
+    use super::{
+        CStr, CString, ClientRef, ExecutionState, PARSE_ONEGROUP, ParseOrigin, ProgramRef, Rc,
+        engine, queue,
+    };
     pub fn compile(source: &CStr) -> Result<ProgramRef, CString> {
-        (runtime().parse_source)(source)
+        (engine().parse)(
+            source.to_bytes(),
+            ParseOrigin {
+                flags: PARSE_ONEGROUP,
+                ..Default::default()
+            },
+        )
+    }
+    pub fn compile_file(
+        bytes: &[u8],
+        file: &CStr,
+        client: Option<&ClientRef>,
+        flags: i32,
+    ) -> Result<ProgramRef, CString> {
+        (engine().parse)(
+            bytes,
+            ParseOrigin {
+                file: Some(file),
+                line: 1,
+                client,
+                flags,
+            },
+        )
     }
     pub fn compile_argv(argv: &[CString]) -> Result<ProgramRef, CString> {
-        (runtime().parse_argv)(argv)
+        (engine().parse_argv)(argv)
     }
     pub fn submit(
         source: &CStr,
@@ -257,37 +275,6 @@ pub mod sources {
             }
             *error = CString::new(bytes).expect("C string bytes");
         }
-    }
-}
-
-pub mod config {
-    use super::{CString, ClientRef, RUNTIME, runtime};
-    pub fn configuration_finished() -> bool {
-        RUNTIME
-            .get()
-            .is_some_and(|runtime| (runtime.config_finished)())
-    }
-    pub fn configuration_client() -> Option<ClientRef> {
-        RUNTIME.get().and_then(|runtime| (runtime.config_client)())
-    }
-    pub fn forget_configuration_client(client: &ClientRef) {
-        if let Some(runtime) = RUNTIME.get() {
-            (runtime.config_forget)(client);
-        }
-    }
-    pub fn start_configuration() {
-        (runtime().config_start)();
-    }
-    pub fn configuration_files() -> &'static [CString] {
-        RUNTIME
-            .get()
-            .map_or(&[], |runtime| (runtime.config_files)())
-    }
-    pub fn set_configuration_files(files: Vec<CString>) {
-        (runtime().config_set_files)(files);
-    }
-    pub fn report_missing_configuration() {
-        (runtime().config_report_missing)();
     }
 }
 
@@ -311,45 +298,46 @@ pub mod queue {
 
     pub use super::Completion;
     use super::{
-        CStr, Callback, ClientRef, Context, ContextRef, ContextSource, ContextWeak, ExecutionState,
-        ProgramRef, RUNTIME, Rc, RefCell, Target, TaskOutcome, Weak, WorkQueue, key_event, runtime,
+        CStr, Callback, ClientRef, Context, ContextRef, ContextSource, ContextWeak, ENGINE,
+        ExecutionState, ProgramRef, Rc, RefCell, Target, TaskOutcome, Weak, WorkQueue, engine,
+        key_event,
     };
     pub fn new_queue() -> Option<Box<dyn WorkQueue>> {
-        RUNTIME.get().map(|runtime| (runtime.queue_new)())
+        ENGINE.get().map(|engine| (engine.queue_new)())
     }
     pub fn enqueue(client: Option<&ClientRef>, item: ContextRef) -> ContextWeak {
-        (runtime().queue_append)(client, item)
+        (engine().queue_append)(client, item)
     }
     pub fn insert_after(anchor: &dyn ContextSource, item: ContextRef) -> ContextWeak {
-        (runtime().queue_insert)(&anchor.context_ref(), item)
+        (engine().queue_insert)(&anchor.context_ref(), item)
     }
     pub fn program_task(program: &ProgramRef, state: Option<&Rc<ExecutionState>>) -> ContextRef {
-        (runtime().queue_program)(program, state)
+        (engine().queue_program)(program, state)
     }
     pub fn callback(name: &'static CStr, callback: Callback) -> ContextRef {
-        (runtime().queue_callback)(name, callback)
+        (engine().queue_callback)(name, callback)
     }
     pub fn error_task(error: &CStr) -> ContextRef {
-        (runtime().queue_error)(error)
+        (engine().queue_error)(error)
     }
     pub fn drive(client: Option<&ClientRef>) -> u32 {
-        (runtime().queue_drive)(client)
+        (engine().queue_drive)(client)
     }
     pub fn running() -> ContextWeak {
-        (runtime().queue_running)()
+        (engine().queue_running)()
     }
     pub fn wait(item: &dyn ContextSource) -> (Completion, TaskOutcome) {
-        (runtime().queue_wait)(&item.context_ref())
+        (engine().queue_wait)(&item.context_ref())
     }
     pub fn cancel_background() {
-        (runtime().queue_cancel)();
+        (engine().queue_cancel)();
     }
     pub fn print(
         item: &dyn ContextSource,
         write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     ) {
         let mut write = Some(write);
-        (runtime().report)(
+        (engine().report)(
             &item.context_ref(),
             &mut |output| write.take().expect("output is written once")(output),
             false,
@@ -360,14 +348,14 @@ pub mod queue {
         write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     ) {
         let mut write = Some(write);
-        (runtime().report)(
+        (engine().report)(
             &item.context_ref(),
             &mut |output| write.take().expect("output is written once")(output),
             true,
         );
     }
     pub fn guard(item: &dyn ContextSource, prefix: &'static CStr, flags: i32) {
-        (runtime().guard)(&item.context_ref(), prefix, flags);
+        (engine().guard)(&item.context_ref(), prefix, flags);
     }
     pub fn client(item: Option<&Context>) -> Option<ClientRef> {
         item.and_then(|item| item.client.upgrade())
@@ -453,38 +441,7 @@ impl<T: Program + ?Sized> Program for Rc<T> {
     }
 }
 
-pub fn dispatch_binding(
-    binding: KeyBindingCommand,
-    item: Option<&dyn ContextSource>,
-    client: Option<&ClientRef>,
-    event: Option<&key_event>,
-    target: &Target,
-) -> ContextWeak {
-    (runtime().binding_dispatch)(
-        &binding,
-        client,
-        item.map(|item| item.context_ref()).as_ref(),
-        event,
-        target,
-    )
-}
-
 pub use crate::compat::imsg::{unpack_argv, InvalidArgv};
+pub const REPEAT_STATE: i32 = 1;
 pub const CONTROL_REPLY: i32 = 2;
-
-pub fn register_hook_event(name: &CStr) {
-    (runtime().hook_add)(name);
-}
-pub fn is_hook_event(name: &CStr) -> i32 {
-    (runtime().hook_is_event)(name)
-}
-
-pub fn resolve_target(
-    target: &mut Target,
-    item: Option<&ContextRef>,
-    text: Option<&CStr>,
-    kind: u32,
-    flags: i32,
-) -> i32 {
-    (runtime().target_resolve)(target, item, text, kind, flags)
-}
+pub const NO_HOOKS: i32 = 4;

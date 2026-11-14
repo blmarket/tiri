@@ -62,7 +62,7 @@ fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let wp = target.pane_handle();
-    sc.item = crate::runtime::context(item_handle.clone()).downgrade();
+    sc.item = crate::engine::context(item_handle.clone()).downgrade();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.wp0 = std::rc::Rc::downgrade(wp.as_ref().expect("respawn pane"));

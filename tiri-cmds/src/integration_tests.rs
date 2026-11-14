@@ -117,3 +117,21 @@ fn scripting_attaches_to_a_client_created_by_core_before_initialization() {
     assert_eq!(cmdq_next(Some(&client)), 1);
     assert!(ran.get());
 }
+
+#[test]
+fn cfg_done_resumes_the_waiting_startup_client() {
+    crate::initialize();
+    tiri_core::cfg::cfg_wait_tests::cfg_done_resumes_the_waiting_startup_client();
+}
+
+#[test]
+fn the_startup_client_does_not_wait_for_a_finished_config() {
+    crate::initialize();
+    tiri_core::cfg::cfg_wait_tests::the_startup_client_does_not_wait_for_a_finished_config();
+}
+
+#[test]
+fn a_freed_startup_client_is_not_retained_and_cfg_done_skips_it() {
+    crate::initialize();
+    tiri_core::cfg::cfg_wait_tests::a_freed_startup_client_is_not_retained_and_cfg_done_skips_it();
+}

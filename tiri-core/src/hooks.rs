@@ -1,45 +1,45 @@
-use crate::cmd::cmd_list_print_cstring;
-use crate::cmd::parse::cmd_parse_from_string;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{
-    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_flags, cmdq_insert_after,
-    cmdq_running,
+use crate::actions::queue::{
+    enqueue, event as context_event, execution_state, insert_after, new_state, program_task,
+    report_error, running, target as context_target,
 };
-use crate::shared::command::CMDQ_STATE_NOHOOKS;
-use crate::shared::command::cmd_list;
-use std::ffi::{CStr, CString};
-use tiri_core::actions::ExecutionState as cmdq_state;
-use tiri_core::actions::queue::{event as cmdq_get_event, new_state as cmdq_new_state};
-use tiri_core::events::{events_add_sink, events_fire};
-use tiri_core::events_payload::{
+use crate::actions::sources::compile;
+use crate::actions::{
+    ContextSource, ContextWeak, ExecutionState, NO_HOOKS, ProgramRef, ProgramSource, Target,
+};
+use crate::events::{events_add_sink, events_fire};
+use crate::events_payload::{
     event_payload_add_formats, event_payload_create, event_payload_get_client,
     event_payload_get_identity, event_payload_get_target, event_payload_set_client,
     event_payload_set_identity, event_payload_set_int, event_payload_set_pane,
     event_payload_set_session, event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
-use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::{
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create, format_create_defaults, format_expand_cstring, format_log_debug,
     format_merge,
 };
-use tiri_core::log::{log_cstr, log_debug, log_get_level};
-use tiri_core::monitor::{
-    monitor_add, monitor_callback, monitor_change, monitor_create_session_owned, monitor_type,
+use crate::log::{log_bytes, log_cstr, log_debug, log_get_level};
+use crate::monitor::{
+    MonitorSubscription, monitor_add, monitor_callback, monitor_change,
+    monitor_create_session_owned, monitor_type,
 };
-use tiri_core::options::OPTIONS_TABLE_IS_HOOK;
-use tiri_core::options::options_table;
-use tiri_core::options::{OptionsScope, options_hook_fired, options_search, options_set_string};
-use tiri_core::shared::client::ClientWeak;
-use tiri_core::shared::events::{EventSinkId, event_payload, events_callback};
-use tiri_core::shared::format::format_tree;
-use tiri_core::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use tiri_core::shared::pane::window_pane;
-use tiri_core::shared::session::SessionRef;
-use tiri_core::shared::target::Target as cmd_find_state;
-use tiri_core::shared::window::{WindowRef, WindowWeak};
-use tiri_core::window::WindowPane;
-use tiri_core::winlink::winlink_window;
+use crate::options::{
+    OPTIONS_TABLE_IS_HOOK, OptionsScope, options_hook_fired, options_search, options_set_string,
+    options_table,
+};
+use crate::shared::client::ClientWeak;
+use crate::shared::events::{
+    EventPayloadIdentity, EventSinkId, event_payload, events_callback,
+};
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE, format_tree};
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::window::{WindowRef, WindowWeak};
+use crate::window::WindowPane;
+use crate::winlink::winlink_window;
+use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 #[derive(Default)]
 struct HooksEvents {
@@ -61,6 +61,7 @@ impl HooksEvents {
         true
     }
 }
+
 #[repr(C)]
 pub struct hooks_data<'a> {
     pub name: &'a CStr,
@@ -68,45 +69,42 @@ pub struct hooks_data<'a> {
     pub client: ClientWeak,
     pub expand: ::core::ffi::c_int,
 }
-use tiri_core::monitor::MonitorSubscription as hooks_monitor;
 
 thread_local! {
-    static CStrings: std::cell::RefCell<HooksEvents> = const {
+    static HOOK_EVENTS: std::cell::RefCell<HooksEvents> = const {
         std::cell::RefCell::new(HooksEvents { events: Vec::new() })
     };
 }
+
 fn hooks_insert_one(
-    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    item: Option<&dyn ContextSource>,
     hd: &hooks_data,
-    commands: Option<&dyn tiri_core::actions::ProgramSource>,
-    state: &std::rc::Rc<cmdq_state>,
-) -> std::rc::Weak<cmdq_item> {
+    commands: Option<&dyn ProgramSource>,
+    state: &Rc<ExecutionState>,
+) -> ContextWeak {
     let Some(commands) = commands else {
-        return item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+        return item.map_or_else(ContextWeak::new, ContextSource::downgrade);
     };
     let commands = commands.program_ref();
-    if log_get_level() != 0 as ::core::ffi::c_int {
-        let s = cmd_list_print_cstring(&commands, 0 as ::core::ffi::c_int);
+    if log_get_level() != 0 {
+        let s = commands.text(0);
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",
-            tiri_core::log::log_bytes(hd.name.to_bytes()),
+            log_bytes(hd.name.to_bytes()),
             log_cstr(&s)
         ));
     }
-    let new_item_allocation = cmdq_get_command(&commands, Some(state));
-    if let Some(item) = item_handle {
-        return cmdq_insert_after(item, new_item_allocation);
+    let task = program_task(&commands, Some(state));
+    if let Some(item) = item {
+        return insert_after(item, task);
     }
-    cmdq_append(None, new_item_allocation)
+    enqueue(None, task)
 }
-fn hooks_parse(
-    hd: &mut hooks_data,
-    fs: &cmd_find_state,
-    value: &CStr,
-) -> Result<std::rc::Rc<cmd_list>, CString> {
+
+fn hooks_parse(hd: &mut hooks_data, fs: &Target, value: &CStr) -> Result<ProgramRef, CString> {
     if hd.expand == 0 {
-        return cmd_parse_from_string(value, None);
+        return compile(value);
     }
     let client_owner = hd.client.upgrade();
     let mut ft_owner = format_create_defaults(
@@ -120,22 +118,23 @@ fn hooks_parse(
     format_merge(ft, &hd.formats);
     let expanded = format_expand_cstring(ft, value);
     drop(ft_owner);
-    let pr = cmd_parse_from_string(expanded.as_c_str(), None);
+    let pr = compile(expanded.as_c_str());
     drop(client_owner);
     pr
 }
+
 fn hooks_find(
     oo: Option<&OptionsScope>,
     name: &CStr,
-    target: &cmd_find_state,
-) -> Option<(OptionsScope, cmd_find_state)> {
-    let mut fs = cmd_find_state::default();
+    target: &Target,
+) -> Option<(OptionsScope, Target)> {
+    let mut fs = Target::default();
     log_debug(format_args!(
         "hooks_insert: inserting hook {}",
-        tiri_core::log::log_bytes(name.to_bytes())
+        log_bytes(name.to_bytes())
     ));
     if target.is_empty() || !target.is_valid() {
-        fs = cmd_find_state::from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
+        fs = Target::from_nothing(0).unwrap_or_else(|| Target::clear_state(0));
     } else {
         fs.copy_from(target);
     }
@@ -161,7 +160,7 @@ fn hooks_find(
     let Some(source) = source else {
         log_debug(format_args!(
             "hooks_insert: hook {} not found",
-            tiri_core::log::log_bytes(name.to_bytes())
+            log_bytes(name.to_bytes())
         ));
         return None;
     };
@@ -177,17 +176,18 @@ fn hooks_find(
         .expect("resolved hook");
     runnable.then_some((source, fs))
 }
+
 fn hooks_insert(
-    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    item: Option<&dyn ContextSource>,
     hd: &mut hooks_data,
     source: OptionsScope,
-    fs: cmd_find_state,
+    fs: Target,
 ) {
-    let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    let mut after = item.map_or_else(ContextWeak::new, ContextSource::downgrade);
     let name = hd.name;
-    let event = item_handle.map(|item| cmdq_get_event(&item.borrow()));
-    let state = cmdq_new_state(Some(&fs), event.as_ref(), CMDQ_STATE_NOHOOKS);
-    cmdq_add_formats(&state, &hd.formats);
+    let event = item.map(|item| context_event(&item.borrow()));
+    let state = new_state(Some(&fs), event.as_ref(), NO_HOOKS);
+    state.add_formats(&hd.formats);
     if name.to_bytes().starts_with(b"@") {
         let value = source
             .with_entry(name, |entry| {
@@ -198,11 +198,17 @@ fn hooks_insert(
         match pr {
             Err(error) => log_debug(format_args!(
                 "hooks_insert: can't parse hook {}: {}",
-                tiri_core::log::log_bytes(name.to_bytes()),
+                log_bytes(name.to_bytes()),
                 log_cstr(&error)
             )),
             Ok(commands) => {
-                hooks_insert_one(after.upgrade().as_ref(), hd, Some(&commands), &state);
+                let anchor = after.upgrade();
+                hooks_insert_one(
+                    anchor.as_ref().map(|item| item as &dyn ContextSource),
+                    hd,
+                    Some(&commands),
+                    &state,
+                );
             }
         }
     } else {
@@ -236,13 +242,18 @@ fn hooks_insert(
                 let pr = hooks_parse(hd, &fs, &value);
                 match pr {
                     Err(error) => {
-                        cmdq_error(item_handle.expect("hook command item"), |out| {
+                        report_error(item.expect("hook command item"), |out| {
                             write_cstr(out, error.as_c_str())
                         });
                     }
                     Ok(commands) => {
-                        after =
-                            hooks_insert_one(after.upgrade().as_ref(), hd, Some(&commands), &state);
+                        let anchor = after.upgrade();
+                        after = hooks_insert_one(
+                            anchor.as_ref().map(|item| item as &dyn ContextSource),
+                            hd,
+                            Some(&commands),
+                            &state,
+                        );
                     }
                 }
             } else {
@@ -258,40 +269,37 @@ fn hooks_insert(
                 let Some(commands) = commands else {
                     break;
                 };
+                let anchor = after.upgrade();
                 after = hooks_insert_one(
-                    after.upgrade().as_ref(),
+                    anchor.as_ref().map(|item| item as &dyn ContextSource),
                     hd,
                     commands
                         .as_ref()
-                        .map(|commands| commands as &dyn tiri_core::actions::ProgramSource),
+                        .map(|commands| commands as &dyn ProgramSource),
                     &state,
                 );
             }
         }
     }
 }
+
 fn hooks_insert_event(
-    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    item: Option<&dyn ContextSource>,
     name: &CStr,
     ep: &event_payload,
     oo: Option<OptionsScope>,
     expand: ::core::ffi::c_int,
 ) {
-    if item_handle.is_some_and(|item| cmdq_get_flags(&item.borrow()) & CMDQ_STATE_NOHOOKS != 0) {
+    if item.is_some_and(|item| execution_state(&item.borrow()).flags & NO_HOOKS != 0) {
         return;
     }
-    let mut target = cmd_find_state::default();
+    let mut target = Target::default();
     event_payload_get_target(ep, &mut target);
     let Some((source, fs)) = hooks_find(oo.as_ref(), name, &target) else {
         return;
     };
     let c = event_payload_get_client(ep);
-    let mut formats = format_create(
-        c,
-        item_handle.map(|item| item as &dyn tiri_core::actions::ContextSource),
-        FORMAT_NONE,
-        FORMAT_NOJOBS,
-    );
+    let mut formats = format_create(c, item, FORMAT_NONE, FORMAT_NOJOBS);
     let ft = &mut *formats;
     event_payload_add_formats(ep, ft, Some(c"hook_"));
     format_add(ft, c"hook", |out| write_cstr(out, &*name));
@@ -299,62 +307,59 @@ fn hooks_insert_event(
     let mut hd = hooks_data {
         name,
         formats,
-        client: c.map(std::rc::Rc::downgrade).unwrap_or_default(),
+        client: c.map(Rc::downgrade).unwrap_or_default(),
         expand,
     };
-    hooks_insert(item_handle, &mut hd, source, fs);
+    hooks_insert(item, &mut hd, source, fs);
     drop(hd.formats);
 }
-fn CString_cb(name: &CStr, payload: &mut event_payload) {
+
+fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     let ep = &*payload;
     if matches!(
         event_payload_get_identity(ep, c"_hooks_monitor"),
-        Some(tiri_core::shared::events::EventPayloadIdentity::HookMonitor(_))
+        Some(EventPayloadIdentity::HookMonitor(_))
     ) {
         return;
     }
-    if let Some(tiri_core::shared::events::EventPayloadIdentity::Operation(observer)) =
+    if let Some(EventPayloadIdentity::Operation(observer)) =
         event_payload_get_identity(ep, c"_cmdq_item")
     {
         let Some(item_owner) = observer.upgrade() else {
             return;
         };
-        hooks_insert_event(
-            Some(&crate::runtime::native(&item_owner)),
-            name,
-            ep,
-            None,
-            0 as ::core::ffi::c_int,
-        );
+        hooks_insert_event(Some(&item_owner), name, ep, None, 0);
         return;
     }
-    let running = cmdq_running().upgrade();
-    if running
+    let active = running().upgrade();
+    if active
         .as_ref()
-        .is_none_or(|item| cmdq_get_flags(&item.borrow()) & CMDQ_STATE_NOHOOKS == 0)
+        .is_none_or(|item| execution_state(&item.borrow()).flags & NO_HOOKS == 0)
     {
-        hooks_insert_event(None, name, ep, None, 0 as ::core::ffi::c_int);
+        hooks_insert_event(None, name, ep, None, 0);
     }
 }
+
 pub fn hooks_add_event(name: &CStr) {
-    let event_name = name;
-    if CStrings.with_borrow(|events| events.contains(event_name)) {
+    if HOOK_EVENTS.with_borrow(|events| events.contains(name)) {
         return;
     }
+    events_add_sink(name, events_callback(hooks_event_cb));
+    HOOK_EVENTS.with_borrow_mut(|events| events.insert(name.to_owned()));
+}
 
-    events_add_sink(event_name, events_callback(CString_cb));
-    CStrings.with_borrow_mut(|events| events.insert(event_name.to_owned()));
-}
 pub fn hooks_is_event(name: &CStr) -> ::core::ffi::c_int {
-    CStrings.with_borrow(|events| events.contains(name)) as ::core::ffi::c_int
+    HOOK_EVENTS.with_borrow(|events| events.contains(name)) as ::core::ffi::c_int
 }
+
 pub fn hooks_valid_event_name(name: &CStr) -> ::core::ffi::c_int {
     if name.to_bytes().first() == Some(&b'@') {
-        return 1 as ::core::ffi::c_int;
+        return 1;
     }
     options_search(name).is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_HOOK != 0)
         as ::core::ffi::c_int
 }
+
 pub fn hooks_build_events() {
     for oe in options_table
         .iter()
@@ -365,13 +370,11 @@ pub fn hooks_build_events() {
         }
     }
 }
-pub fn hooks_run(item_handle: Option<&std::rc::Rc<cmdq_item>>, name: &CStr) {
+
+pub fn hooks_run(item: &dyn ContextSource, name: &CStr) {
     let (target_state, client) = {
-        let item = item_handle.expect("command queue item").borrow();
-        (
-            tiri_core::actions::queue::target(&item).clone(),
-            item.client.clone(),
-        )
+        let context = item.borrow();
+        (context_target(&context).clone(), context.client.clone())
     };
     let Some((source, fs)) = hooks_find(None, name, &target_state) else {
         return;
@@ -384,7 +387,7 @@ pub fn hooks_run(item_handle: Option<&std::rc::Rc<cmdq_item>>, name: &CStr) {
     };
     format_add(&mut hd.formats, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(&mut hd.formats, c"hooks_run");
-    hooks_insert(item_handle, &mut hd, source, fs);
+    hooks_insert(Some(item), &mut hd, source, fs);
     drop(hd.formats);
 }
 
@@ -394,6 +397,7 @@ pub fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
         .flatten();
     drop(old);
 }
+
 fn hooks_monitor_hook_cb(
     name: &CStr,
     payload: &mut event_payload,
@@ -401,7 +405,7 @@ fn hooks_monitor_hook_cb(
     generation: usize,
 ) {
     if !matches!(event_payload_get_identity(payload, c"_hooks_monitor"),
-        Some(tiri_core::shared::events::EventPayloadIdentity::HookMonitor(id)) if *id == generation)
+        Some(EventPayloadIdentity::HookMonitor(id)) if *id == generation)
     {
         return;
     }
@@ -414,35 +418,29 @@ fn hooks_monitor_hook_cb(
     {
         return;
     }
+    let active = running().upgrade();
     hooks_insert_event(
-        cmdq_running().upgrade().as_ref(),
+        active.as_ref().map(|item| item as &dyn ContextSource),
         name,
         payload,
         Some(scope.clone()),
         1,
     );
 }
-fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generation: usize) {
+
+fn hooks_monitor_cb(change: &monitor_change, fallback: &Target, generation: usize) {
     let wl = change.wl.clone();
     let client_owner = change.c.upgrade();
     let session_owner = change.s.upgrade();
     let s = session_owner.clone();
-    let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&change.wp);
-    let mut fs: cmd_find_state = cmd_find_state {
-        flags: 0,
-        s: Default::default(),
-        wl: Default::default(),
-        w: Default::default(),
-        wp: Default::default(),
-        idx: 0,
-    };
+    let pane_owner = Rc::<std::cell::RefCell<window_pane>>::from_observer(&change.wp);
     let mut ep = event_payload_create();
     event_payload_set_identity(
         &mut ep,
         c"_hooks_monitor",
-        tiri_core::shared::events::EventPayloadIdentity::HookMonitor(generation),
+        EventPayloadIdentity::HookMonitor(generation),
     );
-    fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
+    let mut fs = Target::clear_state(0);
     if let Some(pane) = pane_owner.as_ref().filter(|pane| {
         wl.is_alive()
             && pane.window_observer().ptr_eq(
@@ -450,17 +448,13 @@ fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generati
                     .map_or_else(WindowWeak::new, |window| WindowRef::downgrade(&window)),
             )
     }) {
-        fs = cmd_find_state::from_winlink_pane(wl.clone(), pane, 0 as ::core::ffi::c_int);
+        fs = Target::from_winlink_pane(wl.clone(), pane, 0);
     } else if wl.is_alive() {
-        fs = cmd_find_state::from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
+        fs = Target::from_winlink(wl.clone(), 0);
     } else if let Some(pane_owner_value) = pane_owner.as_ref() {
-        fs = cmd_find_state::from_pane(pane_owner_value, 0 as ::core::ffi::c_int)
-            .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
-    } else if !s.is_none() {
-        fs = cmd_find_state::from_session(
-            &s.clone().expect("live session"),
-            0 as ::core::ffi::c_int,
-        );
+        fs = Target::from_pane(pane_owner_value, 0).unwrap_or_else(|| Target::clear_state(0));
+    } else if let Some(session) = s.as_ref() {
+        fs = Target::from_session(session, 0);
     } else {
         fs.copy_from(fallback);
     }
@@ -475,8 +469,8 @@ fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generati
     if let Some(client) = client_owner.as_ref() {
         event_payload_set_client(&mut ep, client.clone());
     }
-    if !s.is_none() {
-        event_payload_set_session(&mut ep, c"session", s.clone().expect("live session"));
+    if let Some(session) = s.as_ref() {
+        event_payload_set_session(&mut ep, c"session", session.clone());
     }
     if wl.is_alive() {
         if s.is_none() {
@@ -514,6 +508,7 @@ fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generati
     drop(session_owner);
     drop(client_owner);
 }
+
 pub fn hooks_monitor_add(
     scope: &OptionsScope,
     name: &CStr,
@@ -521,7 +516,7 @@ pub fn hooks_monitor_add(
     id: ::core::ffi::c_int,
     format: &CStr,
     flags: ::core::ffi::c_int,
-    fs: &cmd_find_state,
+    fs: &Target,
     s_owner: Option<&SessionRef>,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -535,10 +530,10 @@ pub fn hooks_monitor_add(
     let generation = NEXT_MONITOR
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
         .expect("hook monitor identity exhausted");
-    let mut fallback = cmd_find_state::default();
+    let mut fallback = Target::default();
     fallback.copy_from(fs);
     let callback_scope = scope.clone();
-    let mut owner = Box::new(hooks_monitor {
+    let mut owner = Box::new(MonitorSubscription {
         generation,
         set: Some(monitor_create_session_owned(
             s_owner,

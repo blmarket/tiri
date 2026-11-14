@@ -1,7 +1,6 @@
 use crate::cmd::queue::cmdq_error;
 use crate::cmd::queue::cmdq_item;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::key_bindings::key_bindings_dispatch;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -10,7 +9,7 @@ use tiri_core::actions::queue::{event as cmdq_get_event, target_client as cmdq_g
 use tiri_core::arguments::{
     args, args_count, args_has, args_parse, args_string, args_strtonum_and_expand_result,
 };
-use tiri_core::bindings::{key_bindings_get, key_bindings_get_table};
+use tiri_core::bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::key_string::key_string_parse_cstr;
 use tiri_core::options::options_get_number;
@@ -97,7 +96,7 @@ fn cmd_send_keys_inject_key(
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let pane = target.pane_handle().expect("key target pane");
     let mut wme: tiri_core::refbox::Weak<window_mode_entry> = tiri_core::refbox::Weak::new();
-    let mut new_after = crate::runtime::weak(after.clone());
+    let mut new_after = crate::engine::weak(after.clone());
     if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_none() {
             return std::rc::Rc::downgrade(item_handle);
@@ -130,7 +129,7 @@ fn cmd_send_keys_inject_key(
             != 0 as ::core::ffi::c_int
         {
             return new_after.upgrade().map_or_else(std::rc::Weak::new, |item| {
-                std::rc::Rc::downgrade(&crate::runtime::native(&item))
+                std::rc::Rc::downgrade(&crate::engine::native(&item))
             });
         }
         return std::rc::Rc::downgrade(item_handle);
@@ -165,7 +164,20 @@ fn cmd_send_keys_inject_key(
         key_bindings_get_table(key_table(wme), 1 as ::core::ffi::c_int).expect("created key table");
     let command = key_bindings_get(&table.borrow(), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
-        after = key_bindings_dispatch(command, after.upgrade().as_ref(), tc.as_ref(), None, target);
+        let anchor = after.upgrade();
+        after = key_bindings_dispatch(
+            command,
+            anchor
+                .as_ref()
+                .map(|item| item as &dyn tiri_core::actions::ContextSource),
+            tc.as_ref(),
+            None,
+            target,
+        )
+        .upgrade()
+        .map_or_else(std::rc::Weak::new, |item| {
+            std::rc::Rc::downgrade(&crate::engine::native(&item))
+        });
     }
     after
 }

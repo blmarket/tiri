@@ -59,13 +59,16 @@ pub struct window_panes_source {
     pub source_window: u_int,
 }
 
+pub type PanesAction =
+    Box<dyn FnMut(&Vec<CString>) -> Result<crate::actions::ProgramRef, Option<CString>>>;
+
 #[repr(C)]
 pub struct window_panes_modedata {
     pub source: window_panes_source,
     pub screen: screen,
     preview: Option<Box<screen>>,
     pub timer: Option<Timer>,
-    pub state: Option<Box<dyn crate::actions::PreparedAction>>,
+    pub action: Option<PanesAction>,
     pub delay: u_int,
     pub ignore_keys: ::core::ffi::c_int,
     areas: Vec<window_panes_area>,
@@ -81,7 +84,7 @@ pub struct window_panes_area {
 }
 
 pub const WINDOW_MODE_FILL_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub static window_panes_mode: window_mode = {
+static window_panes_mode: window_mode = {
     window_mode {
         name: c"panes-mode",
         default_format: None,
@@ -103,6 +106,18 @@ pub static window_panes_mode: window_mode = {
         display_screen: Some(window_panes_get_screen),
     }
 };
+pub fn window_panes_enter(
+    pane: &Rc<RefCell<window_pane>>,
+    item: &dyn crate::actions::ContextSource,
+    target: &Target,
+    args: &args,
+    prepare: impl FnOnce() -> PanesAction,
+) {
+    if pane.set_mode(None, &window_panes_mode, Some(item), Some(target), Some(args)) == 0 {
+        let wme = pane.mode_entry();
+        window_panes_data(&wme).borrow_mut().action = Some(prepare());
+    }
+}
 fn window_panes_session(source: &window_panes_source) -> Option<SessionRef> {
     let owner = source.session.upgrade()?;
     if !owner.is_registered() {
@@ -772,17 +787,13 @@ fn window_panes_init(
     let Some(item_owner) = item_handle else {
         return false;
     };
-    let (source, target, has_cmd) = {
+    let (source, target) = {
         let item = item_owner.borrow();
         (
             crate::actions::queue::source(&item).clone(),
             crate::actions::queue::target(&item).clone(),
-            (crate::actions::runtime().has_command)(&item_owner.context_ref()),
         )
     };
-    if !has_cmd {
-        return false;
-    }
     s = target.session_handle();
     let args = args.expect("mode arguments");
     if args_has(args, 'd' as i32 as u_char) == 0 {
@@ -825,13 +836,7 @@ fn window_panes_init(
         screen: screen::empty(),
         preview: None,
         timer: Default::default(),
-        state: Some((crate::actions::runtime().prepare)(
-            &(item_handle).expect("command queue item").context_ref(),
-            0 as u_int,
-            Some(c"select-pane -t \"%%%\""),
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        )),
+        action: None,
         delay,
         ignore_keys: args_has(args, 'N' as i32 as u_char),
         areas: Vec::new(),
@@ -918,12 +923,7 @@ fn window_panes_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, 
 fn window_panes_run_command(data: &mut window_panes_modedata, client_owner: &ClientRef, pane: u32) {
     let new_item_allocation;
     let expanded = CString::new(format!("%{}", pane)).expect("pane ID contains NUL");
-    match data
-        .state
-        .as_deref_mut()
-        .expect("prepared action")
-        .materialize(&vec![expanded])
-    {
+    match (data.action.as_deref_mut().expect("prepared action"))(&vec![expanded]) {
         Err(error) => {
             enqueue(
                 Some(client_owner),

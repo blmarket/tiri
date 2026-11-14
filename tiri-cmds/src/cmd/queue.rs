@@ -8,7 +8,7 @@ use tiri_core::actions::queue::{
 mod command;
 
 use self::command::CommandRef;
-use crate::cfg::{cfg_add_cause, cfg_finished};
+use tiri_core::cfg::{cfg_add_cause, cfg_finished};
 use crate::cmd::find::cmd_find_client;
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_source, cmd_print_cstring};
 use crate::shared::command::{
@@ -30,7 +30,8 @@ use tiri_core::events_payload::{
 use tiri_core::file::file_error;
 use tiri_core::format::bytes::format_message_with;
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::{format_add_cstr, format_create, format_merge};
+#[cfg(test)]
+use tiri_core::format::format_create;
 use tiri_core::key_string::key_string_format;
 use tiri_core::log::{log_cstr, log_debug, log_get_level};
 use tiri_core::reactor::{evbuffer_add_formatted, evbuffer_new};
@@ -40,8 +41,8 @@ use tiri_core::shared::abi::{__uid_t, uid_t};
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use tiri_core::shared::client::{ClientRef, ClientWeak};
+#[cfg(test)]
 use tiri_core::shared::format::FORMAT_NONE;
-use tiri_core::shared::format::format_tree;
 use tiri_core::shared::key::{KEYC_NONE, key_code};
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::target::Target as cmd_find_state;
@@ -347,19 +348,6 @@ pub fn cmdq_copy_state(
     }
     let current = state.current_snapshot();
     cmdq_new_state(Some(&current), Some(&event), state.flags)
-}
-/// Copy a literal key and value into the command queue state's formats.
-pub fn cmdq_add_format(state: &cmdq_state, key: &CStr, value: &CStr) {
-    let mut formats = state.formats.borrow_mut();
-    let formats = formats
-        .get_or_insert_with(|| format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int));
-    format_add_cstr(formats, key, value);
-}
-pub fn cmdq_add_formats(state: &cmdq_state, ft: &format_tree) {
-    let mut formats = state.formats.borrow_mut();
-    let formats = formats
-        .get_or_insert_with(|| format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int));
-    format_merge(formats, ft);
 }
 
 /// Consume a detached chain, moving its owners into the queue in order.

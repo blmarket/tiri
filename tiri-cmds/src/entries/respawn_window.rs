@@ -65,7 +65,7 @@ fn cmd_respawn_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
     let mut _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
-    sc.item = crate::runtime::context(item_handle.clone()).downgrade();
+    sc.item = crate::engine::context(item_handle.clone()).downgrade();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.tc = tc_owner

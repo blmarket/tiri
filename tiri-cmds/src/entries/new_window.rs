@@ -199,7 +199,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             idx = target.idx;
         }
     }
-    sc.item = crate::runtime::context(item_handle.clone()).downgrade();
+    sc.item = crate::engine::context(item_handle.clone()).downgrade();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.tc = tc_owner
         .as_ref()

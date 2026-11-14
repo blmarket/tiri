@@ -274,9 +274,6 @@ pub(crate) fn cmd_list_print_cstring(
 ) -> CString {
     program.text(flags & !tiri_core::actions::PROGRAM_ARGUMENT)
 }
-pub fn cmd_list_all_have(program: &dyn tiri_core::actions::Program) -> i32 {
-    program.read_only() as i32
-}
 pub fn cmd_list_any_have(program: &dyn tiri_core::actions::Program) -> i32 {
     program.starts_server() as i32
 }

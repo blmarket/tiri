@@ -501,7 +501,7 @@ fn cmd_display_popup_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOu
             xoff: x as i32,
             yoff: y as i32,
         }),
-        item: crate::runtime::context(item.clone()).downgrade(),
+        item: crate::engine::context(item.clone()).downgrade(),
         s: Rc::downgrade(&session),
         wl: target.winlink_handle(),
         tc: Rc::downgrade(&client),

@@ -1,7 +1,7 @@
 use crate::cmd::queue::cmdq_error;
 use crate::cmd::queue::cmdq_item;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
+use tiri_core::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -315,7 +315,7 @@ fn cmd_set_option_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     let argument =
         format_single_from_target_cstring(item_handle, args_string(args, 0).unwrap_or(c""));
     if set_hook && args_has(args, b'R') != 0 {
-        hooks_run(Some(item_handle), &argument);
+        hooks_run(item_handle, &argument);
         return CmdOutcome::Normal;
     }
     let parsed = match options_match_owned(&argument) {

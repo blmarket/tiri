@@ -1,7 +1,7 @@
 use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::hooks::hooks_is_event;
+use tiri_core::hooks::hooks_is_event;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};

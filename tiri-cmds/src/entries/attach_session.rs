@@ -1,4 +1,4 @@
-use crate::cfg::{cfg_finished, cfg_show_causes};
+use tiri_core::cfg::{cfg_finished, cfg_show_causes};
 use crate::cmd::cmd_get_args;
 use crate::cmd::find::TargetLookup as _;
 use crate::cmd::queue::{cmdq_error, cmdq_get_flags};

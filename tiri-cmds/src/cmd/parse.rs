@@ -525,7 +525,7 @@ pub fn cmd_parse_from_arguments(
             ParseValue::Commands(commands) => {
                 cmd.arguments
                     .push_back(Box::new(cmd_parse_argument::ParsedCommands(
-                        crate::runtime::program(&commands.program_ref()),
+                        crate::engine::program(&commands.program_ref()),
                     )));
             }
         }
