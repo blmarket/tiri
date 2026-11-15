@@ -1578,40 +1578,6 @@ mod suspend_tests {
     }
 
     #[test]
-    fn a_wake_from_another_queues_dispatch_runs_the_body_before_that_exec_returns() {
-        let trace: Trace = Default::default();
-        let (tx, rx) = channel::<()>();
-        let body = trace.clone();
-        let head = append_suspended(c"global head", async move {
-            assert_eq!(rx.await, Some(()));
-            body.borrow_mut().push("body");
-        });
-        let next = append_recording(c"global next", &trace, "next", CmdOutcome::Normal);
-        assert_eq!(cmdq_next(None), 0);
-        let owner = crate::test_support::clients::with_queue();
-        let exec = trace.clone();
-        let sender = cmdq_append(
-            Some(&owner),
-            cmdq_get_callback_owned(
-                c"client sender",
-                Some(Box::new(move |_| {
-                    tx.send(()).unwrap();
-                    exec.borrow_mut().push("sent");
-                    CmdOutcome::Normal
-                })),
-            ),
-        );
-        assert_eq!(cmdq_next(Some(&owner)), 1);
-        assert!(sender.upgrade().is_none());
-        assert_eq!(*trace.borrow(), ["body", "sent"]);
-        assert!(head.upgrade().is_some());
-        assert_eq!(cmdq_next(None), 2);
-        assert!(head.upgrade().is_none());
-        assert!(next.upgrade().is_none());
-        assert_eq!(*trace.borrow(), ["body", "sent", "next"]);
-    }
-
-    #[test]
     fn send_after_runtime_shutdown_runs_the_body_and_leaves_dispatch_pending() {
         use tiri_core::tiri_rt::Runtime as _;
         let runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
@@ -1640,22 +1606,21 @@ mod suspend_tests {
     }
 }
 
-#[cfg(test)]
-mod wait_tests {
+#[cfg(feature = "test-support")]
+pub mod client_queue_tests {
     use super::{
         CStr, ClientRef, CmdqWaiter, cmdq_append, cmdq_defer, cmdq_get_callback_owned,
         cmdq_get_client, cmdq_item, cmdq_next, cmdq_wait,
     };
-    use crate::test_support::clients;
     use std::cell::RefCell;
     use std::rc::Rc;
     use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::server_client::queue_test_clients::{attach, return_value};
     use tiri_core::session::session_new_for_test;
 
     type Slot = Rc<RefCell<Option<CmdqWaiter>>>;
 
-    /// A callback item that waits and leaves its waiter in `slot`.
     fn waiting(name: &'static CStr, slot: &Slot) -> std::rc::Rc<cmdq_item> {
         let slot = slot.clone();
         cmdq_get_callback_owned(
@@ -1668,8 +1633,6 @@ mod wait_tests {
         )
     }
 
-    /// Run `exec` with `lent` lent to a clientless item, as cmdq_fire_command
-    /// does around a command's exec.
     fn with_lent_client(
         item: &std::rc::Rc<cmdq_item>,
         lent: &ClientRef,
@@ -1687,8 +1650,58 @@ mod wait_tests {
         retval
     }
 
-    #[test]
-    fn a_clientless_item_records_no_client_while_exec_sees_the_lent_one() {
+    pub fn a_wake_from_another_queues_dispatch_runs_the_body_before_that_exec_returns() {
+        let trace: Rc<RefCell<Vec<&'static str>>> = Default::default();
+        let (tx, rx) = tiri_core::tiri_rt::oneshot::channel::<()>();
+        let body = trace.clone();
+        let head = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"global head",
+                Some(Box::new(move |_| {
+                    CmdOutcome::Suspend(Box::pin(async move {
+                        assert_eq!(rx.await, Some(()));
+                        body.borrow_mut().push("body");
+                    }))
+                })),
+            ),
+        );
+        let next_trace = trace.clone();
+        let next = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"global next",
+                Some(Box::new(move |_| {
+                    next_trace.borrow_mut().push("next");
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(None), 0);
+        let owner = clients::with_queue();
+        let exec = trace.clone();
+        let sender = cmdq_append(
+            Some(&owner),
+            cmdq_get_callback_owned(
+                c"client sender",
+                Some(Box::new(move |_| {
+                    tx.send(()).unwrap();
+                    exec.borrow_mut().push("sent");
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(sender.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["body", "sent"]);
+        assert!(head.upgrade().is_some());
+        assert_eq!(cmdq_next(None), 2);
+        assert!(head.upgrade().is_none());
+        assert!(next.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["body", "sent", "next"]);
+    }
+
+    pub fn a_clientless_item_records_no_client_while_exec_sees_the_lent_one() {
         let lent = clients::with_queue();
         let slot: Slot = Default::default();
         let (stored, substitute) = (slot.clone(), lent.clone());
@@ -1716,8 +1729,7 @@ mod wait_tests {
         assert!(head.upgrade().is_none());
     }
 
-    #[test]
-    fn a_client_queue_item_records_its_client() {
+    pub fn a_client_queue_item_records_its_client() {
         let owner = clients::with_queue();
         let slot: Slot = Default::default();
         let head = cmdq_append(Some(&owner), waiting(c"client waiter", &slot));
@@ -1729,8 +1741,7 @@ mod wait_tests {
         assert!(head.upgrade().is_none());
     }
 
-    #[test]
-    fn a_deferred_item_from_a_lent_item_records_the_lent_client() {
+    pub fn a_deferred_item_from_a_lent_item_records_the_lent_client() {
         let lent = clients::with_queue();
         let slot: Slot = Default::default();
         let (inserted, substitute) = (slot.clone(), lent.clone());
@@ -1754,8 +1765,7 @@ mod wait_tests {
         assert_eq!(cmdq_next(None), 1);
     }
 
-    #[test]
-    fn finish_reports_the_status_only_to_a_client_sessionless_at_finish() {
+    pub fn finish_reports_the_status_only_to_a_client_sessionless_at_finish() {
         let owner = clients::with_queue();
         let session = session_new_for_test();
         attach(&owner, Some(&session));
@@ -1776,8 +1786,7 @@ mod wait_tests {
         attach(&owner, None);
     }
 
-    #[test]
-    fn a_waiter_is_cancelled_once_its_item_drops() {
+    pub fn a_waiter_is_cancelled_once_its_item_drops() {
         let owner = clients::with_queue();
         let slot: Slot = Default::default();
         let head = cmdq_append(Some(&owner), waiting(c"cancelled waiter", &slot));

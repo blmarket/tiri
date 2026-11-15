@@ -130,18 +130,18 @@ fn cmd_load_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     )))
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "test-support")]
+pub mod load_buffer_tests {
     use super::{
         CStr, CString, ClientRef, FileOutcome, Weak, cmd_load_buffer_complete,
         cmd_load_buffer_data, cmdq_item, file_read_wait,
     };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::test_support::clients;
     use std::rc::Rc;
     use std::time::Duration;
     use tiri_core::actions::TaskOutcome as CmdOutcome;
     use tiri_core::paste::{paste_buffer_data, paste_get_name};
+    use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::tiri_buffer::SegmentedBuf;
 
     fn buffer(name: &CStr) -> Option<Vec<u8>> {
@@ -173,8 +173,7 @@ mod tests {
         head
     }
 
-    #[test]
-    fn a_reported_file_is_stored_inside_the_send() {
+    pub fn a_reported_file_is_stored_inside_the_send() {
         let owner = clients::with_queue();
         let (tx, rx) = tiri_core::tiri_rt::oneshot::channel();
         let cdata = cmd_load_buffer_data {
@@ -194,8 +193,7 @@ mod tests {
         assert!(head.upgrade().is_none());
     }
 
-    #[test]
-    fn a_local_file_is_stored_one_runtime_turn_later() {
+    pub fn a_local_file_is_stored_one_runtime_turn_later() {
         use tiri_core::tiri_rt::Runtime as _;
         let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
@@ -218,8 +216,7 @@ mod tests {
         tiri_core::reactor::shutdown_runtime(runtime);
     }
 
-    #[test]
-    fn a_dead_file_client_releases_the_target_client_and_parks() {
+    pub fn a_dead_file_client_releases_the_target_client_and_parks() {
         let owner = clients::with_queue();
         let (tx, rx) = tiri_core::tiri_rt::oneshot::channel();
         let cdata = cmd_load_buffer_data {

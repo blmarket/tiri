@@ -459,19 +459,19 @@ impl Drop for cmd_run_shell_data {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "test-support")]
+pub mod run_shell_tests {
     use super::{
         CStr, ClientRef, Duration, ExitStatusExt, JobCompletion, Rc, Weak, cmd_run_shell_complete,
         cmd_run_shell_data, cmd_run_shell_wait, cmdq_item,
     };
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_running};
-    use crate::test_support::clients;
     use std::cell::Cell;
     use std::process::ExitStatus;
     use std::time::Instant;
     use tiri_core::actions::TaskOutcome as CmdOutcome;
     use tiri_core::server_client::Client as _;
+    use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::server_client::queue_test_clients::return_value;
     use tiri_core::shared::client::CLIENT_DEAD;
     use tiri_core::tiri_rt::Runtime as _;
@@ -539,8 +539,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_zero_delay_runs_the_timer_body_one_runtime_turn_later() {
+    pub fn a_zero_delay_runs_the_timer_body_one_runtime_turn_later() {
         let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let head = append(None, |item| {
@@ -559,8 +558,7 @@ mod tests {
         tiri_core::reactor::shutdown_runtime(runtime);
     }
 
-    #[test]
-    fn a_delay_resumes_at_its_deadline() {
+    pub fn a_delay_resumes_at_its_deadline() {
         let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let delay = Duration::from_millis(50);
@@ -584,8 +582,7 @@ mod tests {
         tiri_core::reactor::shutdown_runtime(runtime);
     }
 
-    #[test]
-    fn dropping_the_item_during_the_delay_cancels_the_timer() {
+    pub fn dropping_the_item_during_the_delay_cancels_the_timer() {
         let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
         {
             let owner = clients::with_queue();
@@ -606,8 +603,7 @@ mod tests {
         tiri_core::reactor::shutdown_runtime(runtime);
     }
 
-    #[test]
-    fn job_completion_runs_the_callback_body_inside_the_send() {
+    pub fn job_completion_runs_the_callback_body_inside_the_send() {
         let owner = clients::with_queue();
         owner.set_return_value(7);
         let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), Some(c"true")));
@@ -621,8 +617,7 @@ mod tests {
         assert!(ran.get());
     }
 
-    #[test]
-    fn a_lost_client_is_freed_once_its_job_completes() {
+    pub fn a_lost_client_is_freed_once_its_job_completes() {
         let owner = clients::with_queue();
         let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), Some(c"true")));
         owner.update_flags(CLIENT_DEAD as u64, 0);
@@ -634,8 +629,7 @@ mod tests {
         assert!(head.upgrade().is_none());
     }
 
-    #[test]
-    fn a_job_freed_unfinished_releases_the_data_and_parks() {
+    pub fn a_job_freed_unfinished_releases_the_data_and_parks() {
         let owner = clients::with_queue();
         let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), None));
         owner.update_flags(CLIENT_DEAD as u64, 0);

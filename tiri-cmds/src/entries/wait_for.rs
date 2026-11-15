@@ -100,17 +100,17 @@ fn cmd_wait_for_event(
     )
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "test-support")]
+pub mod wait_for_tests {
     use super::{CStr, cmd_wait_for_entry, cmd_wait_for_event, cmdq_item};
     use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::test_support::clients;
     use std::cell::RefCell;
     use std::future::Future;
     use std::rc::{Rc, Weak};
     use tiri_core::actions::Completion as CmdqWaiter;
     use tiri_core::actions::TaskOutcome as CmdOutcome;
     use tiri_core::server_client::Client as _;
+    use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::shared::client::{CLIENT_DEAD, ClientRef};
     use tiri_core::wait::test_support::{
         channel, event_sinks, event_waiter_cancelled, with_channel_mut,
@@ -188,8 +188,7 @@ mod tests {
         wait_channel_signal(name)
     }
 
-    #[test]
-    fn signal_resumes_waiters_in_fifo_order() {
+    pub fn signal_resumes_waiters_in_fifo_order() {
         let (trace, locked) = Default::default();
         let (waiters, _resumed) = recorded_waiters(128, &trace);
         let (lockers, _locking) = recorded_waiters(4, &locked);
@@ -207,8 +206,7 @@ mod tests {
         assert_eq!(channel(c"fifo", |wc| wc.lockers.len()), Some(4));
     }
 
-    #[test]
-    fn unlock_hands_the_lock_to_the_first_locker_only() {
+    pub fn unlock_hands_the_lock_to_the_first_locker_only() {
         let [holder, first, second] = [(); 3].map(|_| clients::with_queue());
         assert!(run_on(&holder, c"l", lock_fn).upgrade().is_none());
         let first_item = run_on(&first, c"l", lock_fn);
@@ -248,8 +246,7 @@ mod tests {
         (waiter, resumed, reentered)
     }
 
-    #[test]
-    fn a_waiter_woken_by_signal_can_wait_again_on_the_same_channel() {
+    pub fn a_waiter_woken_by_signal_can_wait_again_on_the_same_channel() {
         let owner = clients::with_queue();
         let (waiter, _resumed, rewaited) = reenter_on_wake(&owner, c"rewait", wait_fn);
         with_channel_mut(c"rewait", |wc| wc.waiters.push(waiter));
@@ -267,8 +264,7 @@ mod tests {
         assert!(item.upgrade().is_none());
     }
 
-    #[test]
-    fn a_waiter_woken_by_signal_can_signal_the_same_channel_again() {
+    pub fn a_waiter_woken_by_signal_can_signal_the_same_channel_again() {
         let trace = Default::default();
         let (resignaller, _resignalled) = waiter_on_wake(|| {
             assert!(matches!(
@@ -293,8 +289,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unlock_hands_the_lock_to_a_locker_that_unlocks_on_wake() {
+    pub fn unlock_hands_the_lock_to_a_locker_that_unlocks_on_wake() {
         let [holder, relay] = [(); 2].map(|_| clients::with_queue());
         assert!(run_on(&holder, c"relay", lock_fn).upgrade().is_none());
         let (unlocker, _unlocking, unlocked) = reenter_on_wake(&relay, c"relay", unlock_fn);
@@ -315,8 +310,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unlock_hands_the_lock_to_a_locker_that_relocks_on_wake() {
+    pub fn unlock_hands_the_lock_to_a_locker_that_relocks_on_wake() {
         let [holder, relocker] = [(); 2].map(|_| clients::with_queue());
         assert!(run_on(&holder, c"relock", lock_fn).upgrade().is_none());
         let (locker, _locking, relocked) = reenter_on_wake(&relocker, c"relock", lock_fn);
@@ -339,8 +333,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn flush_survives_a_locker_that_relocks_on_wake() {
+    pub fn flush_survives_a_locker_that_relocks_on_wake() {
         let relocker = clients::with_queue();
         let (locker, _locking, relocked) = reenter_on_wake(&relocker, c"flushed", lock_fn);
         with_channel_mut(c"flushed", |wc| {
@@ -357,8 +350,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn signal_skips_a_cancelled_waiter_and_stays_sticky() {
+    pub fn signal_skips_a_cancelled_waiter_and_stays_sticky() {
         let gone = clients::with_queue();
         let gone_item = run_on(&gone, c"c", wait_fn);
         drop(gone);
@@ -373,8 +365,7 @@ mod tests {
         assert!(channel(c"c", |_| ()).is_none());
     }
 
-    #[test]
-    fn client_lost_resumes_only_the_lost_clients_waiters() {
+    pub fn client_lost_resumes_only_the_lost_clients_waiters() {
         let [lost, kept, holder] = [(); 3].map(|_| clients::with_queue());
         let lost_waiter = run_on(&lost, c"c", wait_fn);
         let kept_waiter = run_on(&kept, c"c", wait_fn);
@@ -397,8 +388,7 @@ mod tests {
         assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
     }
 
-    #[test]
-    fn a_lost_client_waiting_in_wait_for_is_freed() {
+    pub fn a_lost_client_waiting_in_wait_for_is_freed() {
         let owner = clients::with_queue();
         let head = run_on(&owner, c"c", wait_fn);
         owner.update_flags(CLIENT_DEAD as u64, 0);
@@ -454,8 +444,7 @@ mod tests {
         ran
     }
 
-    #[test]
-    fn an_accepted_event_resumes_the_event_waiter() {
+    pub fn an_accepted_event_resumes_the_event_waiter() {
         let owner = clients::with_queue();
         let head = wait_event(&owner, c"@accepted", &[c"-F", c"#{==:#{value},y}"]);
         let ran = append_flag(&owner);
@@ -472,8 +461,7 @@ mod tests {
         assert!(ran.get());
     }
 
-    #[test]
-    fn a_rejected_event_keeps_the_event_waiter_suspended() {
+    pub fn a_rejected_event_keeps_the_event_waiter_suspended() {
         let owner = clients::with_queue();
         let head = wait_event(&owner, c"@rejected", &[c"-F", c"#{==:#{value},y}"]);
         let ran = append_flag(&owner);
@@ -495,8 +483,7 @@ mod tests {
         assert!(!tiri_core::events::events_has_sink(sink));
     }
 
-    #[test]
-    fn a_dropped_event_waiter_is_pruned_by_the_next_event() {
+    pub fn a_dropped_event_waiter_is_pruned_by_the_next_event() {
         let owner = clients::with_queue();
         let head = wait_event(&owner, c"@dropped", &[]);
         let [sink] = event_sinks()[..] else {
@@ -511,8 +498,7 @@ mod tests {
         assert!(!tiri_core::events::events_has_sink(sink));
     }
 
-    #[test]
-    fn wake_resumes_the_first_matching_event_waiter_only() {
+    pub fn wake_resumes_the_first_matching_event_waiter_only() {
         let [first, second, waker] = [(); 3].map(|_| clients::with_queue());
         let first_item = wait_event(&first, c"@wake", &[]);
         let second_item = wait_event(&second, c"@wake", &[]);
@@ -532,8 +518,7 @@ mod tests {
         assert_eq!(event_sinks(), [second_sink]);
     }
 
-    #[test]
-    fn client_lost_resumes_only_the_lost_clients_event_waiters() {
+    pub fn client_lost_resumes_only_the_lost_clients_event_waiters() {
         let [lost, kept] = [(); 2].map(|_| clients::with_queue());
         let lost_item = wait_event(&lost, c"@lost", &[]);
         let kept_item = wait_event(&kept, c"@lost", &[]);
@@ -550,8 +535,7 @@ mod tests {
         assert_eq!(event_sinks(), [kept_sink]);
     }
 
-    #[test]
-    fn flush_resumes_every_event_waiter() {
+    pub fn flush_resumes_every_event_waiter() {
         let [first, second] = [(); 2].map(|_| clients::with_queue());
         let items = [
             wait_event(&first, c"@flush", &[]),
@@ -570,8 +554,7 @@ mod tests {
         assert!(items.iter().all(|item| item.upgrade().is_none()));
     }
 
-    #[test]
-    fn a_lost_client_waiting_for_an_event_is_freed() {
+    pub fn a_lost_client_waiting_for_an_event_is_freed() {
         let owner = clients::with_queue();
         let head = wait_event(&owner, c"@freed", &[]);
         let [sink] = event_sinks()[..] else {

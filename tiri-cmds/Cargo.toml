@@ -4,12 +4,12 @@ version = "0.0.0"
 publish = false
 edition = "2021"
 
+[features]
+test-support = ["tiri-core/test-support"]
+
 [dependencies]
 tiri-core = { path = "../tiri-core" }
 tiri-cmdparse = { path = "../tiri-cmdparse" }
-
-[dev-dependencies]
-tiri-core = { path = "../tiri-core", features = ["test-support"] }
 
 [lints.clippy]
 missing_safety_doc = "allow"

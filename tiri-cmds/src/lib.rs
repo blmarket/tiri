@@ -17,13 +17,16 @@ mod engine;
 mod entries;
 mod shared;
 
-pub fn initialize() {
-    tiri_core::actions::install(&engine::ENGINE);
+pub use engine::ENGINE;
+
+#[cfg(feature = "test-support")]
+pub mod test_cases {
+    pub use crate::cmd::queue::client_queue_tests;
+    pub use crate::entries::confirm_before::confirm_before_tests;
+    pub use crate::entries::load_buffer::load_buffer_tests;
+    pub use crate::entries::run_shell::run_shell_tests;
+    pub use crate::entries::wait_for::wait_for_tests;
 }
 
 #[cfg(test)]
 mod command_registration;
-#[cfg(test)]
-mod integration_tests;
-#[cfg(test)]
-mod test_support;

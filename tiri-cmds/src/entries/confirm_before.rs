@@ -211,8 +211,8 @@ impl cmd_confirm_before_data {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "test-support")]
+pub mod confirm_before_tests {
     use super::{
         CLIENT_DEAD, ClientRef, PROMPT_CLOSE, Rc, Weak, cmd_confirm_before_callback,
         cmd_confirm_before_data, cmd_confirm_before_reply, cmd_confirm_before_wait, cmd_list,
@@ -220,10 +220,10 @@ mod tests {
     };
     use crate::cmd::cmd_list_new;
     use crate::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
-    use crate::test_support::clients;
     use std::cell::Cell;
     use tiri_core::actions::TaskOutcome as CmdOutcome;
     use tiri_core::server_client::Client as _;
+    use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::server_client::queue_test_clients::return_value;
 
     /// Queue an item on `owner` that waits for the answer to a prompt, as
@@ -279,8 +279,7 @@ mod tests {
         ran
     }
 
-    #[test]
-    fn the_answer_acts_inside_the_send() {
+    pub fn the_answer_acts_inside_the_send() {
         for (default_yes, answer, confirmed) in [
             (false, Some(c"y"), true),
             (false, Some(c"n"), false),
@@ -306,8 +305,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_prompt_freed_unanswered_releases_the_data_and_parks() {
+    pub fn a_prompt_freed_unanswered_releases_the_data_and_parks() {
         let owner = clients::with_queue();
         let (head, cdata, list) = append_wait(&owner, false);
         let ran = append_flag(&owner);
@@ -322,8 +320,7 @@ mod tests {
         assert!(head.upgrade().is_none());
     }
 
-    #[test]
-    fn an_answer_after_the_waiting_client_is_freed_queues_nothing() {
+    pub fn an_answer_after_the_waiting_client_is_freed_queues_nothing() {
         let owner = clients::with_queue();
         let answering = clients::with_queue();
         let (head, mut cdata, list) = append_wait(&owner, false);
@@ -339,8 +336,7 @@ mod tests {
         assert_eq!(cmdq_next(Some(&answering)), 0);
     }
 
-    #[test]
-    fn a_background_confirmation_is_appended_to_the_answering_client() {
+    pub fn a_background_confirmation_is_appended_to_the_answering_client() {
         for (answer, queued) in [(c"n", 0), (c"y", 1)] {
             let answering = clients::with_queue();
             let mut cdata = Box::new(cmd_confirm_before_data {

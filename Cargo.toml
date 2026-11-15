@@ -33,6 +33,8 @@ tiri-core = { path = "tiri-core" }
 tiri-cmds = { path = "tiri-cmds" }
 
 [dev-dependencies]
+tiri-core = { path = "tiri-core", features = ["test-support"] }
+tiri-cmds = { path = "tiri-cmds", features = ["test-support"] }
 tiri-vt = { path = "tiri-vt" }
 futures-core = "0.3"
 tiri-cmdparse = { path = "tiri-cmdparse" }
