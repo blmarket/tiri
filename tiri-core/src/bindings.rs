@@ -1,9 +1,5 @@
-use crate::actions::queue::{
-    callback, enqueue, insert_after, new_state, program_task, report_error,
-};
-use crate::actions::{
-    ContextRef, ContextSource, ContextWeak, ProgramRef, REPEAT_STATE, Target, TaskOutcome,
-};
+use crate::actions::queue::{callback, enqueue, new_state, program_task, report_error};
+use crate::actions::{ContextRef, ProgramRef, REPEAT_STATE, Target, TaskOutcome};
 use crate::key_string::key_string_format;
 use crate::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::server_client::Client as _;
@@ -265,17 +261,16 @@ fn key_bindings_read_only(item: &ContextRef) -> TaskOutcome {
 
 pub fn key_bindings_dispatch(
     bd: KeyBindingCommand,
-    item: Option<&dyn ContextSource>,
     c_owner: Option<&ClientRef>,
     event: Option<&key_event>,
     fs: &Target,
-) -> ContextWeak {
+) -> ContextRef {
     let readonly = if c_owner.is_none_or(|c| !c.flags() & CLIENT_READONLY as uint64_t != 0) {
         true
     } else {
         bd.cmdlist().read_only()
     };
-    let next = if !readonly {
+    if !readonly {
         callback(
             c"key_bindings_read_only",
             Some(Box::new(key_bindings_read_only)),
@@ -287,11 +282,6 @@ pub fn key_bindings_dispatch(
         }
         let state = new_state(Some(fs), event, flags);
         program_task(&bd.commands, Some(&state))
-    };
-    if let Some(item) = item {
-        insert_after(item, next)
-    } else {
-        enqueue(c_owner, next)
     }
 }
 

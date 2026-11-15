@@ -1,12 +1,12 @@
 use crate::cmd::parse::cmd_parse_from_buffer;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_copy_state, cmdq_error, cmdq_get_callback_owned, cmdq_get_command,
-    cmdq_insert_after, cmdq_resumed,
+    CmdqFollowup, cmdq_copy_state, cmdq_error, cmdq_followup, cmdq_get_callback_owned,
+    cmdq_get_command, cmdq_resumed,
 };
 use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
 use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::actions::queue::{
-    client as cmdq_get_client, execution_state as cmdq_get_state_owned, new_state as cmdq_new_state,
+    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
 };
 use tiri_core::cfg::{cfg_add_cause, cfg_finished, cfg_print_causes};
 use tiri_core::arguments::{args_count, args_has, args_parse, args_string};
@@ -25,7 +25,7 @@ use crate::shared::command::{
 };
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_parse_input};
 use std::ffi::{CStr, CString};
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 use tiri_core::libc::{EINVAL, ENOENT, ENOMEM};
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::CLIENT_CONTROL;
@@ -37,7 +37,6 @@ pub struct cmd_source_file_data {
     pub client: Option<ClientRef>,
     depth_active: bool,
     pub flags: ::core::ffi::c_int,
-    pub after: Weak<cmdq_item>,
     pub failed: bool,
     pub current: u_int,
     pub files: Vec<CString>,
@@ -120,7 +119,7 @@ fn cmd_source_file_complete_cb(
 
 fn cmd_source_file_complete(
     mut cdata: Box<cmd_source_file_data>,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    followup: &mut CmdqFollowup,
 ) {
     let c = cdata.client_handle();
     if !cfg_finished() {
@@ -134,17 +133,13 @@ fn cmd_source_file_complete(
             }
         }
     }
-    let after_owner = cdata
-        .after
-        .upgrade()
-        .unwrap_or_else(|| Rc::clone(item_handle));
     let new_item_allocation = cmdq_get_callback_owned(
         c"cmd_source_file_complete_cb",
         Some(Box::new(move |item| {
             cmd_source_file_complete_cb(item, *cdata)
         })),
     );
-    cmdq_insert_after(&after_owner, new_item_allocation);
+    followup.push(new_item_allocation);
 }
 
 fn cmd_source_file_read(cdata: &cmd_source_file_data) -> FileWait {
@@ -161,17 +156,24 @@ async fn cmd_source_file_chain(
     mut cdata: Box<cmd_source_file_data>,
     item: Weak<cmdq_item>,
 ) {
+    let mut followup: Option<CmdqFollowup> = None;
     let mut outcome = first.await;
     loop {
         let Some(read) = outcome else {
+            drop(followup);
             drop(cdata);
             return std::future::pending().await;
         };
         let item_owner = cmdq_resumed(&item);
-        cmd_source_file_done(&mut cdata, &item_owner, read);
+        let followup_ref = followup.get_or_insert_with(|| cmdq_followup(&item_owner));
+        cmd_source_file_done(&mut cdata, &item_owner, followup_ref, read);
         cdata.current = cdata.current.wrapping_add(1);
         if (cdata.current as usize) >= cdata.files.len() {
-            cmd_source_file_complete(cdata, &item_owner);
+            cmd_source_file_complete(cdata, followup_ref);
+            drop(item_owner);
+            if let Some(followup) = followup.filter(|f| !f.is_empty()) {
+                followup.run().await;
+            }
             return;
         }
         drop(item_owner);
@@ -182,6 +184,7 @@ async fn cmd_source_file_chain(
 fn cmd_source_file_done(
     cdata: &mut cmd_source_file_data,
     item_owner: &std::rc::Rc<cmdq_item>,
+    followup: &mut CmdqFollowup,
     mut read: FileOutcome,
 ) {
     let item = item_owner.borrow();
@@ -189,7 +192,6 @@ fn cmd_source_file_done(
     let error = read.error;
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
     let bsize = bdata.len();
-    let mut new_item = Weak::new();
     let mut target_state = tiri_core::actions::queue::target(&item).clone();
     let target = &mut target_state;
     if error != 0 {
@@ -203,23 +205,17 @@ fn cmd_source_file_done(
             write_cstr(out, path)
         });
     } else if bsize != 0 {
-        let after_owner = cdata
-            .after
-            .upgrade()
-            .unwrap_or_else(|| Rc::clone(item_owner));
         if load_source_buffer(
             bdata,
             path.expect("file read sets the path"),
             cdata.client.as_ref(),
-            Some(&after_owner),
+            item_owner,
+            followup,
             Some(&*target),
             cdata.flags,
-            Some(&mut new_item),
         ) < 0
         {
             cdata.failed = true;
-        } else if new_item.strong_count() != 0 {
-            cdata.after = new_item;
         }
     }
 }
@@ -228,10 +224,10 @@ fn load_source_buffer(
     buf: &[u8],
     path: &CStr,
     c: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    item_handle: &std::rc::Rc<cmdq_item>,
+    followup: &mut CmdqFollowup,
     current: Option<&cmd_find_state>,
     flags: ::core::ffi::c_int,
-    mut new_item: Option<&mut std::rc::Weak<cmdq_item>>,
 ) -> ::core::ffi::c_int {
     let mut pi = cmd_parse_input {
         flags,
@@ -241,10 +237,7 @@ fn load_source_buffer(
         c: c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
         fs: Default::default(),
     };
-    pi.set_item(item_handle);
-    if let Some(new_item) = new_item.as_deref_mut() {
-        *new_item = std::rc::Weak::new();
-    }
+    pi.set_item(Some(item_handle));
     log_debug(format_args!("loading {}", log_cstr(path)));
     let commands = match cmd_parse_from_buffer(buf, Some(&mut pi)) {
         Ok(commands) => commands,
@@ -257,22 +250,10 @@ fn load_source_buffer(
         drop(commands);
         return 0;
     }
-    let state = if let Some(item) = item_handle {
-        cmdq_copy_state(&cmdq_get_state_owned(&item.borrow()), current)
-    } else {
-        cmdq_new_state(None, None, 0)
-    };
+    let state = cmdq_copy_state(&cmdq_get_state_owned(&item_handle.borrow()), current);
     state.add_format(c"current_file", pi.file.as_deref().unwrap_or(c"(null)"));
-    let task = cmdq_get_command(&commands, Some(&state));
-    let last = if let Some(item) = item_handle {
-        cmdq_insert_after(item, task)
-    } else {
-        cmdq_append(None, task)
-    };
+    followup.push(cmdq_get_command(&commands, Some(&state)));
     drop(commands);
-    if let Some(new_item) = new_item {
-        *new_item = last;
-    }
     0
 }
 fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
@@ -329,7 +310,6 @@ fn cmd_source_file_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         client: if c.is_none() { None } else { c.clone() },
         depth_active: true,
         flags: 0,
-        after: Weak::new(),
         failed: false,
         current: 0,
         files: Vec::new(),
@@ -411,7 +391,6 @@ fn cmd_source_file_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         }
         i = i.wrapping_add(1);
     }
-    cdata.after = std::rc::Rc::downgrade(item_handle);
     cdata.failed = failed;
     if !cdata.files.is_empty() {
         let first = cmd_source_file_read(&cdata);
@@ -421,7 +400,21 @@ fn cmd_source_file_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             std::rc::Rc::downgrade(item_handle),
         )));
     }
-    cmd_source_file_complete(cdata, item_handle);
+    drop(item);
+    if !cfg_finished() {
+        cdata.depth_active = false;
+    } else {
+        if cdata.failed {
+            if let Some(client) = cdata.client_handle() {
+                if client.attached_session().upgrade().is_none() {
+                    client.set_return_value(1);
+                }
+            }
+        }
+        cdata.decrement_depth();
+        cfg_print_causes(item_handle);
+    }
+    drop(cdata);
     if failed {
         CmdOutcome::Error
     } else {

@@ -5,7 +5,7 @@ use crate::arguments::{
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_resumed,
+    cmdq_append, cmdq_error, cmdq_followup, cmdq_get_command, cmdq_get_error, cmdq_resumed,
 };
 use crate::shared::command::CMD_CLIENT_TFLAG;
 use crate::shared::command::CMD_FIND_PANE;
@@ -269,11 +269,14 @@ async fn cmd_command_prompt_wait(
     let Some(cmdlist) = answered.await else {
         return;
     };
-    {
+    let followup = {
         let item = cmdq_resumed(&item);
-        let new_item_allocation = cmdq_get_command(&cmdlist, item.borrow().state.as_ref());
-        cmdq_insert_after(&item, new_item_allocation);
-    }
+        let mut followup = cmdq_followup(&item);
+        followup.push(cmdq_get_command(&cmdlist, item.borrow().state.as_ref()));
+        followup
+    };
+    drop(cmdlist);
+    followup.run().await;
 }
 fn cmd_command_prompt_callback(
     c_owner: Option<&ClientRef>,

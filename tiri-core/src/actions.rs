@@ -193,7 +193,7 @@ pub const PARSE_ONEGROUP: i32 = 0x10;
 pub struct CommandEngine {
     pub queue_new: fn() -> Box<dyn WorkQueue>,
     pub queue_append: fn(Option<&ClientRef>, ContextRef) -> ContextWeak,
-    pub queue_insert: fn(&ContextRef, ContextRef) -> ContextWeak,
+    pub queue_defer: fn(&ContextRef, ContextRef) -> TaskOutcome,
     pub queue_program: fn(&ProgramRef, Option<&Rc<ExecutionState>>) -> ContextRef,
     pub queue_callback: fn(&'static CStr, Callback) -> ContextRef,
     pub queue_error: fn(&CStr) -> ContextRef,
@@ -308,8 +308,8 @@ pub mod queue {
     pub fn enqueue(client: Option<&ClientRef>, item: ContextRef) -> ContextWeak {
         (engine().queue_append)(client, item)
     }
-    pub fn insert_after(anchor: &dyn ContextSource, item: ContextRef) -> ContextWeak {
-        (engine().queue_insert)(&anchor.context_ref(), item)
+    pub fn defer(parent: &dyn ContextSource, item: ContextRef) -> TaskOutcome {
+        (engine().queue_defer)(&parent.context_ref(), item)
     }
     pub fn program_task(program: &ProgramRef, state: Option<&Rc<ExecutionState>>) -> ContextRef {
         (engine().queue_program)(program, state)

@@ -1,5 +1,4 @@
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::queue::{CmdqFollowup, cmdq_error, cmdq_followup, cmdq_item};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
@@ -83,11 +82,10 @@ pub static cmd_send_prefix_entry: cmd_entry = {
 };
 fn cmd_send_keys_inject_key(
     item_handle: &std::rc::Rc<cmdq_item>,
-    after_handle: Option<&std::rc::Rc<cmdq_item>>,
+    followup: &mut CmdqFollowup,
     args: &args,
     mut key: key_code,
-) -> std::rc::Weak<cmdq_item> {
-    let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+) -> bool {
     let item = item_handle.borrow();
     let target = tiri_core::actions::queue::target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -96,43 +94,19 @@ fn cmd_send_keys_inject_key(
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let pane = target.pane_handle().expect("key target pane");
     let mut wme: tiri_core::refbox::Weak<window_mode_entry> = tiri_core::refbox::Weak::new();
-    let mut new_after = crate::engine::weak(after.clone());
     if args_has(args, 'K' as i32 as u_char) != 0 {
-        if tc.is_none() {
-            return std::rc::Rc::downgrade(item_handle);
-        }
+        let Some(tc) = tc_owner.as_ref() else {
+            return true;
+        };
         let event = key_event::new(
             (key as ::core::ffi::c_ulonglong | KEYC_SENT) as key_code,
             Default::default(),
             None,
         );
-        if after.strong_count() == 0 {
-            if tc_owner
-                .as_ref()
-                .expect("key target client")
-                .handle_key_after(event, None, None)
-                != 0 as ::core::ffi::c_int
-            {
-                return std::rc::Rc::downgrade(item_handle);
-            }
-        } else if tc_owner
-            .as_ref()
-            .expect("key target client")
-            .handle_key_after(
-                event,
-                after
-                    .upgrade()
-                    .as_ref()
-                    .map(|item| item as &dyn tiri_core::actions::ContextSource),
-                Some(&mut new_after),
-            )
-            != 0 as ::core::ffi::c_int
-        {
-            return new_after.upgrade().map_or_else(std::rc::Weak::new, |item| {
-                std::rc::Rc::downgrade(&crate::engine::native(&item))
-            });
+        if let Some(task) = tc.prepare_sent_key(event) {
+            followup.push(crate::engine::native(&task));
         }
-        return std::rc::Rc::downgrade(item_handle);
+        return true;
     }
     wme = pane.mode_entry();
     if !wme.is_alive()
@@ -143,16 +117,12 @@ fn cmd_send_keys_inject_key(
             .key_table
             .is_none()
     {
-        if target.pane_handle().expect("key target pane").key(
+        return target.pane_handle().expect("key target pane").key(
             tc_owner.as_ref(),
             wl.clone(),
             key,
             None,
-        ) != 0 as ::core::ffi::c_int
-        {
-            return std::rc::Weak::new();
-        }
-        return std::rc::Rc::downgrade(item_handle);
+        ) == 0 as ::core::ffi::c_int;
     }
     let key_table = wme
         .try_borrow()
@@ -164,30 +134,17 @@ fn cmd_send_keys_inject_key(
         key_bindings_get_table(key_table(wme), 1 as ::core::ffi::c_int).expect("created key table");
     let command = key_bindings_get(&table.borrow(), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
-        let anchor = after.upgrade();
-        after = key_bindings_dispatch(
-            command,
-            anchor
-                .as_ref()
-                .map(|item| item as &dyn tiri_core::actions::ContextSource),
-            tc.as_ref(),
-            None,
-            target,
-        )
-        .upgrade()
-        .map_or_else(std::rc::Weak::new, |item| {
-            std::rc::Rc::downgrade(&crate::engine::native(&item))
-        });
+        let task = key_bindings_dispatch(command, tc.as_ref(), None, target);
+        followup.push(crate::engine::native(&task));
     }
-    after
+    true
 }
 fn cmd_send_keys_inject_string(
     item_handle: &std::rc::Rc<cmdq_item>,
-    after_handle: Option<&std::rc::Rc<cmdq_item>>,
+    followup: &mut CmdqFollowup,
     args: &args,
     mut i: ::core::ffi::c_int,
-) -> std::rc::Weak<cmdq_item> {
-    let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+) {
     let mut s: &std::ffi::CStr = args_string(args, i as u_int).expect("argument is present");
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
@@ -201,14 +158,10 @@ fn cmd_send_keys_inject_string(
             || n > 0xff as ::core::ffi::c_long
             || consumed != s.to_bytes().len()
         {
-            return std::rc::Rc::downgrade(item_handle);
+            return;
         }
-        return cmd_send_keys_inject_key(
-            item_handle,
-            after.upgrade().as_ref(),
-            args,
-            KEYC_LITERAL | n as key_code,
-        );
+        cmd_send_keys_inject_key(item_handle, followup, args, KEYC_LITERAL | n as key_code);
+        return;
     }
     literal = args_has(args, 'l' as i32 as u_char);
     if literal == 0 {
@@ -216,9 +169,8 @@ fn cmd_send_keys_inject_string(
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
             && key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         {
-            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
-            if after.strong_count() != 0 {
-                return after;
+            if cmd_send_keys_inject_key(item_handle, followup, args, key) {
+                return;
             }
         }
         literal = 1 as ::core::ffi::c_int;
@@ -242,11 +194,10 @@ fn cmd_send_keys_inject_string(
                 current_block_20 = 12147880666119273379;
             }
             if current_block_20 == 12147880666119273379 {
-                after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
+                cmd_send_keys_inject_key(item_handle, followup, args, key);
             }
         }
     }
-    after
 }
 fn cmd_send_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
     let item = item_handle.borrow();
@@ -260,7 +211,7 @@ fn cmd_send_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     let pane = target.pane_handle().expect("key target pane");
     let mut event = cmdq_get_event(&(item));
     let mut wme: tiri_core::refbox::Weak<window_mode_entry> = pane.mode_entry();
-    let mut after = std::rc::Rc::downgrade(item_handle);
+    let mut followup = cmdq_followup(item_handle);
     let mut key: key_code = 0;
     let mut i: u_int = 0;
     let mut np: u_int = 1 as u_int;
@@ -364,8 +315,9 @@ fn cmd_send_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
                 c"prefix",
             ) as key_code;
         }
-        cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
-        return CmdOutcome::Normal;
+        cmd_send_keys_inject_key(item_handle, &mut followup, args, key);
+        drop(item);
+        return followup.into_outcome();
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
         pane.reset_input();
@@ -374,30 +326,21 @@ fn cmd_send_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         if args_has(args, 'N' as i32 as u_char) != 0 || args_has(args, 'R' as i32 as u_char) != 0 {
             return CmdOutcome::Normal;
         }
-        after = if args_has(args, 'K' as i32 as u_char) != 0 {
-            std::rc::Rc::downgrade(item_handle)
-        } else {
-            std::rc::Weak::new()
-        };
         while np != 0 as u_int {
-            after =
-                cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, event.key);
+            cmd_send_keys_inject_key(item_handle, &mut followup, args, event.key);
             np = np.wrapping_sub(1);
         }
-        return CmdOutcome::Normal;
+        drop(item);
+        return followup.into_outcome();
     }
     while np != 0 as u_int {
         i = 0 as u_int;
         while i < count {
-            after = cmd_send_keys_inject_string(
-                item_handle,
-                after.upgrade().as_ref(),
-                args,
-                i as ::core::ffi::c_int,
-            );
+            cmd_send_keys_inject_string(item_handle, &mut followup, args, i as ::core::ffi::c_int);
             i = i.wrapping_add(1);
         }
         np = np.wrapping_sub(1);
     }
-    CmdOutcome::Normal
+    drop(item);
+    followup.into_outcome()
 }

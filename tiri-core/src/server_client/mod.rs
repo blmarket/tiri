@@ -20,7 +20,7 @@ use crate::cfg::{
 use crate::bindings::key_bindings_dispatch as dispatch_binding;
 use crate::actions::log_argv;
 use crate::actions::queue::{
-    callback, client, drive, enqueue, error_task, insert_after, new_queue, program_task,
+    callback, client, defer as defer_task, drive, enqueue, error_task, new_queue, program_task,
     report_error,
 };
 use crate::actions::sources::compile_argv;
@@ -1587,6 +1587,7 @@ fn server_client_key_callback(
     let mut key0: key_code = 0;
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
+    let mut dispatched = None;
     let c_owner = event.resolve_client(|| client(Some(&*item)));
     let Some(c_owner) = c_owner else {
         return TaskOutcome::Normal;
@@ -1899,13 +1900,12 @@ fn server_client_key_callback(
                                             server_client_set_key_table(&c_owner, None);
                                         }
                                         c_owner.borrow_mut().flags |= CLIENT_REDRAWSTATUS as u64;
-                                        dispatch_binding(
+                                        dispatched = Some(dispatch_binding(
                                             bd,
-                                            Some(item_handle),
                                             Some(&c_owner),
                                             Some(&*event),
                                             &fs,
-                                        );
+                                        ));
                                         current_block = 1578459965781631232;
                                         break;
                                     }
@@ -1983,6 +1983,10 @@ fn server_client_key_callback(
     if !s.is_none() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
         server_client_update_latest(&c_owner);
     }
+    if let Some(next) = dispatched {
+        drop(item);
+        return defer_task(item_handle, next);
+    }
     TaskOutcome::Normal
 }
 
@@ -2032,30 +2036,28 @@ fn server_client_handle_menu_key(owner: &ClientRef, event: &key_event) -> ::core
     }
     1 as ::core::ffi::c_int
 }
-fn server_client_handle_key0(
+fn server_client_prepare_key(
     owner: &ClientRef,
     mut owned: Box<key_event>,
-    after_handle: Option<&dyn crate::actions::ContextSource>,
-    next: Option<&mut crate::actions::ContextWeak>,
-) -> ::core::ffi::c_int {
+    sent: bool,
+) -> Option<crate::actions::ContextRef> {
     let event: &mut key_event = &mut owned;
     let mut s: Option<SessionRef> = owner.borrow().session_handle();
-    let item_allocation;
     if s.is_none() || owner.borrow().flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     if event.key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
         server_client_report_theme(owner, THEME_LIGHT);
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     if event.key == KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code {
         server_client_report_theme(owner, THEME_DARK);
-        return 0 as ::core::ffi::c_int;
+        return None;
     }
     if !owner.borrow().flags & CLIENT_READONLY as uint64_t != 0 {
         if !owner.borrow().message_string.is_none() {
             if owner.borrow().message_ignore_keys != 0 {
-                return 0 as ::core::ffi::c_int;
+                return None;
             }
             status_message_clear(owner);
         }
@@ -2065,7 +2067,7 @@ fn server_client_handle_key0(
             .active_pane()
             .upgrade();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), event.key) != 0 {
-            return 0 as ::core::ffi::c_int;
+            return None;
         }
         if let Some(pane) = active_pane_owner.as_ref() {
             if pane.is_modal()
@@ -2073,14 +2075,14 @@ fn server_client_handle_key0(
                 && (event.key == 0x1b || event.key == b'c' as key_code | KEYC_CTRL)
             {
                 pane.kill_process();
-                return 0;
+                return None;
             }
             if pane.captures_all_keys() {
                 let mut key = event.key;
                 if key == KEYC_MOUSE || key == KEYC_DOUBLECLICK {
                     key = server_client_check_mouse(owner, event);
                     if key == KEYC_UNKNOWN || event.m.wp != pane.id() as i32 {
-                        return 0;
+                        return None;
                     }
                     event.m.valid = 1;
                     event.m.key = key;
@@ -2091,15 +2093,15 @@ fn server_client_handle_key0(
                     key,
                     Some(&mut event.m),
                 );
-                return 0;
+                return None;
             }
         }
         if server_client_handle_menu_key(owner, event) != 0 {
-            return 0 as ::core::ffi::c_int;
+            return None;
         }
         if owner.borrow().prompt.is_some() {
             match status_prompt_key(owner, event.key, Some(&event.m)) as ::core::ffi::c_uint {
-                1 | 2 => return 0 as ::core::ffi::c_int,
+                1 | 2 => return None,
                 _ => {}
             }
         }
@@ -2123,7 +2125,7 @@ fn server_client_handle_key0(
             match pane_owner.prompt_key(Some(owner), event.key, Some(&mut event.m))
                 as ::core::ffi::c_uint
             {
-                1..=3 => return 0 as ::core::ffi::c_int,
+                1..=3 => return None,
                 0 if (event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -2135,45 +2137,38 @@ fn server_client_handle_key0(
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int) =>
                 {
-                    return 0 as ::core::ffi::c_int;
+                    return None;
                 }
                 _ => {}
             }
         }
     }
-    let client_owner = if after_handle.is_none() {
+    let client_owner = if !sent {
         None
     } else {
         event.client = std::rc::Rc::downgrade(owner);
         Some(owner.clone())
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
-    item_allocation = callback(
+    Some(callback(
         c"server_client_key_callback",
         Some(Box::new(move |_item| {
             server_client_key_callback(_item, queued_event)
         })),
-    );
-    if let Some(after) = after_handle {
-        let inserted = insert_after(after, item_allocation);
-        if let Some(next) = next {
-            *next = inserted;
-        }
-        return 1;
-    }
-    enqueue(Some(owner), item_allocation);
-    1 as ::core::ffi::c_int
+    ))
 }
 fn server_client_handle_key(owner: &ClientRef, event: Box<key_event>) -> ::core::ffi::c_int {
-    server_client_handle_key0(owner, event, None, None)
+    let Some(item_allocation) = server_client_prepare_key(owner, event, false) else {
+        return 0;
+    };
+    enqueue(Some(owner), item_allocation);
+    1
 }
-fn server_client_handle_key_after(
+fn server_client_prepare_sent_key(
     owner: &ClientRef,
     event: Box<key_event>,
-    after_handle: Option<&dyn crate::actions::ContextSource>,
-    next: Option<&mut crate::actions::ContextWeak>,
-) -> ::core::ffi::c_int {
-    server_client_handle_key0(owner, event, after_handle, next)
+) -> Option<crate::actions::ContextRef> {
+    server_client_prepare_key(owner, event, true)
 }
 fn server_client_loop() {
     let mut window_cursor = windows::first();
@@ -3104,8 +3099,8 @@ fn server_client_default_command(item_handle: &dyn crate::actions::ContextSource
     } else {
         new_item_allocation = program_task(&cmdlist, None);
     }
-    insert_after(item_handle, new_item_allocation);
-    TaskOutcome::Normal
+    drop(item);
+    defer_task(item_handle, new_item_allocation)
 }
 fn server_client_command_done(item_handle: &dyn crate::actions::ContextSource) -> TaskOutcome {
     let item = item_handle.borrow();

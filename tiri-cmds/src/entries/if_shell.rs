@@ -4,7 +4,8 @@ use crate::arguments::{
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_command, cmdq_insert_after, cmdq_resumed,
+    CmdqFollowup, cmdq_append, cmdq_defer, cmdq_error, cmdq_followup, cmdq_get_command,
+    cmdq_resumed,
 };
 use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::actions::queue::{
@@ -95,9 +96,9 @@ fn cmd_if_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
             return CmdOutcome::Error;
         };
         new_item_allocation = cmdq_get_command(&cmdlist, item.state.as_ref());
-        cmdq_insert_after(item_handle, new_item_allocation);
+        drop(item);
         drop(cmdlist);
-        return CmdOutcome::Normal;
+        return cmdq_defer(item_handle, new_item_allocation);
     }
     let mut cdata = Box::new(cmd_if_shell_data {
         cmd_if: None,
@@ -181,13 +182,17 @@ async fn cmd_if_shell_complete(
         drop(cdata);
         return std::future::pending().await;
     };
-    cmd_if_shell_callback(completion, &mut cdata, Some(&item));
+    let followup = cmd_if_shell_callback(completion, &mut cdata, Some(&item));
+    drop(cdata);
+    if let Some(followup) = followup {
+        followup.run().await;
+    }
 }
 fn cmd_if_shell_callback(
     completion: JobCompletion,
     cdata: &mut cmd_if_shell_data,
     item: Option<&Weak<cmdq_item>>,
-) {
+) -> Option<CmdqFollowup> {
     let c = cdata.client.as_ref();
     let new_item_allocation;
     let state = if completion.status.success() {
@@ -216,18 +221,22 @@ fn cmd_if_shell_callback(
                 }
             }
             Ok(commands) => {
-                if let Some(item) = item {
+                let followup = if let Some(item) = item {
                     let item = cmdq_resumed(item);
-                    new_item_allocation = cmdq_get_command(&commands, item.borrow().state.as_ref());
-                    cmdq_insert_after(&item, new_item_allocation);
+                    let mut followup = cmdq_followup(&item);
+                    followup.push(cmdq_get_command(&commands, item.borrow().state.as_ref()));
+                    Some(followup)
                 } else {
                     new_item_allocation = cmdq_get_command(&commands, None);
                     cmdq_append(c, new_item_allocation);
-                }
+                    None
+                };
                 drop(commands);
+                return followup;
             }
         }
     }
+    None
 }
 impl Drop for cmd_if_shell_data {
     fn drop(&mut self) {

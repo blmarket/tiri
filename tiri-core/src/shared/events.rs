@@ -134,15 +134,14 @@ impl EventPayloadValue {
 }
 
 pub enum EventPayloadIdentity {
-    Operation(crate::actions::ContextWeak),
+    CommandHook(usize),
     HookMonitor(usize),
 }
 
 impl EventPayloadIdentity {
     pub fn address(&self) -> usize {
         match self {
-            Self::Operation(item) => item.address(),
-            Self::HookMonitor(address) => *address,
+            Self::CommandHook(address) | Self::HookMonitor(address) => *address,
         }
     }
 }

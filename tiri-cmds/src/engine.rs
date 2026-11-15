@@ -1,7 +1,7 @@
 use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_cancel_background, cmdq_error, cmdq_get_callback_owned, cmdq_get_command,
-    cmdq_get_error, cmdq_guard, cmdq_insert_after, cmdq_new, cmdq_next, cmdq_print, cmdq_running,
+    cmdq_append, cmdq_cancel_background, cmdq_defer, cmdq_error, cmdq_get_callback_owned,
+    cmdq_get_command, cmdq_get_error, cmdq_guard, cmdq_new, cmdq_next, cmdq_print, cmdq_running,
     cmdq_wait,
 };
 use crate::shared::command::{cmd_list, cmd_parse_input};
@@ -29,7 +29,7 @@ pub fn program(program: &ProgramRef) -> Rc<cmd_list> {
 pub static ENGINE: CommandEngine = CommandEngine {
     queue_new: || cmdq_new(),
     queue_append: |client, item| weak(cmdq_append(client, native(&item))),
-    queue_insert: |anchor, item| weak(cmdq_insert_after(&native(anchor), native(&item))),
+    queue_defer: |parent, item| cmdq_defer(&native(parent), native(&item)),
     queue_program: |commands, state| context(cmdq_get_command(&program(commands), state)),
     queue_callback: |name, callback| {
         context(cmdq_get_callback_owned(

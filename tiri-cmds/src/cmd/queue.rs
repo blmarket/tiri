@@ -22,11 +22,10 @@ use tiri_core::arguments::{
     args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
 use tiri_core::control::{control_write, control_write_guard};
-use tiri_core::events::events_fire;
 use tiri_core::events_payload::{
-    event_payload_create, event_payload_set_identity, event_payload_set_string,
-    event_payload_set_target,
+    event_payload_create, event_payload_set_string, event_payload_set_target,
 };
+use tiri_core::hooks::hooks_fire_command;
 use tiri_core::file::file_error;
 use tiri_core::format::bytes::format_message_with;
 use tiri_core::format::bytes::write_cstr;
@@ -176,34 +175,16 @@ impl QueueItem {
     }
 }
 
-#[repr(C)]
-/// Box-owned by a client until client destruction; the lazy global queue lives for
-/// the process. The private deque owns stable command item allocations, and
-/// the drain owns a suspended head's continuation.
 pub struct cmdq_list {
-    /// Dropped first, so pending continuations are cancelled before items go.
     drain: DrainSlot,
+    hooks: Option<CmdqFollowup>,
+    active: Option<std::rc::Rc<cmdq_item>>,
     head: HeadState,
+    head_parked: bool,
     ran: u_int,
-    /// Current execution position, observed without retaining the item.
-    item: std::rc::Weak<cmdq_item>,
     list: std::collections::VecDeque<std::rc::Rc<cmdq_item>>,
-    /// Detached commands belong to the server's global queue, not a client.
     background: std::collections::BTreeMap<u64, tiri_core::reactor::Timer>,
     next_background_id: u64,
-}
-
-impl cmdq_list {
-    fn first(&self) -> Option<std::rc::Rc<cmdq_item>> {
-        self.list.front().cloned()
-    }
-
-    fn position(&self, item: &std::rc::Rc<cmdq_item>) -> usize {
-        self.list
-            .iter()
-            .position(|owner| std::rc::Rc::ptr_eq(owner, item))
-            .expect("command item belongs to queue")
-    }
 }
 
 fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<cmdq_item> {
@@ -313,9 +294,11 @@ fn cmdq_queue_name(queue: &QueueTarget) -> CString {
 pub fn cmdq_new() -> Box<cmdq_list> {
     Box::new(cmdq_list {
         drain: DrainSlot::Unstarted,
+        hooks: None,
+        active: None,
         head: HeadState::Idle,
+        head_parked: false,
         ran: 0,
-        item: std::rc::Weak::new(),
         list: std::collections::VecDeque::new(),
         background: std::collections::BTreeMap::new(),
         next_background_id: 0,
@@ -379,45 +362,82 @@ pub fn cmdq_append(
     last
 }
 
-/// Consume a detached chain and return the final queued insertion anchor.
-pub fn cmdq_insert_after(
-    after: &std::rc::Rc<cmdq_item>,
-    item: std::rc::Rc<cmdq_item>,
-) -> std::rc::Weak<cmdq_item> {
-    let (c_owner, queue, mut previous) = {
-        let after = after.borrow();
-        let queue = after.queue.clone().expect("queued insertion anchor");
-        (after.client.upgrade(), queue, after.name.clone())
-    };
-    let mut position = queue.with_queue(|queue| queue.position(after) + 1);
-    let mut remaining = Some(item);
-    let mut last = std::rc::Weak::new();
-    while let Some(owner_item) = remaining {
-        let name = {
-            let mut item = owner_item.borrow_mut();
-            assert!(item.queue.is_none(), "detached command item");
-            remaining = item.next.take();
-            item.client = c_owner
-                .as_ref()
-                .map(std::rc::Rc::downgrade)
-                .unwrap_or_default();
-            item.queue = Some(queue.clone());
-            item.name.clone()
-        };
-        last = std::rc::Rc::downgrade(&owner_item);
-        queue.with_queue(|queue| queue.list.insert(position, owner_item));
-        position += 1;
-        log_debug(format_args!(
-            "{} {}: {} after {}",
-            "cmdq_insert_after",
-            tiri_core::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
-            log_cstr(name.as_deref().unwrap_or(c"(null)")),
-            log_cstr(previous.as_deref().unwrap_or(c"(null)"))
-        ));
-        previous = name;
-    }
-    last
+pub struct CmdqFollowup {
+    queue: QueueTarget,
+    client: ClientWeak,
+    items: std::collections::VecDeque<std::rc::Rc<cmdq_item>>,
 }
+
+impl CmdqFollowup {
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn push(&mut self, item: std::rc::Rc<cmdq_item>) {
+        let mut remaining = Some(item);
+        while let Some(owner_item) = remaining {
+            let name = {
+                let mut item = owner_item.borrow_mut();
+                assert!(item.queue.is_none(), "detached command item");
+                remaining = item.next.take();
+                item.client = self.client.clone();
+                item.queue = Some(self.queue.clone());
+                item.name.clone()
+            };
+            log_debug(format_args!(
+                "cmdq_followup {}: {}",
+                tiri_core::log::log_bytes(cmdq_queue_name(&self.queue).as_bytes()),
+                log_cstr(name.as_deref().unwrap_or(c"(null)"))
+            ));
+            self.items.push_back(owner_item);
+        }
+    }
+
+    pub fn into_outcome(self) -> CmdOutcome {
+        if self.items.is_empty() {
+            CmdOutcome::Normal
+        } else {
+            CmdOutcome::Suspend(self.run())
+        }
+    }
+
+    pub fn run(mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
+        Box::pin(async move {
+            let trailing_hooks = cmdq_finish_active(&self.queue, true).await;
+            while let Some(item) = self.items.pop_front() {
+                cmdq_exec_item(&self.queue, item, Some(&mut self.items)).await;
+            }
+            if let Some(hooks) = trailing_hooks {
+                hooks.run().await;
+            }
+        })
+    }
+}
+
+pub fn cmdq_followup(parent: &std::rc::Rc<cmdq_item>) -> CmdqFollowup {
+    let (queue, client) = {
+        let item = parent.borrow();
+        (
+            item.queue.clone().expect("queued command item"),
+            item.client.clone(),
+        )
+    };
+    CmdqFollowup {
+        queue,
+        client,
+        items: std::collections::VecDeque::new(),
+    }
+}
+
+pub fn cmdq_defer(
+    parent: &std::rc::Rc<cmdq_item>,
+    item: std::rc::Rc<cmdq_item>,
+) -> CmdOutcome {
+    let mut followup = cmdq_followup(parent);
+    followup.push(item);
+    followup.into_outcome()
+}
+
 pub fn cmdq_insert_hook(
     _s_owner: Option<&SessionRef>,
     item_handle: &std::rc::Rc<cmdq_item>,
@@ -442,13 +462,6 @@ pub fn cmdq_insert_hook(
     if let Some(current) = current {
         event_payload_set_target(&mut ep, current);
     }
-    event_payload_set_identity(
-        &mut ep,
-        c"_cmdq_item",
-        tiri_core::shared::events::EventPayloadIdentity::Operation(
-            tiri_core::actions::ContextRef::new(item_handle.clone()).downgrade(),
-        ),
-    );
     let arguments = args_print_cstring(args_0);
     event_payload_set_string(&mut ep, c"arguments", |out| write_cstr(out, &*arguments));
     i = 0 as u_int;
@@ -479,99 +492,198 @@ pub fn cmdq_insert_hook(
             i = i.wrapping_add(1);
         }
     }
-    events_fire(&name, ep);
+    let tasks = hooks_fire_command(item_handle, &name, ep);
+    if tasks.is_empty() {
+        return;
+    }
+    let mut followup = cmdq_followup(item_handle);
+    for task in tasks {
+        followup.push(crate::engine::native(&task));
+    }
+    let queue = followup.queue.clone();
+    queue.with_queue(|q| match &mut q.hooks {
+        Some(existing) => existing.items.append(&mut followup.items),
+        None => q.hooks = Some(followup),
+    });
 }
-/// Retain the item from inside its continuation. Only valid while it is
-/// polled; drop the handle before the next `.await`.
+
 pub fn cmdq_resumed(item: &std::rc::Weak<cmdq_item>) -> std::rc::Rc<cmdq_item> {
     let owner = item.upgrade().expect("polled command item");
     let queue = owner.borrow().queue.clone().expect("queued command item");
     let polled = queue.with_queue(|queue| {
         queue.head == HeadState::Suspended
             && matches!(queue.drain, DrainSlot::Polling { .. })
-            && queue.item.ptr_eq(item)
+            && queue
+                .active
+                .as_ref()
+                .is_some_and(|active| std::rc::Rc::ptr_eq(active, &owner))
     });
     assert!(polled, "command item resumed outside its poll");
     owner
 }
+
 async fn cmdq_next_head(queue: &QueueTarget) -> std::rc::Rc<cmdq_item> {
-    std::future::poll_fn(|_| match queue.try_with_queue(|queue| queue.first()) {
+    std::future::poll_fn(|_| match queue.try_with_queue(|queue| queue.list.pop_front()) {
         Some(Some(item)) => std::task::Poll::Ready(item),
         _ => std::task::Poll::Pending,
     })
     .await
 }
-async fn cmdq_drain(queue: QueueTarget) {
+
+async fn cmdq_finish_active(
+    queue: &QueueTarget,
+    before_followup: bool,
+) -> Option<CmdqFollowup> {
+    let state = queue.try_with_queue(|q| {
+        if q.active.is_none() {
+            return None;
+        }
+        if q.head_parked && q.head == HeadState::Suspended {
+            q.head = HeadState::Resumed;
+            Some(true)
+        } else {
+            Some(false)
+        }
+    });
+    match state {
+        None => return std::future::pending().await,
+        Some(None) => return None,
+        Some(Some(true)) => {
+            let mut yielded = false;
+            std::future::poll_fn(|_| {
+                if !yielded {
+                    yielded = true;
+                    return std::task::Poll::Pending;
+                }
+                match queue.try_with_queue(|_| ()) {
+                    Some(()) => std::task::Poll::Ready(()),
+                    None => std::task::Poll::Pending,
+                }
+            })
+            .await;
+        }
+        Some(Some(false)) => {}
+    }
+    let taken = queue.try_with_queue(|q| {
+        let was_parked = std::mem::replace(&mut q.head_parked, false);
+        q.head = HeadState::Idle;
+        let owner = q.active.take()?;
+        let hooks = q.hooks.take();
+        q.ran += 1;
+        Some((owner, hooks, was_parked))
+    });
+    let Some(taken) = taken else {
+        return std::future::pending().await;
+    };
+    let Some((owner, hooks, was_parked)) = taken else {
+        return None;
+    };
+    cmdq_remove(owner);
+    if before_followup && !was_parked {
+        if let Some(hooks) = hooks {
+            hooks.run().await;
+        }
+        None
+    } else {
+        hooks
+    }
+}
+
+async fn cmdq_exec_item(
+    queue: &QueueTarget,
+    item_owner: std::rc::Rc<cmdq_item>,
+    mut siblings: Option<&mut std::collections::VecDeque<std::rc::Rc<cmdq_item>>>,
+) {
     thread_local! {
         static NUMBER: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
     }
+    let start = {
+        let mut item = item_owner.borrow_mut();
+        log_debug(format_args!(
+            "cmdq_next {}: {}",
+            tiri_core::log::log_bytes(cmdq_queue_name(queue).as_bytes()),
+            tiri_core::log::log_bytes(item.name.as_deref().unwrap_or(c"(null)").to_bytes()),
+        ));
+        item.start.take().expect("queue head starts once")
+    };
+    let installed = queue.try_with_queue(|q| {
+        q.hooks = None;
+        q.active = Some(item_owner.clone());
+        q.head = HeadState::Running;
+        q.head_parked = false;
+    });
+    if installed.is_none() {
+        drop(start);
+        drop(item_owner);
+        return std::future::pending().await;
+    }
+    let number = NUMBER.with(|cell| {
+        let next = cell.get().wrapping_add(1);
+        cell.set(next);
+        next
+    });
+    {
+        let mut item = item_owner.borrow_mut();
+        item.time = tiri_core::shared::time::unix_seconds(std::time::SystemTime::now());
+        item.number = number;
+    }
+    match start(&item_owner) {
+        CmdOutcome::Suspend(mut continuation) => {
+            if queue
+                .try_with_queue(|q| q.head = HeadState::Suspended)
+                .is_none()
+            {
+                drop(continuation);
+                drop(item_owner);
+                return std::future::pending().await;
+            }
+            drop(item_owner);
+            continuation.as_mut().await;
+            drop(continuation);
+            let hooks = cmdq_finish_active(queue, false).await;
+            if let Some(hooks) = hooks {
+                hooks.run().await;
+            }
+        }
+        outcome => {
+            if matches!(outcome, CmdOutcome::Error) {
+                let command = item_owner.borrow().cmdlist.clone();
+                if let Some(command) = command {
+                    let removed = match siblings.as_deref_mut() {
+                        Some(items) => cmdq_take_same_group(items, &command),
+                        None => queue
+                            .try_with_queue(|q| cmdq_take_same_group(&mut q.list, &command))
+                            .unwrap_or_default(),
+                    };
+                    for removed_item in removed {
+                        cmdq_remove(removed_item);
+                    }
+                }
+            }
+            drop(item_owner);
+            let finished = queue.try_with_queue(|q| {
+                q.head = HeadState::Idle;
+                q.head_parked = false;
+                let owner = q.active.take().expect("active queue item");
+                let hooks = q.hooks.take();
+                q.ran += 1;
+                (owner, hooks)
+            });
+            let Some((owner, hooks)) = finished else {
+                return std::future::pending().await;
+            };
+            cmdq_remove(owner);
+            if let Some(hooks) = hooks {
+                hooks.run().await;
+            }
+        }
+    }
+}
+
+async fn cmdq_drain(queue: QueueTarget) {
     loop {
         let item_owner = cmdq_next_head(&queue).await;
-        let start = {
-            let mut item = item_owner.borrow_mut();
-            log_debug(format_args!(
-                "cmdq_next {}: {}",
-                tiri_core::log::log_bytes(cmdq_queue_name(&queue).as_bytes()),
-                tiri_core::log::log_bytes(item.name.as_deref().unwrap_or(c"(null)").to_bytes()),
-            ));
-            item.start.take().expect("queue head starts once")
-        };
-        queue.with_queue(|queue| {
-            queue.item = std::rc::Rc::downgrade(&item_owner);
-            queue.head = HeadState::Running;
-        });
-        let number = NUMBER.get().wrapping_add(1);
-        NUMBER.set(number);
-        {
-            let mut item = item_owner.borrow_mut();
-            item.time = tiri_core::shared::time::unix_seconds(std::time::SystemTime::now());
-            item.number = number;
-        }
-        match start(&item_owner) {
-            CmdOutcome::Suspend(mut continuation) => {
-                queue.with_queue(|queue| queue.head = HeadState::Suspended);
-                drop(item_owner);
-                let mut suspended = false;
-                std::future::poll_fn(|context| {
-                    let result = continuation.as_mut().poll(context);
-                    suspended |= result.is_pending();
-                    result
-                })
-                .await;
-                drop(continuation);
-                if suspended {
-                    std::future::poll_fn(|_| {
-                        queue
-                            .try_with_queue(|queue| {
-                                if queue.head == HeadState::Suspended {
-                                    queue.head = HeadState::Resumed;
-                                    std::task::Poll::Pending
-                                } else {
-                                    std::task::Poll::Ready(())
-                                }
-                            })
-                            .unwrap_or(std::task::Poll::Pending)
-                    })
-                    .await;
-                }
-            }
-            outcome => {
-                if matches!(outcome, CmdOutcome::Error) {
-                    cmdq_remove_group(&item_owner);
-                }
-                drop(item_owner);
-            }
-        };
-        let owner = queue.try_with_queue(|queue| {
-            queue.head = HeadState::Idle;
-            queue.item = std::rc::Weak::new();
-            queue.ran += 1;
-            queue.list.pop_front().expect("executed queue item")
-        });
-        let Some(owner) = owner else {
-            return std::future::pending().await;
-        };
-        cmdq_remove(owner);
+        cmdq_exec_item(&queue, item_owner, None).await;
     }
 }
 /// Poll `queue`'s drain outside any queue borrow, again while it is woken
@@ -588,10 +700,13 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain) -> u_int {
             "a queue drain never completes"
         );
         let polled = queue.try_with_queue(|queue| {
+            if queue.head == HeadState::Suspended {
+                queue.head_parked = true;
+            }
             let head = if matches!(queue.head, HeadState::Suspended | HeadState::Resumed) {
-                queue.item.clone()
+                queue.active.clone()
             } else {
-                Default::default()
+                None
             };
             let DrainSlot::Polling { rewoken } =
                 std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false })
@@ -604,11 +719,12 @@ fn cmdq_poll(queue: &QueueTarget, mut drain: Drain) -> u_int {
             drop(drain);
             return 0;
         };
-        if let Some(head) = head.upgrade() {
+        if let Some(head) = head {
             assert!(
                 std::rc::Rc::strong_count(&head) <= 2,
                 "command continuation retained its item across a poll"
             );
+            drop(head);
         }
         if !rewoken {
             break;
@@ -644,36 +760,25 @@ fn cmdq_remove(item_handle: std::rc::Rc<cmdq_item>) {
         "command item removal requires its sole strong owner"
     );
 }
-fn cmdq_remove_group(item_handle: &std::rc::Rc<cmdq_item>) {
-    let (command, queue) = {
-        let item = item_handle.borrow();
-        let Some(command) = &item.cmdlist else {
-            return;
-        };
-        (command.clone(), item.queue.clone())
-    };
-    let queue = queue.expect("queued group anchor");
-    let mut position = queue.with_queue(|queue| queue.position(item_handle) + 1);
-    loop {
-        let next = queue.with_queue(|queue| {
-            let owner = queue.list.get(position)?;
-            let same_group = owner
-                .borrow()
-                .cmdlist
-                .as_ref()
-                .is_some_and(|next| command.same_group(next));
-            if same_group {
-                Some(queue.list.remove(position))
-            } else {
-                Some(None)
-            }
-        });
-        match next {
-            Some(Some(owner)) => cmdq_remove(owner),
-            Some(None) => position += 1,
-            None => break,
+fn cmdq_take_same_group(
+    list: &mut std::collections::VecDeque<std::rc::Rc<cmdq_item>>,
+    command: &CommandRef,
+) -> Vec<std::rc::Rc<cmdq_item>> {
+    let mut removed = Vec::new();
+    let mut index = 0;
+    while index < list.len() {
+        let same_group = list[index]
+            .borrow()
+            .cmdlist
+            .as_ref()
+            .is_some_and(|next| command.same_group(next));
+        if same_group {
+            removed.push(list.remove(index).expect("indexed command item"));
+        } else {
+            index += 1;
         }
     }
+    removed
 }
 
 pub fn cmdq_get_command(
@@ -1017,7 +1122,10 @@ pub fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
 pub fn cmdq_running() -> std::rc::Weak<cmdq_item> {
     QueueTarget::Global.with_queue(|queue| match queue.head {
         HeadState::Suspended => std::rc::Weak::new(),
-        HeadState::Idle | HeadState::Running | HeadState::Resumed => queue.item.clone(),
+        HeadState::Idle | HeadState::Running | HeadState::Resumed => queue
+            .active
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     })
 }
 pub fn cmdq_guard(
@@ -1535,8 +1643,8 @@ mod suspend_tests {
 #[cfg(test)]
 mod wait_tests {
     use super::{
-        CStr, ClientRef, CmdqWaiter, cmdq_append, cmdq_get_callback_owned, cmdq_get_client,
-        cmdq_insert_after, cmdq_item, cmdq_next, cmdq_wait,
+        CStr, ClientRef, CmdqWaiter, cmdq_append, cmdq_defer, cmdq_get_callback_owned,
+        cmdq_get_client, cmdq_item, cmdq_next, cmdq_wait,
     };
     use crate::test_support::clients;
     use std::cell::RefCell;
@@ -1622,7 +1730,7 @@ mod wait_tests {
     }
 
     #[test]
-    fn an_item_inserted_behind_a_lent_item_records_the_lent_client() {
+    fn a_deferred_item_from_a_lent_item_records_the_lent_client() {
         let lent = clients::with_queue();
         let slot: Slot = Default::default();
         let (inserted, substitute) = (slot.clone(), lent.clone());
@@ -1632,8 +1740,7 @@ mod wait_tests {
                 c"lent head",
                 Some(Box::new(move |item| {
                     with_lent_client(item, &substitute, || {
-                        cmdq_insert_after(item, waiting(c"inserted waiter", &inserted));
-                        CmdOutcome::Normal
+                        cmdq_defer(item, waiting(c"inserted waiter", &inserted))
                     })
                 })),
             ),

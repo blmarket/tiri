@@ -28,8 +28,8 @@ use super::{
     control_pane_offset, fatal, find_home_cstr, format_tree, key_event, key_table, log_cstr,
     log_debug, msgtype, options_get_number, proc_send, server_client_check_nested,
     server_client_create, server_client_detach, server_client_exec, server_client_get_cwd,
-    server_client_handle_key, server_client_handle_key_after, server_client_how_many,
-    server_client_loop, server_client_lost, server_client_open, server_client_print,
+    server_client_handle_key, server_client_how_many, server_client_loop, server_client_lost,
+    server_client_open, server_client_prepare_sent_key, server_client_print,
     server_client_remove_pane, server_client_set_flags, server_client_set_key_table,
     server_client_set_session, server_client_set_term_type, server_client_suspend,
     server_client_update_theme_colours, setblocking, tty, tty_resize, tty_window_offset,
@@ -212,14 +212,7 @@ pub trait Client {
     fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32);
     /// `flags` contains only CLIENT_*REDRAW* bits, including status-force.
     fn request_redraw(&self, flags: u64);
-    /// Ordered injection used by send-keys -K. The queue insertion point must
-    /// survive until dispatch finishes, under the existing command lifetime rules.
-    fn handle_key_after(
-        &self,
-        event: Box<key_event>,
-        after: Option<&dyn crate::actions::ContextSource>,
-        next: Option<&mut crate::actions::ContextWeak>,
-    ) -> i32;
+    fn prepare_sent_key(&self, event: Box<key_event>) -> Option<crate::actions::ContextRef>;
     fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>);
     /// Scoped access to this control client's consumer offset. Call only for an
     /// attached control client; the bool is the existing output-disabled flag.
@@ -970,13 +963,8 @@ impl Client for ClientRef {
         self.borrow_mut().flags |= flags;
     }
 
-    fn handle_key_after(
-        &self,
-        event: Box<key_event>,
-        after: Option<&dyn crate::actions::ContextSource>,
-        next: Option<&mut crate::actions::ContextWeak>,
-    ) -> i32 {
-        server_client_handle_key_after(self, event, after, next)
+    fn prepare_sent_key(&self, event: Box<key_event>) -> Option<crate::actions::ContextRef> {
+        server_client_prepare_sent_key(self, event)
     }
 
     fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>) {

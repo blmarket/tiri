@@ -1,10 +1,10 @@
 use crate::actions::queue::{
-    enqueue, event as context_event, execution_state, insert_after, new_state, program_task,
-    report_error, running, target as context_target,
+    enqueue, event as context_event, execution_state, new_state, program_task, report_error,
+    running, target as context_target,
 };
 use crate::actions::sources::compile;
 use crate::actions::{
-    ContextSource, ContextWeak, ExecutionState, NO_HOOKS, ProgramRef, ProgramSource, Target,
+    ContextRef, ContextSource, ExecutionState, NO_HOOKS, ProgramRef, ProgramSource, Target,
 };
 use crate::events::{events_add_sink, events_fire};
 use crate::events_payload::{
@@ -76,16 +76,12 @@ thread_local! {
     };
 }
 
-fn hooks_insert_one(
-    item: Option<&dyn ContextSource>,
+fn hooks_build_one(
     hd: &hooks_data,
     commands: Option<&dyn ProgramSource>,
     state: &Rc<ExecutionState>,
-) -> ContextWeak {
-    let Some(commands) = commands else {
-        return item.map_or_else(ContextWeak::new, ContextSource::downgrade);
-    };
-    let commands = commands.program_ref();
+) -> Option<ContextRef> {
+    let commands = commands?.program_ref();
     if log_get_level() != 0 {
         let s = commands.text(0);
         log_debug(format_args!(
@@ -95,11 +91,7 @@ fn hooks_insert_one(
             log_cstr(&s)
         ));
     }
-    let task = program_task(&commands, Some(state));
-    if let Some(item) = item {
-        return insert_after(item, task);
-    }
-    enqueue(None, task)
+    Some(program_task(&commands, Some(state)))
 }
 
 fn hooks_parse(hd: &mut hooks_data, fs: &Target, value: &CStr) -> Result<ProgramRef, CString> {
@@ -177,13 +169,13 @@ fn hooks_find(
     runnable.then_some((source, fs))
 }
 
-fn hooks_insert(
+fn hooks_collect(
     item: Option<&dyn ContextSource>,
     hd: &mut hooks_data,
     source: OptionsScope,
     fs: Target,
-) {
-    let mut after = item.map_or_else(ContextWeak::new, ContextSource::downgrade);
+) -> Vec<ContextRef> {
+    let mut tasks = Vec::new();
     let name = hd.name;
     let event = item.map(|item| context_event(&item.borrow()));
     let state = new_state(Some(&fs), event.as_ref(), NO_HOOKS);
@@ -202,13 +194,9 @@ fn hooks_insert(
                 log_cstr(&error)
             )),
             Ok(commands) => {
-                let anchor = after.upgrade();
-                hooks_insert_one(
-                    anchor.as_ref().map(|item| item as &dyn ContextSource),
-                    hd,
-                    Some(&commands),
-                    &state,
-                );
+                if let Some(task) = hooks_build_one(hd, Some(&commands), &state) {
+                    tasks.push(task);
+                }
             }
         }
     } else {
@@ -247,13 +235,9 @@ fn hooks_insert(
                         });
                     }
                     Ok(commands) => {
-                        let anchor = after.upgrade();
-                        after = hooks_insert_one(
-                            anchor.as_ref().map(|item| item as &dyn ContextSource),
-                            hd,
-                            Some(&commands),
-                            &state,
-                        );
+                        if let Some(task) = hooks_build_one(hd, Some(&commands), &state) {
+                            tasks.push(task);
+                        }
                     }
                 }
             } else {
@@ -269,34 +253,35 @@ fn hooks_insert(
                 let Some(commands) = commands else {
                     break;
                 };
-                let anchor = after.upgrade();
-                after = hooks_insert_one(
-                    anchor.as_ref().map(|item| item as &dyn ContextSource),
+                if let Some(task) = hooks_build_one(
                     hd,
                     commands
                         .as_ref()
                         .map(|commands| commands as &dyn ProgramSource),
                     &state,
-                );
+                ) {
+                    tasks.push(task);
+                }
             }
         }
     }
+    tasks
 }
 
-fn hooks_insert_event(
+fn hooks_collect_event(
     item: Option<&dyn ContextSource>,
     name: &CStr,
     ep: &event_payload,
     oo: Option<OptionsScope>,
     expand: ::core::ffi::c_int,
-) {
+) -> Vec<ContextRef> {
     if item.is_some_and(|item| execution_state(&item.borrow()).flags & NO_HOOKS != 0) {
-        return;
+        return Vec::new();
     }
     let mut target = Target::default();
     event_payload_get_target(ep, &mut target);
     let Some((source, fs)) = hooks_find(oo.as_ref(), name, &target) else {
-        return;
+        return Vec::new();
     };
     let c = event_payload_get_client(ep);
     let mut formats = format_create(c, item, FORMAT_NONE, FORMAT_NOJOBS);
@@ -310,8 +295,24 @@ fn hooks_insert_event(
         client: c.map(Rc::downgrade).unwrap_or_default(),
         expand,
     };
-    hooks_insert(item, &mut hd, source, fs);
+    let tasks = hooks_collect(item, &mut hd, source, fs);
     drop(hd.formats);
+    tasks
+}
+
+pub fn hooks_fire_command(
+    item: &dyn ContextSource,
+    name: &CStr,
+    mut ep: Box<event_payload>,
+) -> Vec<ContextRef> {
+    event_payload_set_identity(
+        &mut ep,
+        c"_hooks_command",
+        EventPayloadIdentity::CommandHook(item.downgrade().address()),
+    );
+    let tasks = hooks_collect_event(Some(item), name, &ep, None, 0);
+    events_fire(name, ep);
+    tasks
 }
 
 fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
@@ -319,16 +320,10 @@ fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     if matches!(
         event_payload_get_identity(ep, c"_hooks_monitor"),
         Some(EventPayloadIdentity::HookMonitor(_))
+    ) || matches!(
+        event_payload_get_identity(ep, c"_hooks_command"),
+        Some(EventPayloadIdentity::CommandHook(_))
     ) {
-        return;
-    }
-    if let Some(EventPayloadIdentity::Operation(observer)) =
-        event_payload_get_identity(ep, c"_cmdq_item")
-    {
-        let Some(item_owner) = observer.upgrade() else {
-            return;
-        };
-        hooks_insert_event(Some(&item_owner), name, ep, None, 0);
         return;
     }
     let active = running().upgrade();
@@ -336,7 +331,9 @@ fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
         .as_ref()
         .is_none_or(|item| execution_state(&item.borrow()).flags & NO_HOOKS == 0)
     {
-        hooks_insert_event(None, name, ep, None, 0);
+        for task in hooks_collect_event(None, name, ep, None, 0) {
+            enqueue(None, task);
+        }
     }
 }
 
@@ -371,13 +368,13 @@ pub fn hooks_build_events() {
     }
 }
 
-pub fn hooks_run(item: &dyn ContextSource, name: &CStr) {
+pub fn hooks_run(item: &dyn ContextSource, name: &CStr) -> Vec<ContextRef> {
     let (target_state, client) = {
         let context = item.borrow();
         (context_target(&context).clone(), context.client.clone())
     };
     let Some((source, fs)) = hooks_find(None, name, &target_state) else {
-        return;
+        return Vec::new();
     };
     let mut hd = hooks_data {
         name,
@@ -387,8 +384,9 @@ pub fn hooks_run(item: &dyn ContextSource, name: &CStr) {
     };
     format_add(&mut hd.formats, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(&mut hd.formats, c"hooks_run");
-    hooks_insert(Some(item), &mut hd, source, fs);
+    let tasks = hooks_collect(Some(item), &mut hd, source, fs);
     drop(hd.formats);
+    tasks
 }
 
 pub fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
@@ -419,13 +417,15 @@ fn hooks_monitor_hook_cb(
         return;
     }
     let active = running().upgrade();
-    hooks_insert_event(
+    for task in hooks_collect_event(
         active.as_ref().map(|item| item as &dyn ContextSource),
         name,
         payload,
         Some(scope.clone()),
         1,
-    );
+    ) {
+        enqueue(None, task);
+    }
 }
 
 fn hooks_monitor_cb(change: &monitor_change, fallback: &Target, generation: usize) {

@@ -2,7 +2,7 @@ use crate::arguments::{args_command_state, args_make_commands, args_make_command
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_command, cmdq_insert_after, cmdq_resumed,
+    CmdqFollowup, cmdq_append, cmdq_error, cmdq_followup, cmdq_get_command, cmdq_resumed,
 };
 use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::actions::queue::{
@@ -232,7 +232,7 @@ fn cmd_run_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     }
     if wait == 0 {
         crate::cmd::queue::cmdq_background(tv, move || {
-            if let Some(job) = cmd_run_shell_timer(&mut cdata, None) {
+            if let RunShellTimer::Job(job) = cmd_run_shell_timer(&mut cdata, None) {
                 job.try_borrow_mut()
                     .expect("newly registered job")
                     .completecb = Some(Box::new(move |completion| {
@@ -244,6 +244,11 @@ fn cmd_run_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         return CmdOutcome::Normal;
     }
     cmd_run_shell_wait(item_handle, cdata, tv)
+}
+enum RunShellTimer {
+    None,
+    Job(tiri_core::refbox::Weak<job>),
+    Commands(CmdqFollowup),
 }
 /// Suspend a foreground run-shell on a continuation that owns its data, and
 /// with it the client (tmux's cdata). The timer body runs inside the delay's
@@ -265,17 +270,23 @@ fn cmd_run_shell_wait(
             return std::future::pending().await;
         }
         drop(timer);
-        let Some(job) = cmd_run_shell_timer(&mut cdata, Some(&item)) else {
-            return;
-        };
-        let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
-        job.try_borrow_mut()
-            .expect("newly registered job")
-            .completecb = Some(Box::new(move |completion| {
-            let _ = done.send(completion);
-        }));
-        drop(job);
-        cmd_run_shell_complete(completed, cdata, item).await
+        match cmd_run_shell_timer(&mut cdata, Some(&item)) {
+            RunShellTimer::None => {}
+            RunShellTimer::Commands(followup) => {
+                drop(cdata);
+                followup.run().await;
+            }
+            RunShellTimer::Job(job) => {
+                let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
+                job.try_borrow_mut()
+                    .expect("newly registered job")
+                    .completecb = Some(Box::new(move |completion| {
+                    let _ = done.send(completion);
+                }));
+                drop(job);
+                cmd_run_shell_complete(completed, cdata, item).await
+            }
+        }
     }))
 }
 /// Run the callback body once the job completes. A job freed without
@@ -292,20 +303,19 @@ async fn cmd_run_shell_complete(
     };
     cmd_run_shell_callback(completion, &cdata, Some(&item));
 }
-/// Start the command, or queue the -C commands. Returns a started job for the
-/// caller to install its completion; job_run does not dispatch callbacks
-/// before returning.
 fn cmd_run_shell_timer(
     cdata: &mut cmd_run_shell_data,
     item: Option<&Weak<cmdq_item>>,
-) -> Option<tiri_core::refbox::Weak<job>> {
+) -> RunShellTimer {
     let c = cdata.client.as_ref();
     let cmd = cdata.cmd.as_deref();
     let new_item_allocation;
     if cdata.state.is_none() {
-        cmd?;
+        let Some(cmd) = cmd else {
+            return RunShellTimer::None;
+        };
         let job = job_run(
-            cmd,
+            Some(cmd),
             &Vec::new(),
             None,
             cdata.s.as_ref(),
@@ -318,12 +328,12 @@ fn cmd_run_shell_timer(
             -(1 as ::core::ffi::c_int),
         );
         if !job.is_empty() {
-            return Some(job);
+            return RunShellTimer::Job(job);
         }
         if let Some(item) = item {
             cmdq_error(&cmdq_resumed(item), |out| {
                 out.write_all(b"failed to run command: ")?;
-                write_cstr(out, cmd.unwrap())
+                write_cstr(out, cmd)
             });
         } else {
             status_message_set(
@@ -334,11 +344,11 @@ fn cmd_run_shell_timer(
                 0 as ::core::ffi::c_int,
                 |out| {
                     out.write_all(b"failed to run command: ")?;
-                    write_cstr(out, cmd.unwrap())
+                    write_cstr(out, cmd)
                 },
             );
         }
-        return None;
+        return RunShellTimer::None;
     }
     match args_make_commands(
         cdata.state.as_deref_mut().expect("prepared command state"),
@@ -365,16 +375,17 @@ fn cmd_run_shell_timer(
         Ok(commands) => {
             if let Some(item) = item {
                 let item = cmdq_resumed(item);
-                new_item_allocation = cmdq_get_command(&commands, item.borrow().state.as_ref());
-                cmdq_insert_after(&item, new_item_allocation);
-            } else {
-                new_item_allocation = cmdq_get_command(&commands, None);
-                cmdq_append(c, new_item_allocation);
+                let mut followup = cmdq_followup(&item);
+                followup.push(cmdq_get_command(&commands, item.borrow().state.as_ref()));
+                drop(commands);
+                return RunShellTimer::Commands(followup);
             }
+            new_item_allocation = cmdq_get_command(&commands, None);
+            cmdq_append(c, new_item_allocation);
             drop(commands);
         }
     }
-    None
+    RunShellTimer::None
 }
 fn cmd_run_shell_callback(
     completion: JobCompletion,

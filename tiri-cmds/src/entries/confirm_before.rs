@@ -1,7 +1,7 @@
 use crate::arguments::args_make_commands_now;
 use crate::cmd::queue::cmdq_item;
 use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_command, cmdq_insert_after, cmdq_resumed,
+    cmdq_append, cmdq_error, cmdq_followup, cmdq_get_command, cmdq_resumed,
 };
 use crate::cmd::{cmd_get_args, cmd_list_first};
 use crate::shared::command::CMD_CLIENT_TFLAG;
@@ -155,18 +155,25 @@ async fn cmd_confirm_before_wait(
         drop(cmdlist);
         return std::future::pending().await;
     };
-    {
+    let followup = {
         let item = cmdq_resumed(&item);
-        if confirmed {
-            let new_item_allocation = cmdq_get_command(&cmdlist, item.borrow().state.as_ref());
-            cmdq_insert_after(&item, new_item_allocation);
-        }
         let client = cmdq_get_client(Some(&item.borrow()));
         if let Some(client) = client {
             if client.attached_session().upgrade().is_none() {
                 client.set_return_value(if confirmed { 0 } else { 1 });
             }
         }
+        if confirmed {
+            let mut followup = cmdq_followup(&item);
+            followup.push(cmdq_get_command(&cmdlist, item.borrow().state.as_ref()));
+            Some(followup)
+        } else {
+            None
+        }
+    };
+    drop(cmdlist);
+    if let Some(followup) = followup {
+        followup.run().await;
     }
 }
 fn cmd_confirm_before_callback(
