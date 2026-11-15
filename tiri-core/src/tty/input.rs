@@ -1,7 +1,7 @@
 //! Input storage stays in the terminal while decoding uses its contiguous bytes.
 //! Decoded events own their payload before callbacks can replace that storage.
 use crate::reactor::evbuffer_pullup;
-use tiri_buffer::{Buf, BufMut, SegmentedBuf};
+use tiri_buffer::{Buf, SegmentedBuf};
 
 #[derive(Default)]
 pub(super) struct TerminalInput {
@@ -14,7 +14,7 @@ impl TerminalInput {
     }
     /// Append bytes that arrived after this buffer's remaining bytes.
     pub fn append(&mut self, bytes: impl Into<SegmentedBuf>) {
-        self.buffer.put(bytes.into());
+        self.buffer.append(&mut bytes.into());
     }
     /// Borrow the buffer's allocation, coalescing segments only when necessary.
     pub fn bytes(&mut self) -> &[u8] {

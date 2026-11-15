@@ -301,7 +301,7 @@ pub fn bufferevent_write(stream: &mut bufferevent, data: &[u8]) -> c_int {
 /// Move bytes into output. If the source belongs to another stream, obtain it
 /// through bufferevent_get_input/output so that stream also rechecks its I/O.
 pub fn bufferevent_write_buffer(stream: &mut bufferevent, buffer: &mut SegmentedBuf) -> c_int {
-    stream.output.put(buffer);
+    stream.output.append(buffer);
     stream.state.wake();
     0
 }

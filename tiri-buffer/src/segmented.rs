@@ -3,7 +3,7 @@ use std::collections::{VecDeque, vec_deque};
 use std::io::IoSlice;
 use std::iter::FusedIterator;
 
-use crate::{Buffer, LineEnding};
+use crate::LineEnding;
 
 const SEGMENT_CAPACITY: usize = 4096;
 
@@ -49,7 +49,6 @@ struct Scan {
     segment: usize,
     offset: usize,
     scanned: usize,
-    previous: Option<u8>,
 }
 
 impl Scan {
@@ -59,7 +58,6 @@ impl Scan {
             segment: 0,
             offset: 0,
             scanned: 0,
-            previous: None,
         }
     }
 }
@@ -131,10 +129,6 @@ impl Buf for SegmentedBuf {
 }
 
 unsafe impl BufMut for SegmentedBuf {
-    fn put<T: Buf>(&mut self, source: T) {
-        source.put_into(self);
-    }
-
     fn remaining_mut(&self) -> usize {
         usize::MAX - self.len
     }
@@ -182,47 +176,16 @@ unsafe impl BufMut for SegmentedBuf {
     }
 }
 
-trait PutInto {
-    fn put_into(self, destination: &mut SegmentedBuf);
-}
-
-impl<T: Buf> PutInto for T {
-    default fn put_into(mut self, destination: &mut SegmentedBuf) {
-        assert!(
-            self.remaining() <= destination.remaining_mut(),
-            "buffer too large"
-        );
-        while self.has_remaining() {
-            let chunk = self.chunk();
-            let count = chunk.len();
-            destination.put_slice(chunk);
-            self.advance(count);
-        }
-    }
-}
-
-impl PutInto for SegmentedBuf {
-    fn put_into(mut self, destination: &mut SegmentedBuf) {
-        destination.append(&mut self);
-    }
-}
-
-impl PutInto for &mut SegmentedBuf {
-    fn put_into(self, destination: &mut SegmentedBuf) {
-        destination.append(self);
-    }
-}
-
-impl Buffer for SegmentedBuf {
-    type Chunks<'a> = Chunks<'a>;
-
-    fn chunks(&self) -> Chunks<'_> {
+impl SegmentedBuf {
+    /// Borrow storage for scanning or scatter/gather writes without pullup.
+    pub fn chunks(&self) -> Chunks<'_> {
         Chunks {
             inner: self.segments.iter(),
         }
     }
 
-    fn pullup(&mut self, count: usize) -> Option<&mut [u8]> {
+    /// Expose exactly `count` prefix bytes, coalescing that prefix if necessary.
+    pub fn pullup(&mut self, count: usize) -> Option<&mut [u8]> {
         if count > self.len {
             return None;
         }
@@ -240,15 +203,14 @@ impl Buffer for SegmentedBuf {
         Some(&mut front.bytes[front.start..front.start + count])
     }
 
-    fn read_line(&mut self, ending: LineEnding) -> Option<Vec<u8>> {
+    /// Extract the first complete line, consuming it and its delimiter.
+    pub fn read_line(&mut self, ending: LineEnding) -> Option<Vec<u8>> {
         let (line_len, consumed) = self.find_line(ending)?;
         let line = self.copy_prefix(line_len);
         self.advance(consumed);
         Some(line)
     }
-}
 
-impl SegmentedBuf {
     /// Move all source segments into this buffer without copying their payloads.
     pub fn append(&mut self, source: &mut Self) {
         if !source.has_remaining() {
@@ -266,9 +228,6 @@ impl SegmentedBuf {
         source.scan = None;
     }
 
-    /// Keep a drained segment's allocation for the next write, so a buffer
-    /// that is filled and drained in turn does not allocate each time.
-    /// Larger adopted allocations are released rather than held while idle.
     fn recycle(&mut self, mut bytes: Vec<u8>) {
         if self.spare.capacity() == 0 && bytes.capacity() <= SEGMENT_CAPACITY {
             bytes.clear();
@@ -314,24 +273,6 @@ impl SegmentedBuf {
             let position = scan.scanned - 1;
             match ending {
                 LineEnding::Lf if byte == b'\n' => return Some((position, scan.scanned)),
-                LineEnding::Nul if byte == 0 => return Some((position, scan.scanned)),
-                LineEnding::CrLf if byte == b'\n' => {
-                    let cr = usize::from(scan.previous == Some(b'\r'));
-                    return Some((position - cr, scan.scanned));
-                }
-                LineEnding::CrLfStrict if byte == b'\n' && scan.previous == Some(b'\r') => {
-                    return Some((position - 1, scan.scanned));
-                }
-                LineEnding::Any if matches!(byte, b'\r' | b'\n') => {
-                    let mut consumed = scan.scanned;
-                    while let Some(next) = self.next_byte(&mut scan) {
-                        if !matches!(next, b'\r' | b'\n') {
-                            break;
-                        }
-                        consumed = scan.scanned;
-                    }
-                    return Some((position, consumed));
-                }
                 LineEnding::Legacy if matches!(byte, b'\r' | b'\n') => {
                     let mut consumed = scan.scanned;
                     if self
@@ -344,7 +285,6 @@ impl SegmentedBuf {
                 }
                 _ => {}
             }
-            scan.previous = Some(byte);
         }
         self.scan = Some(scan);
         None

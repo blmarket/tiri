@@ -31,7 +31,7 @@ pub fn pane_output_data(
             .checked_sub(skip)
             .expect("pane offset is within input buffer"),
     );
-    for chunk in tiri_buffer::Buffer::chunks(input) {
+    for chunk in input.chunks() {
         if skip >= chunk.len() {
             skip -= chunk.len();
             continue;

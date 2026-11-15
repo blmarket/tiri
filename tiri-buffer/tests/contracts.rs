@@ -1,5 +1,5 @@
 //! Storage contracts and differential tests against a flat byte sequence.
-use tiri_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
+use tiri_buffer::{Buf, BufMut, LineEnding, SegmentedBuf};
 
 fn bytes(buffer: &SegmentedBuf) -> Vec<u8> {
     buffer.chunks().flatten().copied().collect()
@@ -10,7 +10,7 @@ fn parts(parts: &[&[u8]]) -> SegmentedBuf {
     for part in parts {
         let mut source = SegmentedBuf::default();
         source.put_slice(part);
-        buffer.put(&mut source);
+        buffer.append(&mut source);
         assert!(!source.has_remaining());
     }
     buffer
@@ -36,12 +36,12 @@ fn append_drain_and_reuse_preserve_binary_data() {
 }
 
 #[test]
-fn put_moves_payload_allocations_and_drains_preserve_them() {
+fn append_moves_payload_allocations_and_drains_preserve_them() {
     let mut source = parts(&[b"abc", b"defg", b"hij"]);
     source.advance(1);
     let addresses: Vec<_> = source.chunks().map(|s| s.as_ptr()).collect();
     let mut dest = parts(&[b"prefix"]);
-    dest.put(&mut source);
+    dest.append(&mut source);
     assert_eq!(
         dest.chunks()
             .skip(1)
@@ -53,7 +53,7 @@ fn put_moves_payload_allocations_and_drains_preserve_them() {
     assert!(!source.has_remaining());
     let mut empty = SegmentedBuf::default();
     let original = dest.chunks().next().unwrap().as_ptr();
-    empty.put(&mut dest);
+    empty.append(&mut dest);
     assert_eq!(empty.chunks().next().unwrap().as_ptr(), original);
     assert!(!dest.has_remaining());
 }
@@ -80,32 +80,16 @@ fn pullup_only_coalesces_requested_prefix() {
 
 fn reference_line(data: &mut Vec<u8>, policy: LineEnding) -> Option<Vec<u8>> {
     let (end, consumed) = match policy {
-        LineEnding::Lf | LineEnding::Nul => {
-            let delimiter = if policy == LineEnding::Lf { b'\n' } else { 0 };
-            let p = data.iter().position(|b| *b == delimiter)?;
+        LineEnding::Lf => {
+            let p = data.iter().position(|b| *b == b'\n')?;
             (p, p + 1)
         }
-        LineEnding::CrLf => {
-            let p = data.iter().position(|b| *b == b'\n')?;
-            (p - usize::from(p > 0 && data[p - 1] == b'\r'), p + 1)
-        }
-        LineEnding::CrLfStrict => {
-            let p = data.windows(2).position(|w| w == b"\r\n")?;
-            (p, p + 2)
-        }
-        LineEnding::Any | LineEnding::Legacy => {
+        LineEnding::Legacy => {
             let p = data.iter().position(|b| matches!(b, b'\r' | b'\n'))?;
-            let count = if policy == LineEnding::Any {
-                data[p..]
-                    .iter()
-                    .take_while(|b| matches!(b, b'\r' | b'\n'))
-                    .count()
-            } else {
-                1 + usize::from(
-                    data.get(p + 1)
-                        .is_some_and(|b| matches!(b, b'\r' | b'\n') && *b != data[p]),
-                )
-            };
+            let count = 1 + usize::from(
+                data.get(p + 1)
+                    .is_some_and(|b| matches!(b, b'\r' | b'\n') && *b != data[p]),
+            );
             (p, p + count)
         }
     };
@@ -114,14 +98,7 @@ fn reference_line(data: &mut Vec<u8>, policy: LineEnding) -> Option<Vec<u8>> {
     Some(line)
 }
 
-const POLICIES: [LineEnding; 6] = [
-    LineEnding::Lf,
-    LineEnding::CrLf,
-    LineEnding::CrLfStrict,
-    LineEnding::Nul,
-    LineEnding::Any,
-    LineEnding::Legacy,
-];
+const POLICIES: [LineEnding; 2] = [LineEnding::Lf, LineEnding::Legacy];
 
 #[test]
 fn every_line_policy_works_at_every_chunk_boundary() {
@@ -149,26 +126,25 @@ fn every_line_policy_works_at_every_chunk_boundary() {
 #[test]
 fn incomplete_scans_resume_and_mutation_invalidates_them() {
     let mut buffer = SegmentedBuf::default();
-    assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
+    assert_eq!(buffer.read_line(LineEnding::Lf), None);
     for _ in 0..5000 {
         buffer.put_slice(b"x");
-        assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
+        assert_eq!(buffer.read_line(LineEnding::Lf), None);
     }
     buffer.put_slice(b"\r");
-    assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
+    assert_eq!(buffer.read_line(LineEnding::Lf), None);
     let mut tail = parts(&[b"\n", b"end"]);
-    buffer.put(&mut tail);
-    assert_eq!(
-        buffer.read_line(LineEnding::CrLfStrict),
-        Some(vec![b'x'; 5000])
-    );
-    assert_eq!(buffer.read_line(LineEnding::Lf), None);
+    buffer.append(&mut tail);
+    let mut expected = vec![b'x'; 5000];
+    expected.push(b'\r');
+    assert_eq!(buffer.read_line(LineEnding::Lf), Some(expected));
+    assert_eq!(buffer.read_line(LineEnding::Legacy), None);
     buffer.pullup(2).unwrap()[1] = b'\n';
-    assert_eq!(buffer.read_line(LineEnding::Lf), Some(b"e".to_vec()));
+    assert_eq!(buffer.read_line(LineEnding::Legacy), Some(b"e".to_vec()));
     assert_eq!(bytes(&buffer), b"d");
-    buffer.put_slice(b"\0");
+    buffer.put_slice(b"\r");
     assert_eq!(buffer.read_line(LineEnding::Lf), None);
-    assert_eq!(buffer.read_line(LineEnding::Nul), Some(b"d".to_vec()));
+    assert_eq!(buffer.read_line(LineEnding::Legacy), Some(b"d".to_vec()));
 }
 
 #[test]
@@ -201,7 +177,7 @@ fn generated_operation_sequences_match_flat_storage() {
                     buffer.put_slice(&data);
                 } else {
                     let mut src = parts(&[&data]);
-                    buffer.put(&mut src);
+                    buffer.append(&mut src);
                 }
                 flat.extend(data);
             }
@@ -241,16 +217,16 @@ fn writable_capacity_commits_only_initialized_bytes_and_resumes_scans() {
     assert_eq!(buffer.remaining(), 0);
     assert!(buffer.chunk().is_empty());
     assert_eq!(buffer.chunks().count(), 0);
-    assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
+    assert_eq!(buffer.read_line(LineEnding::Lf), None);
     let capacity = buffer.chunk_mut().len();
     buffer.chunk_mut()[..capacity].copy_from_slice(&vec![b'x'; capacity]);
     unsafe { buffer.advance_mut(capacity) };
     assert_eq!(buffer.remaining(), capacity);
-    assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
-    buffer.chunk_mut()[..2].copy_from_slice(b"\r\n");
-    unsafe { buffer.advance_mut(2) };
+    assert_eq!(buffer.read_line(LineEnding::Lf), None);
+    buffer.chunk_mut()[..1].copy_from_slice(b"\n");
+    unsafe { buffer.advance_mut(1) };
     assert_eq!(
-        buffer.read_line(LineEnding::CrLfStrict),
+        buffer.read_line(LineEnding::Lf),
         Some(vec![b'x'; capacity])
     );
     assert!(!buffer.has_remaining());
@@ -273,7 +249,7 @@ fn standard_buf_consumers_and_vectored_access_cross_segments() {
     assert_eq!(&prefix, b"abcd");
     assert_eq!(buffer.chunk(), b"e");
     let mut destination = SegmentedBuf::default();
-    destination.put(&mut buffer);
+    destination.append(&mut buffer);
     assert!(!buffer.has_remaining());
     assert_eq!(bytes(&destination), b"efg");
     let mut empty_slots = [IoSlice::new(&[]); 2];
@@ -290,35 +266,6 @@ fn advance_rejects_overrun_without_modifying_contents() {
     assert_eq!(bytes(&buffer), b"abc");
     buffer.advance(0);
     assert_eq!(buffer.remaining(), 3);
-}
-
-#[test]
-fn generic_put_specializes_owned_and_borrowed_sources() {
-    fn append<D: BufMut, S: Buf>(destination: &mut D, source: S) {
-        destination.put(source);
-    }
-    let mut source = parts(&[b"abc", b"def"]);
-    source.advance(1);
-    let pointers: Vec<_> = source.chunks().map(|chunk| chunk.as_ptr()).collect();
-    let mut destination = parts(&[b"prefix"]);
-    append(&mut destination, source);
-    assert_eq!(bytes(&destination), b"prefixbcdef");
-    assert_eq!(
-        destination
-            .chunks()
-            .skip(1)
-            .map(|c| c.as_ptr())
-            .collect::<Vec<_>>(),
-        pointers
-    );
-    let mut empty = SegmentedBuf::default();
-    let pointers: Vec<_> = destination.chunks().map(|chunk| chunk.as_ptr()).collect();
-    append(&mut empty, &mut destination);
-    assert!(!destination.has_remaining());
-    assert_eq!(
-        empty.chunks().map(|c| c.as_ptr()).collect::<Vec<_>>(),
-        pointers
-    );
 }
 
 #[test]
@@ -344,7 +291,7 @@ fn owned_vec_is_adopted_without_copying_and_can_be_transferred() {
     let mut source = SegmentedBuf::from(bytes);
     assert_eq!(source.chunk().as_ptr(), pointer);
     let mut destination = SegmentedBuf::default();
-    destination.put(&mut source);
+    destination.append(&mut source);
     assert!(!source.has_remaining());
     assert_eq!(destination.chunk().as_ptr(), pointer);
     assert_eq!(destination.remaining(), 65536);

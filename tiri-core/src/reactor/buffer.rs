@@ -2,7 +2,7 @@
 //! Stream scheduling belongs to bufferevent, not these storage operations.
 use crate::shared::abi::{size_t, ssize_t};
 use std::ffi::c_int;
-use tiri_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
+use tiri_buffer::{Buf, BufMut, LineEnding, SegmentedBuf};
 
 pub fn evbuffer_new() -> Box<SegmentedBuf> {
     Box::new(SegmentedBuf::default())
@@ -91,8 +91,8 @@ fn format_buffer(
 #[cfg(test)]
 mod tests {
     use super::{
-        Buf, BufMut, Buffer, SegmentedBuf, c_int, evbuffer_drain, evbuffer_get_length,
-        evbuffer_new, evbuffer_pullup, format_buffer,
+        Buf, BufMut, SegmentedBuf, c_int, evbuffer_drain, evbuffer_get_length, evbuffer_new,
+        evbuffer_pullup, format_buffer,
     };
     use crate::format::bytes::write_cstr;
     use std::ffi::CString;

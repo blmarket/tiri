@@ -687,8 +687,7 @@ pub fn control_wait_exit() {
                         return Ok(());
                     }
                     bytes.truncate(received.bytes);
-                    use tiri_buffer::BufMut as _;
-                    buffer.put(tiri_buffer::SegmentedBuf::from(bytes));
+                    buffer.append(&mut tiri_buffer::SegmentedBuf::from(bytes));
                 }
             }
         })?

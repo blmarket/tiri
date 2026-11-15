@@ -6,7 +6,7 @@ use futures_core::Stream;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, LocalWaker, Poll, Waker};
-use tiri_buffer::{Buf, BufMut, SegmentedBuf};
+use tiri_buffer::{Buf, SegmentedBuf};
 
 #[derive(Default)]
 pub(super) struct ReadState {
@@ -76,7 +76,7 @@ pub(super) fn collect_for_callback(file: &mut client_file) {
     let mut cx = Context::from_waker(Waker::noop());
     while let Poll::Ready(Some(item)) = Pin::new(&mut *file).poll_next(&mut cx) {
         if let Ok(bytes) = item {
-            file.buffer.put(SegmentedBuf::from(bytes));
+            file.buffer.append(&mut SegmentedBuf::from(bytes));
         }
     }
     file.read.wake = None;
@@ -87,11 +87,11 @@ mod tests {
     use crate::file::EIO;
     use crate::file::Rc;
     use super::{
-        Buf, BufMut, Context, LocalWaker, Pin, Poll, Stream, Waker, client_file, finish, io,
-        take_wake,
+        Buf, Context, LocalWaker, Pin, Poll, Stream, Waker, client_file, finish, io, take_wake,
     };
     use std::cell::Cell;
     use std::task::{ContextBuilder, LocalWake};
+    use tiri_buffer::BufMut;
 
     fn read_file() -> client_file {
         let mut file = client_file::empty();

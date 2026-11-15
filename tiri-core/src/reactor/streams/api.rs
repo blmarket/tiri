@@ -105,7 +105,7 @@ impl BufferEvent for StreamHandle {
                 return Err(StreamError::InvalidRange);
             }
             let mut copied = 0;
-            for chunk in tiri_buffer::Buffer::chunks(&*stream.input) {
+            for chunk in stream.input.chunks() {
                 if offset >= chunk.len() {
                     offset -= chunk.len();
                     continue;
