@@ -1,9 +1,10 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_entry;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::CMD_STARTSERVER;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::args_parse;
 use tiri_core::shared::signal::SIGTERM;
 pub static cmd_kill_server_entry: cmd_entry = {
@@ -56,10 +57,15 @@ pub static cmd_start_server_entry: cmd_entry = {
         exec: Some(cmd_kill_server_exec),
     }
 };
-fn cmd_kill_server_exec(self_0: &cmd, _item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_kill_server_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    _inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_kill_server_entry) {
         let _ =
             tiri_core::tiri_sys::send_signal(std::process::id() as tiri_core::libc::pid_t, SIGTERM);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

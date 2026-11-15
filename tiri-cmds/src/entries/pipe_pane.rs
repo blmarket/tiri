@@ -1,7 +1,9 @@
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::args_parse;
+use tiri_core::format::bytes::write_cstr;
 use tiri_core::window_pane::WindowPane;
 
 pub static cmd_pipe_pane_entry: cmd_entry = {
@@ -29,8 +31,25 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
         exec: Some(cmd_pipe_pane_exec),
     }
 };
-fn cmd_pipe_pane_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
+fn cmd_pipe_pane_exec<'a, 'ctx>(
+    command: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+    let cf = inv.format();
+    let (target, tc) = {
+        (
+            inv.target().clone(),
+            inv.target_client(),
+        )
+    };
     let pane = target.wp.upgrade().expect("live pipe target pane");
-    pane.pipe(crate::cmd::cmd_get_args(command), item)
+    match pane.pipe(crate::cmd::cmd_get_args(command), Some(&cf), tc.as_ref(), &target) {
+        Ok(()) => ExecOutcome::ok(),
+        Err(err) => {
+            inv.error( |out| write_cstr(out, &*err));
+            ExecOutcome::err()
+        }
+    }
+})
 }

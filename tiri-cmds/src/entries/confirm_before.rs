@@ -1,18 +1,14 @@
 use crate::arguments::args_make_commands_now;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_followup, cmdq_get_command, cmdq_resumed,
-};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
 use crate::cmd::{cmd_get_args, cmd_list_first};
 use crate::shared::command::CMD_CLIENT_TFLAG;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list};
 use std::ffi::{CStr, CString};
+use std::future::Future;
+use std::pin::Pin;
 use std::rc::{Rc, Weak};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, target_client as cmdq_get_target_client,
-};
+use tiri_core::actions::Context;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_get, args_has, args_parse,
     args_parse_type,
@@ -26,18 +22,16 @@ use tiri_core::shared::prompt::{PROMPT_CLOSE, PROMPT_SINGLE, prompt_result};
 use tiri_core::status::status_prompt_set;
 
 pub struct cmd_confirm_before_data {
-    /// Taken by the answer.
     pub reply: Option<cmd_confirm_before_reply>,
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
 }
-/// Who acts on the answer.
+
 pub enum cmd_confirm_before_reply {
-    /// The waiting item's continuation, which owns the command list.
     Wait(tiri_core::tiri_rt::oneshot::Sender<bool>),
-    /// -b: a confirmed command is appended to the answering client's queue.
     Background(Rc<cmd_list>),
 }
+
 pub static cmd_confirm_before_entry: cmd_entry = {
     cmd_entry {
         name: c"confirm-before",
@@ -63,132 +57,130 @@ pub static cmd_confirm_before_entry: cmd_entry = {
         exec: Some(cmd_confirm_before_exec),
     }
 };
+
 fn cmd_confirm_before_args_parse(
     _args: &args,
     _idx: u_int,
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-fn cmd_confirm_before_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let args = cmd_get_args(self_0);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
-    let mut tc: Option<ClientRef> = tc_owner.clone();
-    let target = tiri_core::actions::queue::target(&item);
-    let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    let Some(cmdlist) = args_make_commands_now(self_0, item_handle, 0, 1) else {
-        return CmdOutcome::Error;
-    };
-    let mut cdata = Box::new(cmd_confirm_before_data {
-        reply: None,
-        confirm_key: 0,
-        default_yes: 0,
-    });
-    cdata.default_yes = args_has(args, 'y' as i32 as u_char);
-    if let Some(confirm_key) = args_get(args, 'c' as i32 as u_char) {
-        if let &[key @ 32..=126] = confirm_key.to_bytes() {
-            cdata.confirm_key = key;
+
+fn cmd_confirm_before_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+        let args = cmd_get_args(self_0);
+        let tc = inv.target_client();
+        let wait: ::core::ffi::c_int =
+            (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        let Some(cmdlist) = args_make_commands_now(self_0, inv, 0, 1) else {
+            return ExecOutcome::err();
+        };
+        let mut cdata = Box::new(cmd_confirm_before_data {
+            reply: None,
+            confirm_key: 0,
+            default_yes: args_has(args, 'y' as i32 as u_char),
+        });
+        if let Some(confirm_key) = args_get(args, 'c' as i32 as u_char) {
+            if let &[key @ 32..=126] = confirm_key.to_bytes() {
+                cdata.confirm_key = key;
+            } else {
+                inv.error(|out| out.write_all(b"invalid confirm key"));
+                return ExecOutcome::err();
+            }
         } else {
-            cmdq_error(item_handle, |out| out.write_all(b"invalid confirm key"));
-            return CmdOutcome::Error;
+            cdata.confirm_key = 'y' as i32 as u_char;
         }
-    } else {
-        cdata.confirm_key = 'y' as i32 as u_char;
-    }
-    let new_prompt = if let Some(prompt) = args_get(args, 'p' as i32 as u_char) {
-        let mut bytes = prompt.to_bytes().to_vec();
-        bytes.push(b' ');
-        CString::new(bytes).expect("C string prompt contains no interior NUL")
-    } else {
-        let cmd = cmd_list_first(&cmdlist)
-            .expect("confirmation command")
-            .entry
-            .name;
-        let mut bytes = b"Confirm '".to_vec();
-        bytes.extend_from_slice(cmd.to_bytes());
-        bytes.extend_from_slice(b"'? (");
-        bytes.push(cdata.confirm_key);
-        bytes.extend_from_slice(b"/n) ");
-        CString::new(bytes).expect("C string command and validated key contain no interior NUL")
-    };
-    let continuation = if wait != 0 {
-        let (answer, answered) = tiri_core::tiri_rt::oneshot::channel();
-        cdata.reply = Some(cmd_confirm_before_reply::Wait(answer));
-        Some(cmd_confirm_before_wait(
-            answered,
-            cmdlist,
-            Rc::downgrade(item_handle),
-        ))
-    } else {
-        cdata.reply = Some(cmd_confirm_before_reply::Background(cmdlist));
-        None
-    };
-    let inputcb = cdata.into_callback();
-    status_prompt_set(
-        &tc.clone().expect("live client"),
-        Some(target),
-        &new_prompt,
-        None,
-        inputcb,
-        None,
-        PROMPT_SINGLE,
-        PROMPT_TYPE_COMMAND,
-    );
-    drop(new_prompt);
-    let Some(continuation) = continuation else {
-        return CmdOutcome::Normal;
-    };
-    CmdOutcome::Suspend(Box::pin(continuation))
+        let new_prompt = if let Some(prompt) = args_get(args, 'p' as i32 as u_char) {
+            let mut bytes = prompt.to_bytes().to_vec();
+            bytes.push(b' ');
+            CString::new(bytes).expect("C string prompt contains no interior NUL")
+        } else {
+            let cmd = cmd_list_first(&cmdlist)
+                .expect("confirmation command")
+                .entry
+                .name;
+            let mut bytes = b"Confirm '".to_vec();
+            bytes.extend_from_slice(cmd.to_bytes());
+            bytes.extend_from_slice(b"'? (");
+            bytes.push(cdata.confirm_key);
+            bytes.extend_from_slice(b"/n) ");
+            CString::new(bytes).expect("C string command and validated key contain no interior NUL")
+        };
+        let target = inv.target().clone();
+        if wait != 0 {
+            let (answer, answered) = tiri_core::tiri_rt::oneshot::channel();
+            cdata.reply = Some(cmd_confirm_before_reply::Wait(answer));
+            let inputcb = cdata.into_callback();
+            status_prompt_set(
+                &tc.expect("live client"),
+                Some(&target),
+                &new_prompt,
+                None,
+                inputcb,
+                None,
+                PROMPT_SINGLE,
+                PROMPT_TYPE_COMMAND,
+            );
+            drop(target);
+            drop(new_prompt);
+            cmd_confirm_before_wait(self_0, inv, answered, cmdlist).await
+        } else {
+            cdata.reply = Some(cmd_confirm_before_reply::Background(cmdlist));
+            let inputcb = cdata.into_callback();
+            status_prompt_set(
+                &tc.expect("live client"),
+                Some(&target),
+                &new_prompt,
+                None,
+                inputcb,
+                None,
+                PROMPT_SINGLE,
+                PROMPT_TYPE_COMMAND,
+            );
+            ExecOutcome::ok()
+        }
+    })
 }
-/// Act on the answer inside its send, at answer time as tmux does: queue a
-/// confirmed command after the item with the item's state, and report the
-/// answer to a waiting client without a session. A prompt freed unanswered
-/// never resumes the item (tmux's cmd_confirm_before_free): release the
-/// command list and park.
-async fn cmd_confirm_before_wait(
+
+async fn cmd_confirm_before_wait<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
     answered: tiri_core::tiri_rt::oneshot::Receiver<bool>,
     cmdlist: Rc<cmd_list>,
-    item: Weak<cmdq_item>,
-) {
+) -> ExecOutcome {
+    inv.suspend(self_0);
     let Some(confirmed) = answered.await else {
         drop(cmdlist);
         return std::future::pending().await;
     };
-    let followup = {
-        let item = cmdq_resumed(&item);
-        let client = cmdq_get_client(Some(&item.borrow()));
-        if let Some(client) = client {
-            if client.attached_session().upgrade().is_none() {
-                client.set_return_value(if confirmed { 0 } else { 1 });
-            }
+    if let Some(client) = inv.client() {
+        if client.attached_session().upgrade().is_none() {
+            client.set_return_value(if confirmed { 0 } else { 1 });
         }
-        if confirmed {
-            let mut followup = cmdq_followup(&item);
-            followup.push(cmdq_get_command(&cmdlist, item.borrow().state.as_ref()));
-            Some(followup)
-        } else {
-            None
-        }
-    };
-    drop(cmdlist);
-    if let Some(followup) = followup {
-        followup.run().await;
+    }
+    if confirmed {
+        ExecOutcome::commands(cmdlist)
+    } else {
+        drop(cmdlist);
+        ExecOutcome::ok()
     }
 }
+
 fn cmd_confirm_before_callback(
     c_owner: &ClientRef,
     cdata: &mut cmd_confirm_before_data,
     s: Option<&CStr>,
 ) -> prompt_result {
-    let mut c: Option<ClientRef> = Some(c_owner.clone());
-    let new_item_allocation;
+    let c: Option<ClientRef> = Some(c_owner.clone());
     let mut confirmed = false;
     if !(c.as_ref().expect("live client").flags() & CLIENT_DEAD as uint64_t != 0) {
         if let Some(s) = s {
             let bytes = s.to_bytes();
             confirmed = bytes.len() == 1
-                && (bytes[0] == cdata.confirm_key || (bytes[0] == b'\r' && cdata.default_yes != 0));
+                && (bytes[0] == cdata.confirm_key
+                    || (bytes[0] == b'\r' && cdata.default_yes != 0));
         }
     }
     match cdata.reply.take() {
@@ -196,13 +188,18 @@ fn cmd_confirm_before_callback(
             let _ = answer.send(confirmed);
         }
         Some(cmd_confirm_before_reply::Background(cmdlist)) if confirmed => {
-            new_item_allocation = cmdq_get_command(&cmdlist, None);
-            cmdq_append(c.as_ref(), new_item_allocation);
+            let client_weak = c.as_ref().map_or_else(Weak::new, Rc::downgrade);
+            crate::cmd::run::spawn(
+                c.as_ref(),
+                cmdlist,
+                Context::new(client_weak, None, None, 0),
+            );
         }
         _ => {}
     }
     PROMPT_CLOSE
 }
+
 impl cmd_confirm_before_data {
     fn into_callback(mut self: Box<Self>) -> tiri_core::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, _key| {
@@ -216,44 +213,27 @@ pub mod confirm_before_tests {
     use super::{
         CLIENT_DEAD, ClientRef, PROMPT_CLOSE, Rc, Weak, cmd_confirm_before_callback,
         cmd_confirm_before_data, cmd_confirm_before_reply, cmd_confirm_before_wait, cmd_list,
-        cmdq_append, cmdq_item,
     };
     use crate::cmd::cmd_list_new;
-    use crate::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
+    use crate::cmd::invocation::ExecOutcome;
+    use crate::cmd::run::test_harness::spawn_invocation;
     use std::cell::Cell;
-    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::reactor::Lane;
     use tiri_core::server_client::Client as _;
     use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::server_client::queue_test_clients::return_value;
 
-    /// Queue an item on `owner` that waits for the answer to a prompt, as
-    /// cmd_confirm_before_exec does; return the item, the prompt's data and
-    /// the command list the continuation owns.
     fn append_wait(
         owner: &ClientRef,
         default_yes: bool,
-    ) -> (
-        Weak<cmdq_item>,
-        Box<cmd_confirm_before_data>,
-        Weak<cmd_list>,
-    ) {
+    ) -> (Weak<()>, Box<cmd_confirm_before_data>, Weak<cmd_list>) {
         let (answer, answered) = tiri_core::tiri_rt::oneshot::channel();
         let cmdlist = Rc::new(cmd_list_new());
         let list = Rc::downgrade(&cmdlist);
-        let item = cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"confirm-before",
-                Some(Box::new(move |item| {
-                    CmdOutcome::Suspend(Box::pin(cmd_confirm_before_wait(
-                        answered,
-                        cmdlist,
-                        Rc::downgrade(item),
-                    )))
-                })),
-            ),
-        );
-        assert_eq!(cmdq_next(Some(owner)), 0, "the item waits");
+        let item = spawn_invocation(Some(owner), move |cmd_ref, inv| {
+            Box::pin(cmd_confirm_before_wait(cmd_ref, inv, answered, cmdlist))
+        });
+        assert_eq!(Lane::drive(Some(owner)), 0, "the item waits");
         let cdata = Box::new(cmd_confirm_before_data {
             reply: Some(cmd_confirm_before_reply::Wait(answer)),
             confirm_key: b'y',
@@ -262,20 +242,15 @@ pub mod confirm_before_tests {
         (item, cdata, list)
     }
 
-    /// Queue a callback that records whether it ran.
     fn append_flag(owner: &ClientRef) -> Rc<Cell<bool>> {
         let ran = Rc::new(Cell::new(false));
         let flag = ran.clone();
-        cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"flag",
-                Some(Box::new(move |_| {
-                    flag.set(true);
-                    CmdOutcome::Normal
-                })),
-            ),
-        );
+        spawn_invocation(Some(owner), move |_, _| {
+            Box::pin(async move {
+                flag.set(true);
+                ExecOutcome::ok()
+            })
+        });
         ran
     }
 
@@ -298,10 +273,10 @@ pub mod confirm_before_tests {
             assert_eq!(return_value(&owner), (!confirmed).into());
             assert!(list.upgrade().is_none(), "the continuation finished");
             assert!(head.upgrade().is_some() && !ran.get());
-            assert_eq!(cmdq_next(Some(&owner)), if confirmed { 3 } else { 2 });
+            assert_eq!(Lane::drive(Some(&owner)), if confirmed { 3 } else { 2 });
             assert!(head.upgrade().is_none() && ran.get());
             cmd_confirm_before_callback(&owner, &mut cdata, Some(c"y"));
-            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert_eq!(Lane::drive(Some(&owner)), 0);
         }
     }
 
@@ -312,7 +287,7 @@ pub mod confirm_before_tests {
         owner.set_return_value(-1);
         drop(cdata);
         assert!(list.upgrade().is_none(), "the command list is released");
-        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         assert!(head.upgrade().is_some() && !ran.get());
         assert_eq!(return_value(&owner), -1);
         owner.update_flags(CLIENT_DEAD as u64, 0);
@@ -333,7 +308,7 @@ pub mod confirm_before_tests {
             cmd_confirm_before_callback(&answering, &mut cdata, Some(c"y")),
             PROMPT_CLOSE
         );
-        assert_eq!(cmdq_next(Some(&answering)), 0);
+        assert_eq!(Lane::drive(Some(&answering)), 0);
     }
 
     pub fn a_background_confirmation_is_appended_to_the_answering_client() {
@@ -347,7 +322,7 @@ pub mod confirm_before_tests {
                 default_yes: 0,
             });
             cmd_confirm_before_callback(&answering, &mut cdata, Some(answer));
-            assert_eq!(cmdq_next(Some(&answering)), queued);
+            assert_eq!(Lane::drive(Some(&answering)), queued);
         }
     }
 }

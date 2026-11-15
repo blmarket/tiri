@@ -4,10 +4,9 @@ use super::types::{
     mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
     mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData,
 };
-use crate::actions::queue::{callback, client, enqueue, new_state};
-use crate::actions::sources::{capitalize_error, submit};
-use crate::actions::Target;
-use crate::actions::TaskOutcome;
+use crate::actions::sources::{capitalize_error, compile};
+use crate::actions::{Context, Target};
+use crate::reactor::Lane;
 use crate::actions::{mouse_at, replace_template};
 use crate::arguments::{args, args_get, args_has};
 use crate::format::bytes::write_cstr;
@@ -1369,19 +1368,16 @@ pub fn mode_tree_clear_prompt(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         tree_owner.borrow_mut().screen.mode &= !MODE_CURSOR;
     }
 }
-fn mode_tree_prompt_accept(tree: Rc<RefCell<mode_tree_data>>) -> crate::actions::Callback {
-    Some(Box::new(move |item| {
-        let c_owner = client(Some(&item.borrow()));
-        let mut key = b'y' as key_code;
-        let live = {
-            let mtd = tree.borrow();
-            mtd.dead == 0 && mtd.prompt.is_some()
-        };
-        if live && c_owner.is_some() {
-            mode_tree_key(tree.clone(), c_owner.as_ref(), &mut key, None, None, None);
-        }
-        TaskOutcome::Normal
-    }))
+fn mode_tree_prompt_accept(tree: Rc<RefCell<mode_tree_data>>, client: ClientWeak) {
+    let c_owner = client.upgrade();
+    let mut key = b'y' as key_code;
+    let live = {
+        let mtd = tree.borrow();
+        mtd.dead == 0 && mtd.prompt.is_some()
+    };
+    if live && c_owner.is_some() {
+        mode_tree_key(tree, c_owner.as_ref(), &mut key, None, None, None);
+    }
 }
 fn mode_tree_prompt_input_callback(
     data: &refbox::Weak<mode_tree_prompt>,
@@ -1474,10 +1470,14 @@ pub fn mode_tree_set_prompt(
     }
     mode_tree_draw(&tree);
     mode_pane_owner.request_redraw(false);
-    if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && client_owner.is_some() {
-        let tree = tree.clone();
-        let item_allocation = callback(c"mode_tree_prompt_accept", mode_tree_prompt_accept(tree));
-        enqueue(client_owner, item_allocation);
+    if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 {
+        if let Some(owner) = client_owner {
+            let tree = tree.clone();
+            let client = Rc::downgrade(owner);
+            Lane::push(Some(owner), async move {
+                mode_tree_prompt_accept(tree, client);
+            });
+        }
     }
 }
 fn mode_tree_search_backward(
@@ -2337,14 +2337,22 @@ pub fn mode_tree_run_command(
     if command.as_bytes().is_empty() {
         return;
     }
-    let state = new_state(fs, None, 0);
-    if let Err(error) = submit(&command, client_owner, Some(&state)) {
-        if let Some(owner) = client_owner {
-            let mut error = Some(error);
-            capitalize_error(&mut error);
-            status_message_set(Some(owner), -1, 1, 0, 0, |out| {
-                write_cstr(out, error.as_deref())
+    match compile(&command) {
+        Ok(program) => {
+            let client = client_owner.map_or_else(std::rc::Weak::new, Rc::downgrade);
+            let ctx = Context::new(client, fs, None, 0);
+            Lane::push(client_owner, async move {
+                let _ = crate::actions::run(program, ctx).await;
             });
+        }
+        Err(error) => {
+            if let Some(owner) = client_owner {
+                let mut error = Some(error);
+                capitalize_error(&mut error);
+                status_message_set(Some(owner), -1, 1, 0, 0, |out| {
+                    write_cstr(out, error.as_deref())
+                });
+            }
         }
     }
 }

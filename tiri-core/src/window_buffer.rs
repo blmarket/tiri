@@ -362,7 +362,6 @@ fn window_buffer_data(
 
 fn window_buffer_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&dyn crate::actions::ContextSource>,
     fs: Option<&Target>,
     args: Option<&args>,
 ) -> bool {

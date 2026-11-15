@@ -1,11 +1,11 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
 use tiri_core::bindings::{key_bindings_get_table, key_bindings_remove, key_bindings_remove_table};
 use tiri_core::format::bytes::write_cstr;
@@ -37,7 +37,11 @@ pub static cmd_unbind_key_entry: cmd_entry = {
         exec: Some(cmd_unbind_key_exec),
     }
 };
-fn cmd_unbind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_unbind_key_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
     let mut key: key_code = 0;
     let mut tablename: &CStr = c"";
@@ -46,9 +50,9 @@ fn cmd_unbind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     if args_has(args, 'a' as i32 as u_char) != 0 {
         if keystr.is_some() {
             if quiet == 0 {
-                cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
+                inv.error( |out| out.write_all(b"key given with -a"));
             }
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         tablename = match args_get(args, 'T' as i32 as u_char) {
             Some(tablename) => tablename,
@@ -57,46 +61,46 @@ fn cmd_unbind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         };
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"table ")?;
                     write_cstr(out, tablename)?;
                     out.write_all(b" doesn't exist")
                 });
             }
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         key_bindings_remove_table(tablename);
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     let Some(keystr) = keystr else {
         if quiet == 0 {
-            cmdq_error(item_handle, |out| out.write_all(b"missing key"));
+            inv.error( |out| out.write_all(b"missing key"));
         }
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     };
     key = key_string_parse_cstr(keystr).unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         if quiet == 0 {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"unknown key: ")?;
                 write_cstr(out, keystr)
             });
         }
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(args, 'T' as i32 as u_char).expect("-T has a value");
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"table ")?;
                     write_cstr(out, tablename)?;
                     out.write_all(b" doesn't exist")
                 });
             }
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
         tablename = c"root";
@@ -104,5 +108,6 @@ fn cmd_unbind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         tablename = c"prefix";
     }
     key_bindings_remove(tablename, key);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

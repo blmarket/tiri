@@ -1,10 +1,9 @@
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::control::control_write;
 use tiri_core::file::{file_can_print, file_print, file_print_buffer};
@@ -66,12 +65,15 @@ pub static cmd_clear_history_entry: cmd_entry = {
         exec: Some(cmd_capture_pane_exec),
     }
 };
-fn cmd_capture_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_capture_pane_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut target_state = tiri_core::actions::queue::target(&item).clone();
+    let mut target_state = inv.target().clone();
     let pane_owner = &mut target_state.wp.upgrade().expect("capture target pane");
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
@@ -84,13 +86,15 @@ fn cmd_capture_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
             .expect("clear-history pane window");
         server_redraw_window(&window);
         drop(window);
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
-    buf = match pane_owner.capture(args, item_handle) {
+    let cf = inv.format();
+    let tc = inv.target_client();
+    buf = match pane_owner.capture(args, Some(&cf), tc.as_ref(), &target_state) {
         Ok(bytes) => bytes,
         Err(cause) => {
-            cmdq_error(item_handle, |out| write_cstr(out, &*cause));
-            return CmdOutcome::Error;
+            inv.error( |out| write_cstr(out, &*cause));
+            return ExecOutcome::err();
         }
     };
     if args_has(args, 'p' as i32 as u_char) != 0 {
@@ -105,8 +109,8 @@ fn cmd_capture_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
             });
         } else {
             if file_can_print(c.as_ref()) == 0 {
-                cmdq_error(item_handle, |out| out.write_all(b"can't write to client"));
-                return CmdOutcome::Error;
+                inv.error( |out| out.write_all(b"can't write to client"));
+                return ExecOutcome::err();
             }
             file_print_buffer(c_owner.as_ref(), &buf[..len]);
             file_print(c_owner.as_ref(), |out| out.write_all(b"\n"));
@@ -119,11 +123,12 @@ fn cmd_capture_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         if paste_set_owned(buf.into_boxed_slice(), bufname, Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

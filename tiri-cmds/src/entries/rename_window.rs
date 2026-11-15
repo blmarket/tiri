@@ -1,13 +1,12 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::options::options_set_number;
 use tiri_core::server_fn::{server_redraw_window_borders, server_status_window};
 use tiri_core::shared::abi::u_int;
@@ -40,21 +39,21 @@ pub static cmd_rename_window_entry: cmd_entry = {
         exec: Some(cmd_rename_window_exec),
     }
 };
-fn cmd_rename_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_rename_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
-    let name = format_single_from_target_cstring(
-        item_handle,
-        args_string(args, 0 as u_int).unwrap_or(c""),
-    );
+    let name = inv.format_single( args_string(args, 0 as u_int).unwrap_or(c""));
     if !check_name(&name) {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"invalid window name: ")?;
             write_cstr(out, &*name)
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     let window = winlink_window(&wl).expect("target window").clone();
     window.rename(&name, false);
@@ -62,5 +61,6 @@ fn cmd_rename_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     server_redraw_window_borders((winlink_window(&wl).as_ref()).expect("live window"));
     server_status_window((winlink_window(&wl).as_ref()).expect("live window"));
     drop(window);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

@@ -1,8 +1,7 @@
-use crate::server_client::Client as _;
 use super::{CLIENT_DEAD, Rc, Weak, client_file, file_read_wait, file_wait, file_write_wait, uint64_t};
-use crate::actions::queue::{callback, drive, enqueue};
-use crate::actions::TaskOutcome;
+use crate::reactor::Lane;
 use crate::reactor::shutdown_runtime;
+use crate::server_client::Client as _;
 use std::cell::Cell;
 
 pub fn local_completion_can_be_cancelled_after_runtime_shutdown() {
@@ -14,26 +13,21 @@ pub fn local_completion_can_be_cancelled_after_runtime_shutdown() {
         let file = Rc::new(Cell::new(Weak::new()));
         let observed = file.clone();
         let owner = crate::server_client::queue_test_clients::with_queue();
-        let head = enqueue(
-            Some(&owner),
-            callback(
-                c"local read",
+        let head_guard = Rc::new(());
+        let head = Rc::downgrade(&head_guard);
+        Lane::push(Some(&owner), async move {
+            let _head = head_guard;
+            let wait = file_read_wait(None, c"/dev/null", move |file| {
+                observed.set(file);
                 Some(Box::new(move |_| {
-                    let wait = file_read_wait(None, c"/dev/null", move |file| {
-                        observed.set(file);
-                        Some(Box::new(move |_| {
-                            let _ = &retained;
-                            panic!("shutdown must not deliver progress");
-                        }))
-                    });
-                    TaskOutcome::Suspend(Box::pin(async move {
-                        let _ = wait.await;
-                        panic!("shutdown must not deliver completion");
-                    }))
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(&owner)), 0, "local completion must be deferred");
+                    let _ = &retained;
+                    panic!("shutdown must not deliver progress");
+                }))
+            });
+            let _ = wait.await;
+            panic!("shutdown must not deliver completion");
+        });
+        assert_eq!(Lane::drive(Some(&owner)), 0, "local completion must be deferred");
         let file = file.take();
         assert!(file.upgrade().is_some());
         shutdown_runtime(runtime);
@@ -53,21 +47,16 @@ pub fn dropping_a_lost_client_cancels_its_local_write() {
         let body = observed.clone();
         let file = Rc::new(Cell::new(Weak::new()));
         let observed_file = file.clone();
-        let head = enqueue(
-            Some(&owner),
-            callback(
-                c"local write",
-                Some(Box::new(move |_| {
-                    let wait = file_write_wait(None, c"/dev/null", 0, b"data");
-                    observed_file.set(wait.file.clone());
-                    TaskOutcome::Suspend(Box::pin(async move {
-                        let _ = wait.await;
-                        body.set(true);
-                    }))
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(&owner)), 0);
+        let head_guard = Rc::new(());
+        let head = Rc::downgrade(&head_guard);
+        Lane::push(Some(&owner), async move {
+            let _head = head_guard;
+            let wait = file_write_wait(None, c"/dev/null", 0, b"data");
+            observed_file.set(wait.file.clone());
+            let _ = wait.await;
+            body.set(true);
+        });
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         let file = file.take();
         assert!(
             file.upgrade().is_some(),
@@ -95,35 +84,30 @@ pub fn a_dead_file_client_leaves_its_command_blocked() {
         let file_client = client.clone();
         let observed = Rc::new(Cell::new(false));
         let body = observed.clone();
-        let head = enqueue(
-            Some(&owner),
-            callback(
-                c"dead file client",
-                Some(Box::new(move |_| {
-                    let file = client_file::new();
-                    let (waiter, done) = tiri_rt::oneshot::channel();
-                    {
-                        let mut cf = file.borrow_mut();
-                        cf.c = Some(file_client);
-                        cf.wait = Some(waiter);
-                        cf.completed = true;
-                    }
-                    let wait = file_wait(file, done);
-                    TaskOutcome::Suspend(Box::pin(async move {
-                        if wait.await.is_none() {
-                            return std::future::pending().await;
-                        }
-                        body.set(true);
-                    }))
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(&owner)), 0);
+        let head_guard = Rc::new(());
+        let head = Rc::downgrade(&head_guard);
+        Lane::push(Some(&owner), async move {
+            let _head = head_guard;
+            let file = client_file::new();
+            let (waiter, done) = tiri_rt::oneshot::channel();
+            {
+                let mut cf = file.borrow_mut();
+                cf.c = Some(file_client);
+                cf.wait = Some(waiter);
+                cf.completed = true;
+            }
+            let wait = file_wait(file, done);
+            if wait.await.is_none() {
+                return std::future::pending().await;
+            }
+            body.set(true);
+        });
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
         assert!(!observed.get());
         assert_eq!(Rc::strong_count(&client), 1, "the file released its client");
         assert_eq!(
-            drive(Some(&owner)),
+            Lane::drive(Some(&owner)),
             0,
             "the parked command blocks its queue"
         );

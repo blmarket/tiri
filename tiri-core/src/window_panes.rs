@@ -1,8 +1,8 @@
-use crate::actions::mouse_at;
-use crate::actions::queue::{enqueue, error_task, program_task, report_error};
+use crate::actions::{Context, ProgramSource as _, mouse_at};
+use crate::reactor::Lane;
+use crate::server_client::Client as _;
 use crate::arguments::{args, args_has, args_strtonum_result};
-use crate::format::bytes::format_bytes;
-use crate::format::bytes::write_cstr;
+use crate::format::bytes::{format_bytes, format_message_with, write_cstr};
 use crate::format::{format_create_defaults, format_single_cstring};
 use crate::format_draw::format_draw;
 use crate::grid::grid_default_cell;
@@ -106,17 +106,42 @@ static window_panes_mode: window_mode = {
         display_screen: Some(window_panes_get_screen),
     }
 };
+struct PanesEnterState {
+    source: Target,
+    target: Target,
+    error: Option<std::ffi::CString>,
+}
+
+thread_local! {
+    static PANES_ENTER: std::cell::RefCell<Option<PanesEnterState>> = const { std::cell::RefCell::new(None) };
+}
+
 pub fn window_panes_enter(
     pane: &Rc<RefCell<window_pane>>,
-    item: &dyn crate::actions::ContextSource,
+    source: &Target,
     target: &Target,
     args: &args,
     prepare: impl FnOnce() -> PanesAction,
-) {
-    if pane.set_mode(None, &window_panes_mode, Some(item), Some(target), Some(args)) == 0 {
+) -> Result<(), std::ffi::CString> {
+    PANES_ENTER.with_borrow_mut(|slot| {
+        *slot = Some(PanesEnterState {
+            source: source.clone(),
+            target: target.clone(),
+            error: None,
+        });
+    });
+    let entered = pane.set_mode(None, &window_panes_mode, Some(target), Some(args));
+    let state = PANES_ENTER
+        .with_borrow_mut(|slot| slot.take())
+        .expect("panes enter state");
+    if let Some(error) = state.error {
+        return Err(error);
+    }
+    if entered == 0 {
         let wme = pane.mode_entry();
         window_panes_data(&wme).borrow_mut().action = Some(prepare());
     }
+    Ok(())
 }
 fn window_panes_session(source: &window_panes_source) -> Option<SessionRef> {
     let owner = source.session.upgrade()?;
@@ -770,7 +795,6 @@ fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
 }
 fn window_panes_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    item_handle: Option<&dyn crate::actions::ContextSource>,
     _fs: Option<&Target>,
     args: Option<&args>,
 ) -> bool {
@@ -784,15 +808,11 @@ fn window_panes_init(
     let mut s: Option<SessionRef> = None;
     let (sx, sy) = mode_pane_owner.screen_size(false);
     let mut delay: u_int = 0;
-    let Some(item_owner) = item_handle else {
+    let Some((source, target)) = PANES_ENTER.with_borrow(|slot| {
+        slot.as_ref()
+            .map(|state| (state.source.clone(), state.target.clone()))
+    }) else {
         return false;
-    };
-    let (source, target) = {
-        let item = item_owner.borrow();
-        (
-            crate::actions::queue::source(&item).clone(),
-            crate::actions::queue::target(&item).clone(),
-        )
     };
     s = target.session_handle();
     let args = args.expect("mode arguments");
@@ -813,9 +833,14 @@ fn window_panes_init(
         ) {
             Ok(value) => value as u_int,
             Err(error) => {
-                report_error(item_handle.expect("command queue item"), |out| {
+                let msg = format_message_with(|out| {
                     out.write_all(b"delay ")?;
                     write_cstr(out, error.message())
+                });
+                PANES_ENTER.with_borrow_mut(|slot| {
+                    if let Some(state) = slot.as_mut() {
+                        state.error = Some(msg);
+                    }
                 });
                 return false;
             }
@@ -921,20 +946,23 @@ fn window_panes_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, 
     window_panes_draw_screen(wme.clone());
 }
 fn window_panes_run_command(data: &mut window_panes_modedata, client_owner: &ClientRef, pane: u32) {
-    let new_item_allocation;
     let expanded = CString::new(format!("%{}", pane)).expect("pane ID contains NUL");
     match (data.action.as_deref_mut().expect("prepared action"))(&vec![expanded]) {
         Err(error) => {
-            enqueue(
-                Some(client_owner),
-                error_task(error.as_deref().expect("command error")),
-            );
+            let error = error.expect("command error");
+            let client = Rc::downgrade(client_owner);
+            Lane::push(Some(client_owner), async move {
+                ClientRef::report_error(client.upgrade().as_ref(), None, |out| {
+                    write_cstr(out, error.as_c_str())
+                });
+            });
         }
         Ok(commands) => {
-            let cmdlist = commands;
-            new_item_allocation = program_task(&cmdlist, None);
-            enqueue(Some(client_owner), new_item_allocation);
-            drop(cmdlist);
+            let program = commands.program_ref();
+            let ctx = Context::new(Rc::downgrade(client_owner), None, None, 0);
+            Lane::push(Some(client_owner), async move {
+                let _ = crate::actions::run(program, ctx).await;
+            });
         }
     }
 }

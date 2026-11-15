@@ -1,11 +1,8 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
 use crate::cmd::find::TargetLookup as _;
-use crate::cmd::queue::{cmdq_error, cmdq_get_flags};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
-    target_client as cmdq_get_target_client,
-};
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::bindings::key_bindings_get_table;
 use tiri_core::format::bytes::write_cstr;
@@ -15,7 +12,6 @@ use tiri_core::window::Window as _;
 use tiri_core::window_pane::WindowPane as _;
 use tiri_core::winlink::winlink_window;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_CLIENT_CFLAG, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY, CMDQ_STATE_REPEAT,
 };
@@ -58,10 +54,12 @@ pub static cmd_switch_client_entry: cmd_entry = {
         exec: Some(cmd_switch_client_exec),
     }
 };
-fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_switch_client_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let current = cmdq_get_state_owned(&(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -73,9 +71,9 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     let tflag = args_get(args, 't' as i32 as u_char);
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
-    let c_owner = cmdq_get_client(Some(&*item));
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let tc_owner = inv.target_client();
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut selected_session;
     let mut s: Option<SessionRef> = None;
@@ -100,8 +98,8 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if target.find_target(Some(item_handle), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
-        return CmdOutcome::Error;
+    if target.find_target(Some(&*inv), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
+        return ExecOutcome::err();
     }
     selected_session = target.session_handle();
     s = selected_session.clone();
@@ -111,8 +109,8 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
             uid = c.as_ref().expect("live client").peer_uid();
             if uid != user_id() {
-                cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-                return CmdOutcome::Error;
+                inv.error( |out| out.write_all(b"client is read-only"));
+                return ExecOutcome::err();
             }
         }
         if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
@@ -127,23 +125,23 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     }
     if let Some(tablename) = args_get(args, 'T' as i32 as u_char) {
         let Some(table) = key_bindings_get_table(tablename, 0) else {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         };
         tc.as_ref().expect("target client").select_key_table(table);
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"invalid sort order"));
+        return ExecOutcome::err();
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
@@ -156,8 +154,8 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         .and_then(|session| session.adjacent_session(&sort_crit, false));
         s = selected_session.clone();
         if s.is_none() {
-            cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
-            return CmdOutcome::Error;
+            inv.error( |out| out.write_all(b"can't find next session"));
+            return ExecOutcome::err();
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         selected_session = (tc
@@ -169,10 +167,10 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         .and_then(|session| session.adjacent_session(&sort_crit, true));
         s = selected_session.clone();
         if s.is_none() {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"can't find previous session")
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
         selected_session = tiri_core::session::sessions::resolve(
@@ -180,12 +178,12 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         );
         s = selected_session.clone();
         if s.is_none() {
-            cmdq_error(item_handle, |out| out.write_all(b"can't find last session"));
-            return CmdOutcome::Error;
+            inv.error( |out| out.write_all(b"can't find last session"));
+            return ExecOutcome::err();
         }
     } else {
-        if cmdq_get_client(Some(&*item)).is_none() {
-            return CmdOutcome::Normal;
+        if inv.client().is_none() {
+            return ExecOutcome::ok();
         }
         if let Some(pane) = wp.as_ref().filter(|pane| {
             wl.is_alive()
@@ -208,7 +206,7 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         }
         if wl.is_alive() {
             (s.as_ref().expect("live session")).select_winlink(wl.clone());
-            *current.current.borrow_mut() = cmd_find_state::from_session(
+            inv.context_mut().current = cmd_find_state::from_session(
                 s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );
@@ -225,8 +223,9 @@ fn cmd_switch_client_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             .update_environment(&source);
     }
     tc.clone().expect("live client").set_session(s.as_ref());
-    if !cmdq_get_flags(&(item)) & CMDQ_STATE_REPEAT != 0 {
+    if !inv.flags() & CMDQ_STATE_REPEAT != 0 {
         tc.clone().expect("live client").set_key_table(None);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

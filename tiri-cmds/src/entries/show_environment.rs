@@ -1,11 +1,11 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
 use tiri_core::environ::{environ_find, environ_iter};
 use tiri_core::format::bytes::write_cstr;
@@ -52,7 +52,7 @@ fn cmd_show_environment_escape(value: &CStr) -> CString {
 }
 fn cmd_show_environment_print(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     envent: &environ_entry,
 ) {
     let args = cmd_get_args(self_0);
@@ -64,13 +64,13 @@ fn cmd_show_environment_print(
     }
     if args_has(args, 's' as i32 as u_char) == 0 {
         if let Some(value) = envent.value.as_deref() {
-            cmdq_print(item_handle, |out| {
+            inv.print( |out| {
                 out.write_all(envent.name.as_bytes())?;
                 out.write_all(b"=")?;
                 out.write_all(value.to_bytes())
             });
         } else {
-            cmdq_print(item_handle, |out| {
+            inv.print( |out| {
                 out.write_all(b"-")?;
                 out.write_all(envent.name.as_bytes())
             });
@@ -79,7 +79,7 @@ fn cmd_show_environment_print(
     }
     if let Some(value) = envent.value.as_deref() {
         let escaped = cmd_show_environment_escape(value);
-        cmdq_print(item_handle, |out| {
+        inv.print( |out| {
             out.write_all(envent.name.as_bytes())?;
             out.write_all(b"=\"")?;
             out.write_all(escaped.as_bytes())?;
@@ -88,41 +88,44 @@ fn cmd_show_environment_print(
             out.write_all(b";")
         });
     } else {
-        cmdq_print(item_handle, |out| {
+        inv.print( |out| {
             out.write_all(b"unset ")?;
             out.write_all(envent.name.as_bytes())?;
             out.write_all(b";")
         });
     };
 }
-fn cmd_show_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_show_environment_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
 
     let mut envent: Option<&environ_entry> = None;
     let mut name: Option<&CStr> = args_string(args, 0 as u_int);
     let tflag = args_get(args, 't' as i32 as u_char);
     if tflag.is_some() && target.session_handle().is_none() {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"no such session: ")?;
             write_cstr(out, tflag)
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     let env: environ = if args_has(args, 'g' as i32 as u_char) != 0 {
         global_environ(Clone::clone)
     } else {
         if target.session_handle().is_none() {
             if tflag.is_some() {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"no such session: ")?;
                     write_cstr(out, tflag)
                 });
             } else {
-                cmdq_error(item_handle, |out| out.write_all(b"no current session"));
+                inv.error( |out| out.write_all(b"no current session"));
             }
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         let session = target.session_handle().expect("target session");
         session
@@ -132,20 +135,21 @@ fn cmd_show_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>)
     if let Some(name) = name {
         envent = environ_find(&env, name);
         if envent.is_none() {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"unknown variable: ")?;
                 write_cstr(out, name)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
-        cmd_show_environment_print(self_0, item_handle, envent.unwrap());
-        return CmdOutcome::Normal;
+        cmd_show_environment_print(self_0, inv, envent.unwrap());
+        return ExecOutcome::ok();
     }
     for entry in environ_iter(&env) {
         let envent = entry;
-        cmd_show_environment_print(self_0, item_handle, envent);
+        cmd_show_environment_print(self_0, inv, envent);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }
 
 #[cfg(test)]

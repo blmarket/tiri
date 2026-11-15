@@ -1,7 +1,7 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::execution_state as cmdq_get_state_owned;
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::events::events_fire_window;
 use tiri_core::resize::recalculate_sizes;
@@ -13,7 +13,6 @@ use tiri_core::server_fn::{
 use tiri_core::window::Window as _;
 use tiri_core::winlink::winlink_window;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -51,12 +50,14 @@ pub static cmd_join_pane_entry: cmd_entry = {
         exec: Some(cmd_join_pane_exec),
     }
 };
-fn cmd_join_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_join_pane_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let current = cmdq_get_state_owned(&(item));
-    let target = tiri_core::actions::queue::target(&item);
-    let source = tiri_core::actions::queue::source(&item);
+    let target = inv.target().clone();
+    let source = inv.source().clone();
     let mut dst_s: Option<SessionRef> = None;
     let mut src_wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut dst_wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
@@ -75,10 +76,10 @@ fn cmd_join_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         server_unzoom_window(&dst_window);
         server_unzoom_window(src_owner);
         if std::rc::Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"source and target panes must be different")
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         let before = args_has(args, 'b' as i32 as u_char) != 0;
         let same_window = WindowRef::ptr_eq(src_owner, &dst_window);
@@ -98,8 +99,8 @@ fn cmd_join_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         }
         if let Err(reason) = dst_window.rearrange_panes(&order) {
             src_pane_owner.reparent(src_owner);
-            cmdq_error(item_handle, |out| out.write_all(reason.to_bytes()));
-            return CmdOutcome::Error;
+            inv.error( |out| out.write_all(reason.to_bytes()));
+            return ExecOutcome::err();
         }
         ClientRef::forget_pane(&src_pane_owner);
         if !same_window {
@@ -121,7 +122,7 @@ fn cmd_join_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         if args_has(args, 'd' as i32 as u_char) == 0 {
             dst_window.select_pane(&src_pane_owner, true);
             (dst_s.as_ref().expect("live session")).select_index(dst_idx);
-            *current.current.borrow_mut() = cmd_find_state::from_session(
+            inv.context_mut().current = cmd_find_state::from_session(
                 dst_s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );
@@ -132,13 +133,14 @@ fn cmd_join_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         let src_idx = src_wl.try_borrow().expect("live winlink").idx;
         src_pane_owner.notify_moved(src_owner, src_idx, &dst_window, dst_idx);
         cmd_join_pane_finish(src_window.take().expect("live source window"), &dst_window);
-        CmdOutcome::Normal
+        ExecOutcome::ok()
     })();
     if let Some(window) = src_window {
         drop(window);
     }
     drop(dst_window);
     result
+})
 }
 
 fn cmd_join_pane_finish(source: WindowRef, destination: &WindowRef) {

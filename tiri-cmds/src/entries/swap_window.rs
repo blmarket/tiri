@@ -1,10 +1,10 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_WINDOW;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server::marked_pane;
@@ -42,11 +42,14 @@ pub static cmd_swap_window_entry: cmd_entry = {
         exec: Some(cmd_swap_window_exec),
     }
 };
-fn cmd_swap_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_swap_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let source = tiri_core::actions::queue::source(&item);
-    let target = tiri_core::actions::queue::target(&item);
+    let source = inv.source().clone();
+    let target = inv.target().clone();
     let mut src: Option<SessionRef> = source.session_handle();
     let mut dst: Option<SessionRef> = target.session_handle();
     let mut sg_src = tiri_core::refbox::Weak::new();
@@ -66,16 +69,16 @@ fn cmd_swap_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         && sg_dst.is_alive()
         && sg_src == sg_dst
     {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"can't move window, sessions are grouped")
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if tiri_core::shared::rc::same(
         winlink_window(&wl_dst).as_ref(),
         winlink_window(&wl_src).as_ref(),
     ) {
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     winlink_window(&wl_dst)
         .expect("linked window")
@@ -113,5 +116,6 @@ fn cmd_swap_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         server_redraw_session_group(dst.as_ref().expect("live session"));
     }
     recalculate_sizes();
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

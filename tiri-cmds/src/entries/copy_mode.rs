@@ -1,10 +1,10 @@
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{client as cmdq_get_client, event as cmdq_get_event};
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::u_char;
@@ -70,27 +70,30 @@ pub static cmd_clock_mode_entry: cmd_entry = {
         exec: Some(cmd_copy_mode_exec),
     }
 };
-fn cmd_copy_mode_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_copy_mode_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let mut event = cmdq_get_event(&(item));
-    let source = tiri_core::actions::queue::source(&item);
-    let target = tiri_core::actions::queue::target(&item);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let mut event = inv.event();
+    let source = inv.source().clone();
+    let target = inv.target().clone();
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
     let mut pane_owner = target.wp.upgrade().expect("copy-mode target pane");
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
         pane_owner.reset_all_modes();
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
         let mouse_pane_owner = cmd_mouse_pane(&event.m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
         let Some(mouse_pane) = mouse_pane_owner else {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         };
         pane_owner = mouse_pane;
         if c.is_none()
@@ -103,12 +106,12 @@ fn cmd_copy_mode_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
                 s.as_ref(),
             )
         {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
     }
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_clock_mode_entry) {
-        pane_owner.set_mode(None, &window_clock_mode, Some(item_handle), None, None);
-        return CmdOutcome::Normal;
+        pane_owner.set_mode(None, &window_clock_mode, None, None);
+        return ExecOutcome::ok();
     }
     let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
         source.wp.upgrade()
@@ -127,14 +130,7 @@ fn cmd_copy_mode_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     {
         line_numbers = 0 as ::core::ffi::c_int;
     }
-    if pane_owner.set_mode(
-        source_owner.as_ref(),
-        &window_copy_mode,
-        Some(item_handle),
-        None,
-        Some(args),
-    ) == 0
-    {
+    if pane_owner.set_mode(source_owner.as_ref(), &window_copy_mode, None, Some(args)) == 0 {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
         if args_has(args, 'M' as i32 as u_char) != 0 {
             window_copy_start_drag(c_owner.as_ref(), &mut event.m);
@@ -150,7 +146,7 @@ fn cmd_copy_mode_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         let Some(c) = c.as_ref() else {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         };
         let tty_oy = c.terminal_view().oy;
         let slider = c.mouse_slider_position();
@@ -161,7 +157,8 @@ fn cmd_copy_mode_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
             tty_oy,
             args_has(args, 'e' as i32 as u_char),
         );
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

@@ -2,11 +2,11 @@ use crate::format::callbacks::FORMAT_TABLE;
 use crate::log::log_cstr;
 
 use super::{
-    FormatValue, event, format_entry, format_entry_tree, format_message_with, format_plugin_pane,
-    format_tree, log_debug, log_get_level, merge_formats, u_int, window_pane,
+    FormatValue, format_entry, format_entry_tree, format_message_with, format_plugin_pane,
+    format_tree, log_debug, log_get_level, u_int, window_pane,
 };
 use crate::shared::client::ClientRef;
-use crate::shared::format::FormatEntryState;
+use crate::shared::format::{CommandFormat, FormatEntryState};
 use std::ffi::{CStr, CString};
 use std::time::SystemTime;
 
@@ -94,30 +94,30 @@ pub fn format_merge(ft: &mut format_tree, from: &format_tree) {
 pub fn format_get_pane(ft: &format_tree) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     ft.wp.upgrade()
 }
-pub(super) fn format_create_add_item(
-    ft: &mut format_tree,
-    item_handle: &dyn crate::actions::ContextSource,
-) {
-    let event = event(&item_handle.borrow());
-    merge_formats(item_handle, ft);
-    ft.m = event.m;
+pub(super) fn format_create_add_item(ft: &mut format_tree, cf: &CommandFormat) {
+    if let Some(name) = cf.action_name {
+        format_add(ft, c"command", |out| out.write_all(name.to_bytes()));
+    }
+    for (key, value) in &cf.entries {
+        format_add_value(ft, key, value.clone());
+    }
+    ft.m = cf.mouse;
 }
-/// Construct the sole owner of a format tree, retaining the supplied client
-/// handle and merging the command item's formats when one is given.
+
 pub fn format_create(
     c: Option<&ClientRef>,
-    item_handle: Option<&dyn crate::actions::ContextSource>,
+    cmd_format: Option<&CommandFormat>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {
     let mut owner = Box::new(format_tree::default());
     let ft = &mut *owner;
     ft.client = c.cloned();
-    ft.item = item_handle.map(|item| item.downgrade()).unwrap_or_default();
+    ft.cmd_format = cmd_format.cloned();
     ft.tag = tag as u_int;
     ft.flags = flags;
-    if let Some(item_handle) = item_handle {
-        format_create_add_item(ft, item_handle);
+    if let Some(cf) = cmd_format {
+        format_create_add_item(ft, cf);
     }
     owner
 }

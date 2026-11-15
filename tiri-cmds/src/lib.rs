@@ -1,4 +1,5 @@
 #![feature(local_waker)]
+#![deny(clippy::await_holding_refcell_ref)]
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
@@ -21,7 +22,7 @@ pub use engine::ENGINE;
 
 #[cfg(feature = "test-support")]
 pub mod test_cases {
-    pub use crate::cmd::queue::client_queue_tests;
+    pub use crate::cmd::run::client_queue_tests;
     pub use crate::entries::confirm_before::confirm_before_tests;
     pub use crate::entries::load_buffer::load_buffer_tests;
     pub use crate::entries::run_shell::run_shell_tests;

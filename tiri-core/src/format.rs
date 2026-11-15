@@ -1,6 +1,5 @@
 use crate::cfg::cfg_files as configuration_files;
 use crate::actions::mouse_pane;
-use crate::actions::queue::{client, event, merge_formats, print, target_client};
 use crate::arguments::args_escape_cstring;
 use crate::compat::strtonum::strtonum;
 use crate::environ::{environ_find, environ_iter};
@@ -122,9 +121,8 @@ mod expression;
 pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::format_quote_shell_single;
-pub(crate) use expression::format_single_from_state_cstring;
 pub use expression::{
-    format_expand_time_cstring, format_single_cstring, format_single_from_target_cstring,
+    format_expand_time_cstring, format_single_cstring, format_single_from_state_cstring,
 };
 pub use expression::{format_skip, format_true};
 
@@ -295,8 +293,13 @@ fn format_log1(
     }
     let s = format_message_with(write);
     log_debug(format_args!("{}: {}", log_cstr(from), log_cstr(&s)));
-    if let Some(item) = ft.item.upgrade().filter(|_| ft.flags & FORMAT_VERBOSE != 0) {
-        print(&item, |out| {
+    if let Some(cf) = ft
+        .cmd_format
+        .as_ref()
+        .filter(|_| ft.flags & FORMAT_VERBOSE != 0)
+    {
+        let client = cf.client.upgrade();
+        ClientRef::print_line(client.as_ref(), |out| {
             out.write_all(b"#")?;
             out.write_all(&b"          "[..(es.loop_0 as usize).min(10)])?;
             write_cstr(out, &*s)
@@ -304,47 +307,35 @@ fn format_log1(
     }
 }
 pub fn format_create_defaults(
-    item_handle: Option<&dyn crate::actions::ContextSource>,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
-    mut wl: refbox::Weak<winlink>,
+    wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) -> Box<format_tree> {
-    let queue_client = client(item_handle.map(|item| item.borrow()).as_deref());
+    let queue_client = cmd_format.and_then(|cf| cf.client.upgrade());
     let mut owner = format_create(
         queue_client.as_ref(),
-        item_handle,
+        cmd_format,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
     let ft = &mut *owner;
-    format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
+    format_defaults(ft, c_owner, s_owner, wl, wp_owner);
     owner
 }
 pub fn format_create_from_state(
-    item_handle: Option<&dyn crate::actions::ContextSource>,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
     c_owner: Option<&ClientRef>,
     fs: &Target,
 ) -> Box<format_tree> {
     format_create_defaults(
-        item_handle,
+        cmd_format,
         c_owner,
         fs.s.upgrade().as_ref(),
         (fs.winlink_handle()).clone(),
         fs.wp.upgrade().as_ref(),
     )
-}
-pub fn format_create_from_target(
-    item_handle: &dyn crate::actions::ContextSource,
-) -> Box<format_tree> {
-    let (tc, target) = {
-        let item = item_handle.borrow();
-        (
-            target_client(Some(&*item)),
-            crate::actions::queue::target(&item).clone(),
-        )
-    };
-    format_create_from_state(Some(item_handle), tc.as_ref(), &target)
 }
 pub fn format_defaults(
     ft: &mut format_tree,

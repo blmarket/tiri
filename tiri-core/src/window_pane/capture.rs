@@ -35,7 +35,9 @@ enum CaptureBound {
 }
 fn parse_bound(
     arguments: &args,
-    item: &dyn crate::actions::ContextSource,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
+    tc: Option<&crate::shared::client::ClientRef>,
+    target: &crate::actions::Target,
     flag: u8,
 ) -> CaptureBound {
     if args_get(arguments, flag).is_some_and(|value| value == c"-") {
@@ -46,7 +48,9 @@ fn parse_bound(
             flag,
             INT_MIN as i64,
             SHRT_MAX as i64,
-            Some(item),
+            cmd_format,
+            tc,
+            target,
         ) {
             Ok(value) => CaptureBound::Value(value as i32),
             Err(_) => CaptureBound::Default,
@@ -69,7 +73,9 @@ fn resolve_bound(bound: CaptureBound, history: u32, height: u32, end: bool) -> u
 pub(super) fn capture(
     owner: &Rc<RefCell<window_pane>>,
     arguments: &args,
-    item: &dyn crate::actions::ContextSource,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
+    tc: Option<&crate::shared::client::ClientRef>,
+    target: &crate::actions::Target,
 ) -> Result<Vec<u8>, CString> {
     if args_has(arguments, b'R') != 0 {
         return Ok(cmd_capture_pane_grid(&owner.borrow()));
@@ -85,8 +91,8 @@ pub(super) fn capture(
         };
     }
     let bounds = (
-        parse_bound(arguments, item, b'S'),
-        parse_bound(arguments, item, b'E'),
+        parse_bound(arguments, cmd_format, tc, target, b'S'),
+        parse_bound(arguments, cmd_format, tc, target, b'E'),
     );
     let active = owner.mode_entry();
     let get_screen =

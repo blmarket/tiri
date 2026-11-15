@@ -1,5 +1,6 @@
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_list_print_cstring};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{
@@ -7,10 +8,6 @@ use crate::shared::command::{
 };
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, target_client as cmdq_get_target_client,
-};
 use tiri_core::arguments::{args, args_get, args_has, args_parse, args_string};
 use tiri_core::bindings::{key_bindings_get_table, key_bindings_has_repeat, key_tables};
 use tiri_core::format::bytes::write_cstr;
@@ -141,11 +138,14 @@ fn cmd_list_keys_format_add_key_binding(ft: &mut format_tree, bd: &key_binding, 
     );
     format_add(ft, c"key_command", |out| write_cstr(out, &*command));
 }
-fn cmd_list_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let queue_client = cmdq_get_client(Some(&*item));
+fn cmd_list_keys_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+    let queue_client = inv.client();
     let args = cmd_get_args(self_0);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let tc_owner = inv.target_client();
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -162,11 +162,11 @@ fn cmd_list_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
     if let Some(keystr) = keystr {
         only = key_string_parse_cstr(keystr).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"invalid key: ")?;
                 write_cstr(out, keystr)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
     }
@@ -175,19 +175,19 @@ fn cmd_list_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"invalid sort order"));
+        return ExecOutcome::err();
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if let Some(tablename) = args_get(args, 'T' as i32 as u_char) {
         table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
         if table.is_none() {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"table ")?;
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     }
     let prefix = cmd_list_keys_get_prefix(args);
@@ -211,18 +211,19 @@ fn cmd_list_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
         cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);
     }
     if filter_key != 0 && bindings.is_empty() {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"unknown key: ")?;
             write_cstr(out, keystr)
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if single != 0 {
         bindings.truncate(1);
     }
+    let cf = inv.format();
     let mut ft_owner = format_create(
         queue_client.as_ref(),
-        Some(item_handle),
+        Some(&cf),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -262,12 +263,13 @@ fn cmd_list_keys_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cmd
                 |out| write_cstr(out, &*line),
             );
         } else if !line.is_empty() {
-            cmdq_print(item_handle, |out| write_cstr(out, &*line));
+            inv.print( |out| write_cstr(out, &*line));
         }
         if single != 0 {
             break;
         }
     }
     drop(ft_owner);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

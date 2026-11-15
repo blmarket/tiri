@@ -1,5 +1,5 @@
-use crate::actions::queue::{callback, enqueue, new_state, program_task, report_error};
-use crate::actions::{ContextRef, ProgramRef, REPEAT_STATE, Target, TaskOutcome};
+use crate::actions::{Context, ProgramRef, REPEAT_STATE, Target};
+use crate::reactor::Lane;
 use crate::key_string::key_string_format;
 use crate::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::server_client::Client as _;
@@ -215,7 +215,7 @@ pub fn set_default_bindings(defaults: &'static [&'static CStr]) {
     );
 }
 
-fn key_bindings_init_done() -> TaskOutcome {
+fn key_bindings_init_done() {
     for owner in key_tables::snapshot() {
         let mut table = owner.borrow_mut();
         let table_ref = &mut *table;
@@ -229,7 +229,6 @@ fn key_bindings_init_done() -> TaskOutcome {
             }));
         }
     }
-    TaskOutcome::Normal
 }
 
 pub fn key_bindings_init() {
@@ -242,46 +241,51 @@ pub fn key_bindings_init() {
                 out.write_all(command.to_bytes())
             });
         });
-        enqueue(None, program_task(&commands, None));
-        drop(commands);
+        Lane::push(None, async move {
+            let _ = crate::actions::run(
+                commands,
+                Context::new(std::rc::Weak::new(), None, None, 0),
+            )
+            .await;
+        });
     }
-    enqueue(
-        None,
-        callback(
-            c"key_bindings_init_done",
-            Some(Box::new(|_| key_bindings_init_done())),
-        ),
-    );
+    Lane::push(None, async {
+        key_bindings_init_done();
+    });
 }
 
-fn key_bindings_read_only(item: &ContextRef) -> TaskOutcome {
-    report_error(item, |out| out.write_all(b"client is read-only"));
-    TaskOutcome::Error
+fn key_bindings_read_only(client: crate::shared::client::ClientWeak) {
+    ClientRef::report_error(client.upgrade().as_ref(), None, |out| {
+        out.write_all(b"client is read-only")
+    });
 }
 
 pub fn key_bindings_dispatch(
     bd: KeyBindingCommand,
     c_owner: Option<&ClientRef>,
+    exec_client: crate::shared::client::ClientWeak,
     event: Option<&key_event>,
     fs: &Target,
-) -> ContextRef {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
     let readonly = if c_owner.is_none_or(|c| !c.flags() & CLIENT_READONLY as uint64_t != 0) {
         true
     } else {
         bd.cmdlist().read_only()
     };
     if !readonly {
-        callback(
-            c"key_bindings_read_only",
-            Some(Box::new(key_bindings_read_only)),
-        )
+        let client = c_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+        Box::pin(async move {
+            key_bindings_read_only(client);
+        })
     } else {
         let mut flags = 0;
         if bd.flags & KEY_BINDING_REPEAT != 0 {
             flags |= REPEAT_STATE;
         }
-        let state = new_state(Some(fs), event, flags);
-        program_task(&bd.commands, Some(&state))
+        let context = Context::new(exec_client, Some(fs), event, flags);
+        Box::pin(async move {
+            let _ = crate::actions::run(bd.commands, context).await;
+        })
     }
 }
 
@@ -389,7 +393,7 @@ mod ownership_tests {
         let original_lifetime = Rc::downgrade(&original);
         key_bindings_add(name, 65, Some(c"original"), 1, Some(original));
         let table_owner = key_bindings_get_table(name, 0).unwrap();
-        let _ = key_bindings_init_done();
+        key_bindings_init_done();
         assert_eq!(original_lifetime.strong_count(), 2);
         let replacement: ProgramRef = Rc::new(TestProgram);
         let replacement_lifetime = Rc::downgrade(&replacement);

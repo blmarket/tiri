@@ -1,11 +1,11 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
@@ -36,17 +36,20 @@ pub static cmd_paste_buffer_entry: cmd_entry = {
         exec: Some(cmd_paste_buffer_exec),
     }
 };
-fn cmd_paste_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_paste_buffer_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let pane_owner = target.pane_handle().expect("paste target pane");
     let pb;
     let mut bufname: Option<&CStr> = None;
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
     if !pane_owner.has_tty() || pane_owner.has_exited() {
-        cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"target pane has exited"));
+        return ExecOutcome::err();
     }
     bufname = None;
     if args_has(args, 'b' as i32 as u_char) != 0 {
@@ -55,17 +58,17 @@ fn cmd_paste_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     if let Some(bufname) = bufname {
         pb = paste_get_name(bufname);
         if pb.is_none() {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"no buffer ")?;
                 write_cstr(out, bufname)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     } else {
         pb = paste_get_top(None);
     }
     let Some(pb) = pb else {
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     };
     let separator = args_get(args, b's')
         .unwrap_or(if args_has(args, b'r') != 0 {
@@ -82,5 +85,6 @@ fn cmd_paste_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     if args_has(args, 'd' as i32 as u_char) != 0 {
         paste_free(&pb);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

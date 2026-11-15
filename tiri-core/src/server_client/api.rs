@@ -30,10 +30,10 @@ use super::{
     server_client_create, server_client_detach, server_client_exec, server_client_get_cwd,
     server_client_handle_key, server_client_how_many, server_client_loop, server_client_lost,
     server_client_open, server_client_prepare_sent_key, server_client_print,
-    server_client_remove_pane, server_client_set_flags, server_client_set_key_table,
-    server_client_set_session, server_client_set_term_type, server_client_suspend,
-    server_client_update_theme_colours, setblocking, tty, tty_resize, tty_window_offset,
-    tty_window_view, window_pane, window_pane_offset, write_cstr,
+    server_client_remove_pane, server_client_report_error, server_client_set_flags,
+    server_client_set_key_table, server_client_set_session, server_client_set_term_type,
+    server_client_suspend, server_client_update_theme_colours, setblocking, tty, tty_resize,
+    tty_window_offset, tty_window_view, window_pane, window_pane_offset, write_cstr,
 };
 use crate::control::{control_get_window_size, control_write_output};
 use crate::reactor::BufferEvent;
@@ -74,6 +74,17 @@ pub trait Client {
     fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf)
     where
         Self: Sized;
+    fn print_line(
+        client: Option<&Self>,
+        write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+    ) where
+        Self: Sized;
+    fn report_error(
+        client: Option<&Self>,
+        source: Option<(&CStr, u32)>,
+        write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+    ) where
+        Self: Sized;
     fn forget_pane(pane: &Rc<RefCell<window_pane>>)
     where
         Self: Sized;
@@ -89,9 +100,7 @@ pub trait Client {
         &self,
     ) -> std::cell::RefMut<'_, crate::shared::format::format_job_tree>;
 
-    /// Release before executing commands, invoking cancellation, or releasing
-    /// queued owners. Queue identity must never be a pointer into this borrow.
-    fn borrow_queue_mut(&self) -> std::cell::RefMut<'_, dyn crate::actions::WorkQueue>;
+    fn borrow_lane_mut(&self) -> std::cell::RefMut<'_, crate::reactor::Lane>;
 
     /// Read terminal properties within the guard; release it before model calls,
     /// terminal mutation, formatting, or callback dispatch.
@@ -210,9 +219,12 @@ pub trait Client {
     fn participates_in_window_sizing(&self) -> bool;
     fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32);
     fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32);
-    /// `flags` contains only CLIENT_*REDRAW* bits, including status-force.
     fn request_redraw(&self, flags: u64);
-    fn prepare_sent_key(&self, event: Box<key_event>) -> Option<crate::actions::ContextRef>;
+    fn prepare_sent_key(
+        &self,
+        event: Box<key_event>,
+        exec_client: crate::shared::client::ClientWeak,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>>;
     fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>);
     /// Scoped access to this control client's consumer offset. Call only for an
     /// attached control client; the bool is the existing output-disabled flag.
@@ -302,6 +314,23 @@ impl Client for ClientRef {
 
     fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf) {
         server_client_print(client, i32::from(parse), buffer);
+    }
+
+    fn print_line(
+        client: Option<&Self>,
+        write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+    ) {
+        let mut evb = crate::reactor::evbuffer_new();
+        crate::reactor::evbuffer_add_formatted(&mut evb, write);
+        server_client_print(client, 1, &mut evb);
+    }
+
+    fn report_error(
+        client: Option<&Self>,
+        source: Option<(&CStr, u32)>,
+        write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+    ) {
+        server_client_report_error(client, source, write);
     }
 
     fn forget_pane(pane: &Rc<RefCell<window_pane>>) {
@@ -524,15 +553,8 @@ impl Client for ClientRef {
         self.borrow_mut().cycle_timer = Some(timer);
     }
 
-    fn borrow_queue_mut(&self) -> std::cell::RefMut<'_, dyn crate::actions::WorkQueue> {
-        let needs_queue = self.borrow().queue.is_none();
-        if needs_queue {
-            let queue = crate::actions::queue::new_queue();
-            self.borrow_mut().queue = queue;
-        }
-        std::cell::RefMut::map(self.borrow_mut(), |state| {
-            state.queue.as_deref_mut().expect("client command queue")
-        })
+    fn borrow_lane_mut(&self) -> std::cell::RefMut<'_, crate::reactor::Lane> {
+        std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.lane)
     }
 
     fn borrow_status(&self) -> std::cell::Ref<'_, crate::shared::status::status_line> {
@@ -963,8 +985,12 @@ impl Client for ClientRef {
         self.borrow_mut().flags |= flags;
     }
 
-    fn prepare_sent_key(&self, event: Box<key_event>) -> Option<crate::actions::ContextRef> {
-        server_client_prepare_sent_key(self, event)
+    fn prepare_sent_key(
+        &self,
+        event: Box<key_event>,
+        exec_client: crate::shared::client::ClientWeak,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>> {
+        server_client_prepare_sent_key(self, event, exec_client)
     }
 
     fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>) {

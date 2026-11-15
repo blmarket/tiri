@@ -1,4 +1,3 @@
-use crate::actions::queue::print;
 use crate::format::bytes::write_cstr;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
@@ -131,7 +130,7 @@ pub fn server_acl_init() {
 pub fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     server_acl_entries::find(id, flags).is_some() as ::core::ffi::c_int
 }
-pub fn server_acl_display(item_handle: &dyn crate::actions::ContextSource) {
+pub fn server_acl_display(client: Option<&ClientRef>) {
     let mut name = std::ffi::CString::default();
     let mut type_0: ::core::ffi::c_char = 0;
     let mut current_block_12: u64;
@@ -151,14 +150,14 @@ pub fn server_acl_display(item_handle: &dyn crate::actions::ContextSource) {
         }
         if current_block_12 == 11050875288958768710 {
             if loop_0.flags & SERVER_ACL_READONLY != 0 {
-                print(item_handle, |out| {
+                ClientRef::print_line(client, |out| {
                     write_cstr(out, name.as_c_str())?;
                     out.write_all(b" (")?;
                     out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
                     out.write_all(b",R)")
                 });
             } else {
-                print(item_handle, |out| {
+                ClientRef::print_line(client, |out| {
                     write_cstr(out, name.as_c_str())?;
                     out.write_all(b" (")?;
                     out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;

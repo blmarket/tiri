@@ -1,9 +1,9 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_has, args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::server_fn::server_unzoom_window;
@@ -37,10 +37,13 @@ pub static cmd_select_layout_entry: cmd_entry = {
 
 /// Arrange the window in the named layout, the next one with -n, or afresh
 /// in its current one.
-fn cmd_select_layout_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_select_layout_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let window_owner = target.w.upgrade().expect("live layout window");
     server_unzoom_window(&window_owner);
     let current = window_owner.layout();
@@ -54,17 +57,18 @@ fn cmd_select_layout_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
     let result = match kind {
         Some(kind) => {
             window_owner.set_layout(kind);
-            CmdOutcome::Normal
+            ExecOutcome::ok()
         }
         None => {
             let name = args_string(args, 0 as u_int).expect("named layout");
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"unknown layout: ")?;
                 write_cstr(out, &*name)
             });
-            CmdOutcome::Error
+            ExecOutcome::err()
         }
     };
     drop(window_owner);
     result
+})
 }

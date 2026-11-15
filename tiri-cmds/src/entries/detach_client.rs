@@ -1,15 +1,12 @@
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::{
     CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_READONLY, CMD_TARGET_CLIENT_USAGE,
 };
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, source as cmdq_get_source, target_client as cmdq_get_target_client,
-};
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::compat::imsg::{MSG_DETACH, MSG_DETACHKILL};
 use tiri_core::server_client::Client;
@@ -65,24 +62,28 @@ pub static cmd_suspend_client_entry: cmd_entry = {
         exec: Some(cmd_detach_client_exec),
     }
 };
-fn cmd_detach_client_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_detach_client_exec<'a, 'ctx>(
+    command: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let suspend = std::ptr::eq(cmd_get_entry(command), &cmd_suspend_client_entry);
     let args = cmd_get_args(command);
-    let source = cmdq_get_source(&item.borrow()).clone();
-    let client = cmdq_get_client(Some(&item.borrow()));
-    let target = cmdq_get_target_client(Some(&item.borrow())).expect("target client");
+    let source = inv.source().clone();
+    let client = inv.client();
+    let target = inv.target_client().expect("target client");
     let exec = args_get(args, b'E').map(std::ffi::CStr::to_owned);
     if suspend {
         target.suspend();
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if client.as_ref().expect("command client").is_read_only()
         && (args_has(args, b's') != 0
             || args_has(args, b'a') != 0
             || !std::rc::Rc::ptr_eq(client.as_ref().unwrap(), &target))
     {
-        cmdq_error(item, |out| out.write_all(b"client is read-only"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"client is read-only"));
+        return ExecOutcome::err();
     }
     let message = if args_has(args, b'P') != 0 {
         MSG_DETACHKILL
@@ -98,7 +99,7 @@ fn cmd_detach_client_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOu
     };
     if args_has(args, b's') != 0 {
         let Some(session) = source.session_handle() else {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         };
         let observer = std::rc::Rc::downgrade(&session);
         drop(session);
@@ -109,7 +110,7 @@ fn cmd_detach_client_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOu
             }
             cursor = ClientRegistry::next(&client);
         }
-        return CmdOutcome::Stop;
+        return ExecOutcome::ok();
     }
     if args_has(args, b'a') != 0 {
         let mut cursor = ClientRegistry::first();
@@ -121,8 +122,9 @@ fn cmd_detach_client_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOu
             }
             cursor = ClientRegistry::next(&client);
         }
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     detach(&target);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

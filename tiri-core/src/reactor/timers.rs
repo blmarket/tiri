@@ -23,3 +23,37 @@ impl Timer {
         Ok(Self { _task: task })
     }
 }
+
+struct BackgroundTimers {
+    entries: std::collections::BTreeMap<u64, Timer>,
+    next_id: u64,
+}
+
+thread_local! {
+    static BACKGROUND_TIMERS: std::cell::RefCell<BackgroundTimers> = const {
+        std::cell::RefCell::new(BackgroundTimers {
+            entries: std::collections::BTreeMap::new(),
+            next_id: 0,
+        })
+    };
+}
+
+pub fn background_timer(delay: Duration, callback: impl FnOnce() + 'static) -> io::Result<()> {
+    let id = BACKGROUND_TIMERS.with_borrow_mut(|timers| {
+        let id = timers.next_id;
+        timers.next_id = id.checked_add(1).expect("background timer ID overflow");
+        id
+    });
+    let timer = Timer::new(delay, move || {
+        let timer = BACKGROUND_TIMERS.with_borrow_mut(|timers| timers.entries.remove(&id));
+        drop(timer);
+        callback();
+    })?;
+    BACKGROUND_TIMERS.with_borrow_mut(|timers| timers.entries.insert(id, timer));
+    Ok(())
+}
+
+pub fn cancel_background_timers() {
+    let entries = BACKGROUND_TIMERS.with_borrow_mut(|timers| std::mem::take(&mut timers.entries));
+    drop(entries);
+}

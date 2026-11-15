@@ -1,4 +1,3 @@
-use crate::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
 use crate::cmd::{cmd_get_alias, cmd_list_new, cmd_list_print_cstring, cmd_parse};
 use crate::shared::command::cmd_list;
 use crate::shared::command::cmd_parse_input;
@@ -10,11 +9,11 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-use tiri_core::actions::ExecutionState as cmdq_state;
 use tiri_core::arguments::ParseValue;
 use tiri_core::environ::environ_put;
 use tiri_core::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use tiri_core::log::{log_bytes, log_debug};
+use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::u_int;
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::environment::ENVIRON_HIDDEN;
@@ -90,18 +89,19 @@ fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
     if !pi.flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
-    let Some(item_owner) = pi.item.upgrade() else {
+    let Some(cf) = pi.format.as_ref() else {
         return;
     };
+    let client = cf.client.upgrade();
     let s = cmd_list_print_cstring(cmdlist, 0);
     if pi.file.is_some() {
-        cmdq_print(&item_owner, |out| {
+        ClientRef::print_line(client.as_ref(), |out| {
             out.write_all(pi.file.as_ref().expect("parse file").to_bytes())?;
             write!(out, ":{}: ", { pi.line })?;
             out.write_all(s.as_bytes())
         });
     } else {
-        cmdq_print(&item_owner, |out| {
+        ClientRef::print_line(client.as_ref(), |out| {
             write!(out, "{}: ", { pi.line })?;
             out.write_all(s.as_bytes())
         });
@@ -137,12 +137,9 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
                 .unwrap_or_else(|| cmd_find_state::clear_state(0));
             &fs
         };
-        let item_owner = pi.item.upgrade();
         let mut ft_owner = format_create(
             client_owner.as_ref(),
-            item_owner
-                .as_ref()
-                .map(|item| item as &dyn tiri_core::actions::ContextSource),
+            pi.format.as_ref(),
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
@@ -398,7 +395,7 @@ pub fn cmd_parse_from_file(
         flags: 0,
         file: None,
         line: 0,
-        item: std::rc::Weak::new(),
+        format: None,
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -421,7 +418,7 @@ pub fn cmd_parse_from_string(
         flags: 0,
         file: None,
         line: 0,
-        item: std::rc::Weak::new(),
+        format: None,
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -436,16 +433,6 @@ pub fn cmd_parse_from_string(
     pi.flags |= CMD_PARSE_ONEGROUP;
     cmd_parse_from_buffer(s.to_bytes(), Some(pi))
 }
-pub fn cmd_parse_and_append(
-    s: &CStr,
-    owner: Option<&ClientRef>,
-    state: Option<&std::rc::Rc<cmdq_state>>,
-) -> Result<(), CString> {
-    let commands = cmd_parse_from_string(s, None)?;
-    let item = cmdq_get_command(&commands, state);
-    cmdq_append(owner, item);
-    Ok(())
-}
 pub fn cmd_parse_from_buffer(
     buf: &[u8],
     pi: Option<&mut cmd_parse_input>,
@@ -454,7 +441,7 @@ pub fn cmd_parse_from_buffer(
         flags: 0,
         file: None,
         line: 0,
-        item: std::rc::Weak::new(),
+        format: None,
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -489,7 +476,7 @@ pub fn cmd_parse_from_arguments(
         flags: 0,
         file: None,
         line: 0,
-        item: std::rc::Weak::new(),
+        format: None,
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -523,9 +510,10 @@ pub fn cmd_parse_from_arguments(
                 }
             }
             ParseValue::Commands(commands) => {
+                let owner: Rc<dyn std::any::Any> = commands.program_ref();
                 cmd.arguments
                     .push_back(Box::new(cmd_parse_argument::ParsedCommands(
-                        crate::engine::program(&commands.program_ref()),
+                        owner.downcast::<cmd_list>().expect("command program"),
                     )));
             }
         }

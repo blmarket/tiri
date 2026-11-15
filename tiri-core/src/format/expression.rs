@@ -30,7 +30,7 @@ use super::{
     format_lower, format_message_with, format_modifier, format_plugin_pane, format_table_get,
     format_tree, format_trim_left_bytes, format_trim_right_bytes, format_upper, format_width,
     fuzzy_match_owned, get_timer, global_environ, regsub_cstring, sort_criteria, sort_get_clients,
-    sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session, strtonum, target_client,
+    sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session, strtonum,
     time_t, u_int, uint64_t, utf8_pad_cstring, window_pane, winlink, winlink_next, winlinks_minmax,
 };
 use crate::compat::strtod::strtod;
@@ -722,7 +722,7 @@ pub(super) fn format_loop_sessions(
     let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = es.ft.client.clone();
-    let item_owner = es.ft.item.upgrade();
+    let cmd_format = es.ft.cmd_format.clone();
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
     let (all, active) = format_choose_loop(es, fmt);
@@ -749,9 +749,7 @@ pub(super) fn format_loop_sessions(
         };
         let mut nft_owner = format_create(
             client_owner.as_ref(),
-            item_owner
-                .as_ref()
-                .map(|item| item as &dyn crate::actions::ContextSource),
+            cmd_format.as_ref(),
             FORMAT_NONE,
             es.ft.flags,
         );
@@ -851,7 +849,7 @@ pub(super) fn format_loop_windows(
     let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = es.ft.client.clone();
-    let item_owner = es.ft.item.upgrade();
+    let cmd_format = es.ft.cmd_format.clone();
     let mut buffer = Vec::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut i: ::core::ffi::c_int = 0;
@@ -883,9 +881,7 @@ pub(super) fn format_loop_windows(
         };
         let mut nft_owner = format_create(
             client_owner.as_ref(),
-            item_owner
-                .as_ref()
-                .map(|item| item as &dyn crate::actions::ContextSource),
+            cmd_format.as_ref(),
             (FORMAT_WINDOW | window_id) as ::core::ffi::c_int,
             es.ft.flags,
         );
@@ -950,7 +946,7 @@ pub(super) fn format_loop_panes(
     let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = es.ft.client.clone();
-    let item_owner = es.ft.item.upgrade();
+    let cmd_format = es.ft.cmd_format.clone();
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
     if format_window_owner.is_none() {
@@ -982,9 +978,7 @@ pub(super) fn format_loop_panes(
         };
         let mut nft_owner = format_create(
             client_owner.as_ref(),
-            item_owner
-                .as_ref()
-                .map(|item| item as &dyn crate::actions::ContextSource),
+            cmd_format.as_ref(),
             (FORMAT_PANE | pane.id()) as ::core::ffi::c_int,
             es.ft.flags,
         );
@@ -1084,7 +1078,7 @@ fn format_loop_emit_option(
     let pane = es.ft.wp.upgrade();
     let session = es.ft.s.upgrade();
     let client = es.ft.c.upgrade();
-    let item = es.ft.item.upgrade();
+    let cmd_format = es.ft.cmd_format.clone();
     format_log1(es, c"format_loop_options", |out| {
         out.write_all(b"option loop: ")?;
         write_cstr(out, values[0].1.as_c_str())?;
@@ -1097,8 +1091,7 @@ fn format_loop_emit_option(
     });
     let mut context = format_create(
         es.ft.client.as_ref(),
-        item.as_ref()
-            .map(|item| item as &dyn crate::actions::ContextSource),
+        cmd_format.as_ref(),
         FORMAT_NONE,
         es.ft.flags,
     );
@@ -1262,7 +1255,7 @@ pub(super) fn format_loop_environ(
     let session = es.ft.s.upgrade();
     let format_client = es.ft.c.upgrade();
     let client = es.ft.client.clone();
-    let item = es.ft.item.upgrade();
+    let cmd_format = es.ft.cmd_format.clone();
     let flags = if flags.is_empty() { c"s" } else { flags };
     let mut access = |read: &mut dyn FnMut(&environ)| {
         if flags == c"s" {
@@ -1299,8 +1292,7 @@ pub(super) fn format_loop_environ(
         });
         let mut context = format_create(
             client.as_ref(),
-            item.as_ref()
-                .map(|item| item as &dyn crate::actions::ContextSource),
+            cmd_format.as_ref(),
             FORMAT_NONE,
             es.ft.flags,
         );
@@ -1355,7 +1347,7 @@ pub(super) fn format_loop_clients(
     let format_pane_owner = es.ft.wp.upgrade();
     let format_session_owner = es.ft.s.upgrade();
     let mut c: Option<ClientRef> = None;
-    let item_owner = es.ft.item.upgrade();
+    let cmd_format = es.ft.cmd_format.clone();
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
     let clients_sorted = sort_get_clients(sort);
@@ -1370,9 +1362,7 @@ pub(super) fn format_loop_clients(
         });
         let mut nft_owner = format_create(
             Some(&clients_sorted[i as usize]),
-            item_owner
-                .as_ref()
-                .map(|item| item as &dyn crate::actions::ContextSource),
+            cmd_format.as_ref(),
             0 as ::core::ffi::c_int,
             es.ft.flags,
         );
@@ -2609,46 +2599,33 @@ pub fn format_expand_cstring(ft: &mut format_tree, fmt: &CStr) -> CString {
     format_expand1_cstring(&mut es, fmt.to_bytes())
 }
 pub fn format_single_cstring(
-    item_handle: Option<&dyn crate::actions::ContextSource>,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
     fmt: &CStr,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
-    mut wl: refbox::Weak<winlink>,
+    wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) -> CString {
-    let mut ft_owner = format_create_defaults(item_handle, c_owner, s_owner, wl.clone(), wp_owner);
+    let mut ft_owner = format_create_defaults(cmd_format, c_owner, s_owner, wl, wp_owner);
     let ft = &mut *ft_owner;
     let expanded = format_expand_cstring(ft, fmt);
     drop(ft_owner);
     expanded
 }
-pub(crate) fn format_single_from_state_cstring(
-    item_handle: Option<&dyn crate::actions::ContextSource>,
+pub fn format_single_from_state_cstring(
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
     fmt: &CStr,
     c_owner: Option<&ClientRef>,
     fs: &Target,
 ) -> CString {
     format_single_cstring(
-        item_handle,
+        cmd_format,
         fmt,
         c_owner,
         fs.s.upgrade().as_ref(),
         (fs.winlink_handle()).clone(),
         fs.wp.upgrade().as_ref(),
     )
-}
-pub fn format_single_from_target_cstring(
-    item_handle: &dyn crate::actions::ContextSource,
-    fmt: &CStr,
-) -> CString {
-    let (tc, mut target) = {
-        let item = item_handle.borrow();
-        (
-            target_client(Some(&*item)),
-            crate::actions::queue::target(&item).clone(),
-        )
-    };
-    format_single_from_state_cstring(Some(item_handle), fmt, tc.as_ref(), &target)
 }
 
 #[cfg(test)]

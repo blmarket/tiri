@@ -2,28 +2,21 @@ use crate::arguments::{
     args_command_state, args_make_commands, args_make_commands_now, args_make_commands_prepare,
 };
 use crate::cmd::cmd_get_args;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
-use crate::cmd::queue::{
-    CmdqFollowup, cmdq_append, cmdq_defer, cmdq_error, cmdq_followup, cmdq_get_command,
-    cmdq_resumed,
-};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, target_client as cmdq_get_target_client,
-};
+use crate::shared::command::CMD_FIND_CANFAIL;
+use crate::shared::command::CMD_FIND_PANE;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list};
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::Rc;
+use tiri_core::actions::Context;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count, args_has,
     args_parse, args_parse_type, args_string,
 };
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::job::job_run;
-
-use crate::cmd::queue::cmdq_item;
-use crate::shared::command::CMD_FIND_CANFAIL;
-use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use std::rc::{Rc, Weak};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
@@ -36,6 +29,7 @@ pub struct cmd_if_shell_data {
     pub cmd_else: Option<Box<args_command_state>>,
     pub client: Option<ClientRef>,
 }
+
 pub static cmd_if_shell_entry: cmd_entry = {
     cmd_entry {
         name: c"if-shell",
@@ -61,140 +55,126 @@ pub static cmd_if_shell_entry: cmd_entry = {
         exec: Some(cmd_if_shell_exec),
     }
 };
+
 fn cmd_if_shell_args_parse(_args: &args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if idx == 1 as u_int || idx == 2 as u_int {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
     Ok(ARGS_PARSE_STRING)
 }
-fn cmd_if_shell_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let queue_client = cmdq_get_client(Some(&*item));
-    let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
-    let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
-    let new_item_allocation;
-    let tc_owner = cmdq_get_target_client(Some(&*item));
-    let _tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<SessionRef> = target.session_handle();
-    let mut count: u_int = args_count(args);
-    let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    let shellcmd = format_single_from_target_cstring(
-        item_handle,
-        args_string(args, 0 as u_int).unwrap_or(c""),
-    );
-    if args_has(args, 'F' as i32 as u_char) != 0 {
-        let cmdlist = if !matches!(shellcmd.as_bytes().first(), None | Some(b'0')) {
-            args_make_commands_now(self_0, item_handle, 1 as u_int, 0 as ::core::ffi::c_int)
-        } else if count == 3 as u_int {
-            args_make_commands_now(self_0, item_handle, 2 as u_int, 0 as ::core::ffi::c_int)
-        } else {
-            return CmdOutcome::Normal;
-        };
-        let Some(cmdlist) = cmdlist else {
-            return CmdOutcome::Error;
-        };
-        new_item_allocation = cmdq_get_command(&cmdlist, item.state.as_ref());
-        drop(item);
-        drop(cmdlist);
-        return cmdq_defer(item_handle, new_item_allocation);
-    }
-    let mut cdata = Box::new(cmd_if_shell_data {
-        cmd_if: None,
-        cmd_else: None,
-        client: None,
-    });
-    cdata.cmd_if = Some(args_make_commands_prepare(
-        self_0,
-        item_handle,
-        1 as u_int,
-        None,
-        wait,
-        0 as ::core::ffi::c_int,
-    ));
-    if count == 3 as u_int {
-        cdata.cmd_else = Some(args_make_commands_prepare(
+
+fn cmd_if_shell_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+        let queue_client = inv.client();
+        let args = cmd_get_args(self_0);
+        let tc_owner = inv.target_client();
+        let s: Option<SessionRef> = inv.target().session_handle();
+        let count: u_int = args_count(args);
+        let wait: ::core::ffi::c_int =
+            (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        let shellcmd = inv.format_single(args_string(args, 0 as u_int).unwrap_or(c""));
+        if args_has(args, 'F' as i32 as u_char) != 0 {
+            let cmdlist = if !matches!(shellcmd.as_bytes().first(), None | Some(b'0')) {
+                args_make_commands_now(self_0, inv, 1 as u_int, 0 as ::core::ffi::c_int)
+            } else if count == 3 as u_int {
+                args_make_commands_now(self_0, inv, 2 as u_int, 0 as ::core::ffi::c_int)
+            } else {
+                return ExecOutcome::ok();
+            };
+            let Some(cmdlist) = cmdlist else {
+                return ExecOutcome::err();
+            };
+            return ExecOutcome::commands(cmdlist);
+        }
+        let mut cdata = Box::new(cmd_if_shell_data {
+            cmd_if: None,
+            cmd_else: None,
+            client: None,
+        });
+        cdata.cmd_if = Some(args_make_commands_prepare(
             self_0,
-            item_handle,
-            2 as u_int,
+            inv,
+            1 as u_int,
             None,
             wait,
             0 as ::core::ffi::c_int,
         ));
-    }
-    if wait != 0 {
-        cdata.client = cmdq_get_client(Some(&*item));
-    } else {
-        cdata.client = tc_owner.clone();
-    }
-    let cwd = ClientRef::working_directory(queue_client_ptr.as_ref(), s.as_ref());
-    let job = job_run(
-        Some(shellcmd.as_c_str()),
-        &Vec::new(),
-        None,
-        s.as_ref(),
-        cwd.as_deref(),
-        None,
-        None,
-        None,
-        0 as ::core::ffi::c_int,
-        -(1 as ::core::ffi::c_int),
-        -(1 as ::core::ffi::c_int),
-    );
-    if job.is_empty() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"failed to run command: ")?;
-            write_cstr(out, &*shellcmd)
-        });
-        return CmdOutcome::Error;
-    }
-    if wait == 0 {
+        if count == 3 as u_int {
+            cdata.cmd_else = Some(args_make_commands_prepare(
+                self_0,
+                inv,
+                2 as u_int,
+                None,
+                wait,
+                0 as ::core::ffi::c_int,
+            ));
+        }
+        if wait != 0 {
+            cdata.client = queue_client.clone();
+        } else {
+            cdata.client = tc_owner.clone();
+        }
+        let cwd = ClientRef::working_directory(queue_client.as_ref(), s.as_ref());
+        let job = job_run(
+            Some(shellcmd.as_c_str()),
+            &Vec::new(),
+            None,
+            s.as_ref(),
+            cwd.as_deref(),
+            None,
+            None,
+            None,
+            0 as ::core::ffi::c_int,
+            -(1 as ::core::ffi::c_int),
+            -(1 as ::core::ffi::c_int),
+        );
+        if job.is_empty() {
+            inv.error(|out| {
+                out.write_all(b"failed to run command: ")?;
+                write_cstr(out, &*shellcmd)
+            });
+            return ExecOutcome::err();
+        }
+        if wait == 0 {
+            job.try_borrow_mut()
+                .expect("newly registered job")
+                .completecb = Some(Box::new(move |completion| {
+                cmd_if_shell_callback(completion, &mut cdata, None);
+            }));
+            return ExecOutcome::ok();
+        }
+        let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
         job.try_borrow_mut()
             .expect("newly registered job")
             .completecb = Some(Box::new(move |completion| {
-            cmd_if_shell_callback(completion, &mut cdata, None);
+            let _ = done.send(completion);
         }));
-        return CmdOutcome::Normal;
-    }
-    let (done, completed) = tiri_core::tiri_rt::oneshot::channel();
-    job.try_borrow_mut()
-        .expect("newly registered job")
-        .completecb = Some(Box::new(move |completion| {
-        let _ = done.send(completion);
-    }));
-    CmdOutcome::Suspend(Box::pin(cmd_if_shell_complete(
-        completed,
-        cdata,
-        Rc::downgrade(item_handle),
-    )))
-}
-/// Run the callback body inside the job's completion, where tmux runs it. The
-/// continuation owns the data, and with it the client (tmux's cdata). A job
-/// freed without completing never resumes the item (tmux's cmd_if_shell_free):
-/// release the data, and the client with it, then park.
-async fn cmd_if_shell_complete(
-    completed: tiri_core::tiri_rt::oneshot::Receiver<JobCompletion>,
-    mut cdata: Box<cmd_if_shell_data>,
-    item: Weak<cmdq_item>,
-) {
-    let Some(completion) = completed.await else {
+        drop(s);
+        drop(tc_owner);
+        drop(queue_client);
+        inv.suspend(self_0);
+        let Some(completion) = completed.await else {
+            drop(cdata);
+            return std::future::pending().await;
+        };
+        let followup = cmd_if_shell_callback(completion, &mut cdata, Some(inv));
         drop(cdata);
-        return std::future::pending().await;
-    };
-    let followup = cmd_if_shell_callback(completion, &mut cdata, Some(&item));
-    drop(cdata);
-    if let Some(followup) = followup {
-        followup.run().await;
-    }
+        match followup {
+            Some(commands) => ExecOutcome::commands(commands),
+            None => ExecOutcome::ok(),
+        }
+    })
 }
+
 fn cmd_if_shell_callback(
     completion: JobCompletion,
     cdata: &mut cmd_if_shell_data,
-    item: Option<&Weak<cmdq_item>>,
-) -> Option<CmdqFollowup> {
+    inv: Option<&Invocation<'_>>,
+) -> Option<Rc<cmd_list>> {
     let c = cdata.client.as_ref();
-    let new_item_allocation;
     let state = if completion.status.success() {
         cdata.cmd_if.as_deref_mut()
     } else {
@@ -203,12 +183,12 @@ fn cmd_if_shell_callback(
     if let Some(state) = state {
         match args_make_commands(state, &Vec::new()) {
             Err(mut error) => {
-                if item.is_none() {
+                if inv.is_none() {
                     cmd_parse_error_uppercase_first(&mut error);
                 }
                 let error = error.as_deref();
-                if let Some(item) = item {
-                    cmdq_error(&cmdq_resumed(item), |out| write_cstr(out, error));
+                if let Some(inv) = inv {
+                    inv.error(|out| write_cstr(out, error));
                 } else {
                     status_message_set(
                         c,
@@ -221,31 +201,24 @@ fn cmd_if_shell_callback(
                 }
             }
             Ok(commands) => {
-                let followup = if let Some(item) = item {
-                    let item = cmdq_resumed(item);
-                    let mut followup = cmdq_followup(&item);
-                    followup.push(cmdq_get_command(&commands, item.borrow().state.as_ref()));
-                    Some(followup)
-                } else {
-                    new_item_allocation = cmdq_get_command(&commands, None);
-                    cmdq_append(c, new_item_allocation);
-                    None
-                };
-                drop(commands);
-                return followup;
+                if inv.is_some() {
+                    return Some(commands);
+                }
+                let client = c.map_or_else(std::rc::Weak::new, Rc::downgrade);
+                let ctx = Context::new(client, None, None, 0);
+                crate::cmd::run::spawn(c, commands, ctx);
             }
         }
     }
     None
 }
+
 impl Drop for cmd_if_shell_data {
     fn drop(&mut self) {
-        {
-            if let Some(client) = self.client.take() {
-                drop(client);
-            }
-            drop(self.cmd_else.take());
-            drop(self.cmd_if.take());
+        if let Some(client) = self.client.take() {
+            drop(client);
         }
+        drop(self.cmd_else.take());
+        drop(self.cmd_if.take());
     }
 }

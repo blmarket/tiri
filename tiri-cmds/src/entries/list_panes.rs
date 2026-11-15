@@ -1,7 +1,7 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
@@ -10,7 +10,6 @@ use tiri_core::format::{
 use tiri_core::session::sessions;
 use tiri_core::winlink::winlink_window;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -50,10 +49,13 @@ pub static cmd_list_panes_entry: cmd_entry = {
         exec: Some(cmd_list_panes_exec),
     }
 };
-fn cmd_list_panes_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_list_panes_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
@@ -61,16 +63,16 @@ fn cmd_list_panes_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"invalid sort order"));
+        return ExecOutcome::err();
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        cmd_list_panes_server(self_0, item_handle);
+        cmd_list_panes_server(self_0, inv);
     } else if args_has(args, 's' as i32 as u_char) != 0 {
         cmd_list_panes_session(
             self_0,
             s.as_ref().expect("live session"),
-            item_handle,
+            inv,
             1 as ::core::ffi::c_int,
         );
     } else {
@@ -78,13 +80,14 @@ fn cmd_list_panes_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             self_0,
             s.as_ref().expect("live session"),
             wl.clone(),
-            item_handle,
+            inv,
             0 as ::core::ffi::c_int,
         );
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }
-fn cmd_list_panes_server(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) {
+fn cmd_list_panes_server(self_0: &cmd, inv: &Invocation<'_>) {
     let mut s: Option<SessionRef> = None;
     let mut s_owner = sessions::first();
     s = s_owner.clone();
@@ -92,7 +95,7 @@ fn cmd_list_panes_server(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) {
         cmd_list_panes_session(
             self_0,
             s.as_ref().expect("live session"),
-            item_handle,
+            inv,
             2 as ::core::ffi::c_int,
         );
         s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
@@ -102,7 +105,7 @@ fn cmd_list_panes_server(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) {
 fn cmd_list_panes_session(
     self_0: &cmd,
     s_owner: &SessionRef,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     mut type_0: ::core::ffi::c_int,
 ) {
     let s = Some(s_owner.clone());
@@ -112,7 +115,7 @@ fn cmd_list_panes_session(
         .expect("live session")
         .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
-        cmd_list_panes_window(self_0, s_owner, wl.clone(), item_handle, type_0);
+        cmd_list_panes_window(self_0, s_owner, wl.clone(), inv, type_0);
         wl = winlink_next(&wl);
     }
 }
@@ -120,14 +123,13 @@ fn cmd_list_panes_window(
     self_0: &cmd,
     s_owner: &SessionRef,
     mut wl: tiri_core::refbox::Weak<winlink>,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     mut type_0: ::core::ffi::c_int,
 ) {
-    let item = item_handle.borrow();
 
-    let queue_client = cmdq_get_client(Some(&*item));
+    let queue_client = inv.client();
     let args = cmd_get_args(self_0);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut i: u_int = 0;
     let mut sort_crit: sort_criteria = sort_criteria {
@@ -144,6 +146,7 @@ fn cmd_list_panes_window(
     let filter = args_get(args, 'f' as i32 as u_char);
     sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    let cf = inv.format();
     let l = sort_get_panes_window(&winlink_window(&wl).expect("linked window"), &sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
@@ -151,7 +154,7 @@ fn cmd_list_panes_window(
         let pane = &l[i as usize];
         let mut ft_owner = format_create(
             queue_client.as_ref(),
-            Some(item_handle),
+            Some(&cf),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
@@ -160,7 +163,7 @@ fn cmd_list_panes_window(
         format_defaults(ft, c.as_ref(), Some(s_owner), wl.clone(), Some(pane));
         if filter.is_none_or(|filter| format_true(&format_expand_cstring(ft, filter))) {
             let line = format_expand_cstring(ft, template);
-            cmdq_print(item_handle, |out| write_cstr(out, &*line));
+            inv.print( |out| write_cstr(out, &*line));
         }
         drop(ft_owner);
         i = i.wrapping_add(1);

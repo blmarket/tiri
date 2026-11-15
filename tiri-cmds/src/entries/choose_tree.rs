@@ -1,17 +1,18 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::arguments::{args_make_commands, args_make_commands_prepare};
-use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use tiri_core::actions::ProgramRef;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_get, args_has, args_parse,
     args_parse_type,
 };
+use tiri_core::format::bytes::write_cstr;
 use tiri_core::paste::paste_is_empty;
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::client::ClientRef;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -188,10 +189,14 @@ fn cmd_choose_tree_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-fn cmd_choose_tree_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_choose_tree_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let source = inv.source().clone();
+    let target = inv.target().clone();
     let wp = target.pane_handle();
 
     let mut order: sort_order = SORT_ACTIVITY;
@@ -199,19 +204,17 @@ fn cmd_choose_tree_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"invalid sort order"));
+        return ExecOutcome::err();
     }
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_display_panes_entry) {
-        window_panes_enter(
+        if let Err(err) = window_panes_enter(
             wp.as_ref().expect("mode target pane"),
-            item_handle,
-            target,
+            &source,
+            &target,
             args,
             || {
-                let mut state = args_make_commands_prepare(
-                    self_0,
-                    item_handle,
+                let mut state = args_make_commands_prepare(self_0, inv,
                     0,
                     Some(c"select-pane -t \"%%%\""),
                     0,
@@ -222,18 +225,20 @@ fn cmd_choose_tree_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                         .map(|program| program as ProgramRef)
                 })
             },
-        );
-        return CmdOutcome::Normal;
+        ) {
+            inv.error( |out| write_cstr(out, &*err));
+        }
+        return ExecOutcome::ok();
     }
     let mode: &'static window_mode =
         if std::ptr::eq(cmd_get_entry(self_0), &cmd_choose_buffer_entry) {
             if paste_is_empty() != 0 {
-                return CmdOutcome::Normal;
+                return ExecOutcome::ok();
             }
             &window_buffer_mode
         } else if std::ptr::eq(cmd_get_entry(self_0), &cmd_choose_client_entry) {
             if ClientRef::attached_count() == 0 as u_int {
-                return CmdOutcome::Normal;
+                return ExecOutcome::ok();
             }
             &window_client_mode
         } else if std::ptr::eq(cmd_get_entry(self_0), &cmd_customize_mode_entry) {
@@ -243,12 +248,9 @@ fn cmd_choose_tree_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         } else {
             &window_tree_mode
         };
-    wp.as_ref().expect("mode target pane").set_mode(
-        None,
-        mode,
-        Some(item_handle),
-        Some(target),
-        Some(args),
-    );
-    CmdOutcome::Normal
+    wp.as_ref()
+        .expect("mode target pane")
+        .set_mode(None, mode, Some(&target), Some(args));
+    ExecOutcome::ok()
+})
 }

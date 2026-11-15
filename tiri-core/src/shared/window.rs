@@ -136,11 +136,8 @@ impl<T> ModeCell<T> {
     }
 }
 
-/// Enters a mode for an entry, optionally on behalf of a queue item; returns
-/// whether the mode now owns a screen to draw to.
 pub type window_mode_init_cb = fn(
     refbox::Weak<window_mode_entry>,
-    Option<&dyn crate::actions::ContextSource>,
     Option<&Target>,
     Option<&args>,
 ) -> bool;

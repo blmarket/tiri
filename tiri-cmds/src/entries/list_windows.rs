@@ -1,11 +1,10 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{
@@ -46,12 +45,15 @@ pub static cmd_list_windows_entry: cmd_entry = {
         exec: Some(cmd_list_windows_exec),
     }
 };
-fn cmd_list_windows_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let queue_client = cmdq_get_client(Some(&*item));
+fn cmd_list_windows_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+    let queue_client = inv.client();
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let target = inv.target().clone();
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
     let mut s: Option<SessionRef> = None;
@@ -68,8 +70,8 @@ fn cmd_list_windows_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
-        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"invalid sort order"));
+        return ExecOutcome::err();
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     let (winlinks, default_template) = if args_has(args, 'a' as i32 as u_char) != 0 {
@@ -83,6 +85,7 @@ fn cmd_list_windows_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
             c"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}",
         )
     };
+    let cf = inv.format();
     let template = args_get(args, 'F' as i32 as u_char).unwrap_or(default_template);
     n = u_int::try_from(winlinks.len()).expect("too many winlinks to list");
     i = 0 as u_int;
@@ -95,7 +98,7 @@ fn cmd_list_windows_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         s = Some(session_owner.clone());
         let mut ft_owner = format_create(
             queue_client.as_ref(),
-            Some(item_handle),
+            Some(&cf),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
@@ -104,10 +107,11 @@ fn cmd_list_windows_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), None);
         if filter.is_none_or(|filter| format_true(&format_expand_cstring(ft, filter))) {
             let line = format_expand_cstring(ft, template);
-            cmdq_print(item_handle, |out| write_cstr(out, &*line));
+            inv.print( |out| write_cstr(out, &*line));
         }
         drop(ft_owner);
         i = i.wrapping_add(1);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

@@ -1,9 +1,9 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_flag_values, args_get, args_has, args_parse, args_to_vector};
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::format::bytes::write_cstr;
@@ -40,13 +40,17 @@ pub static cmd_respawn_pane_entry: cmd_entry = {
         exec: Some(cmd_respawn_pane_exec),
     }
 };
-fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_respawn_pane_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut sc: spawn_context = spawn_context {
         geometry: None,
-        item: tiri_core::actions::ContextWeak::new(),
+        format: None,
+        target_session: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
@@ -62,7 +66,8 @@ fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let wp = target.pane_handle();
-    sc.item = crate::engine::context(item_handle.clone()).downgrade();
+    sc.format = Some(inv.format());
+    sc.target_session = target.s.clone();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.wp0 = std::rc::Rc::downgrade(wp.as_ref().expect("respawn pane"));
@@ -88,12 +93,12 @@ fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     if let Err(cause) =
         <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(&mut sc)
     {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"respawn pane failed: ")?;
             write_cstr(out, cause.as_c_str())
         });
         drop(sc.environ.take());
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     wp.as_ref().expect("respawn pane").request_redraw(false);
     let window = wp
@@ -105,5 +110,6 @@ fn cmd_respawn_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     server_redraw_window_borders(&window);
     server_status_window(&window);
     drop(window);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

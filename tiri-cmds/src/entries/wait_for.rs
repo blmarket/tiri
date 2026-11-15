@@ -1,13 +1,13 @@
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
-use tiri_core::hooks::hooks_valid_event_name;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
+use std::future::Future;
+use std::pin::Pin;
 use tiri_core::arguments::{args, args_get, args_has, args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
+use tiri_core::hooks::hooks_valid_event_name;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::wait::{
     wait_channel_list, wait_channel_lock, wait_channel_signal, wait_channel_unlock,
@@ -40,80 +40,142 @@ pub static cmd_wait_for_entry: cmd_entry = {
     }
 };
 
-fn cmd_wait_for_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let args = cmd_get_args(self_0);
-    let name: &CStr = args_string(args, 0 as u_int).expect("argument is present");
-    if args_has(args, 'E' as i32 as u_char) != 0 {
-        return cmd_wait_for_event(item_handle, name, args);
-    }
-    if args_has(args, 'l' as i32 as u_char) != 0 {
-        for owner in wait_channel_list(name) {
-            cmdq_print(item_handle, |out| write_cstr(out, owner.as_c_str()));
+fn cmd_wait_for_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+        let args = cmd_get_args(self_0);
+        let name: &CStr = args_string(args, 0 as u_int).expect("argument is present");
+        if args_has(args, 'E' as i32 as u_char) != 0 {
+            return cmd_wait_for_event(self_0, inv, name, args).await;
         }
-        return CmdOutcome::Normal;
-    }
-    if args_has(args, 'w' as i32 as u_char) != 0 {
-        let client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
-        wait_channel_wake(name, client_name);
-        return CmdOutcome::Normal;
-    }
-    if args_has(args, 'S' as i32 as u_char) != 0 {
-        return wait_channel_signal(name);
-    }
-    if args_has(args, 'L' as i32 as u_char) != 0 {
-        return wait_channel_lock(item_handle, name);
-    }
-    if args_has(args, 'U' as i32 as u_char) != 0 {
-        return wait_channel_unlock(item_handle, name);
-    }
-    wait_channel_wait(item_handle, name)
+        if args_has(args, 'l' as i32 as u_char) != 0 {
+            for owner in wait_channel_list(name) {
+                inv.print(|out| write_cstr(out, owner.as_c_str()));
+            }
+            return ExecOutcome::ok();
+        }
+        if args_has(args, 'w' as i32 as u_char) != 0 {
+            let client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
+            wait_channel_wake(name, client_name);
+            return ExecOutcome::ok();
+        }
+        if args_has(args, 'S' as i32 as u_char) != 0 {
+            wait_channel_signal(name);
+            return ExecOutcome::ok();
+        }
+        if args_has(args, 'L' as i32 as u_char) != 0 {
+            let c = inv.client();
+            let res = wait_channel_lock(c.as_ref(), inv.owning_client(), name);
+            drop(c);
+            return match res {
+                Ok(Some(fut)) => {
+                    inv.suspend(self_0);
+                    fut.await;
+                    ExecOutcome::ok()
+                }
+                Ok(None) => ExecOutcome::ok(),
+                Err(err) => {
+                    inv.error(|out| write_cstr(out, err));
+                    ExecOutcome::err()
+                }
+            };
+        }
+        if args_has(args, 'U' as i32 as u_char) != 0 {
+            return match wait_channel_unlock(name) {
+                Ok(()) => ExecOutcome::ok(),
+                Err(err) => {
+                    inv.error(|out| write_cstr(out, &*err));
+                    ExecOutcome::err()
+                }
+            };
+        }
+        let c = inv.client();
+        let res = wait_channel_wait(c.as_ref(), inv.owning_client(), name);
+        drop(c);
+        match res {
+            Ok(Some(fut)) => {
+                inv.suspend(self_0);
+                fut.await;
+                ExecOutcome::ok()
+            }
+            Ok(None) => ExecOutcome::ok(),
+            Err(err) => {
+                inv.error(|out| write_cstr(out, err));
+                ExecOutcome::err()
+            }
+        }
+    })
 }
 
-fn cmd_wait_for_event(
-    item_handle: &std::rc::Rc<cmdq_item>,
+async fn cmd_wait_for_event<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
     name: &CStr,
     args: &args,
-) -> CmdOutcome {
+) -> ExecOutcome {
     let filter: Option<&CStr> = args_get(args, 'F' as i32 as u_char);
     if hooks_valid_event_name(name) == 0 {
-        cmdq_error(item_handle, |out| {
+        inv.error(|out| {
             out.write_all(b"invalid event: ")?;
             write_cstr(out, name)
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if args_has(args, 'l' as i32 as u_char) != 0 {
         for owner in wait_event_list(name) {
-            cmdq_print(item_handle, |out| write_cstr(out, owner.as_c_str()));
+            inv.print(|out| write_cstr(out, owner.as_c_str()));
         }
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if args_has(args, 'w' as i32 as u_char) != 0 {
         let client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
-        return wait_event_wake(item_handle, name, client_name);
+        return match wait_event_wake(name, client_name) {
+            Ok(()) => ExecOutcome::ok(),
+            Err(err) => {
+                inv.error(|out| write_cstr(out, &*err));
+                ExecOutcome::err()
+            }
+        };
     }
-    wait_event_wait(
-        item_handle,
+    let c = inv.client();
+    let format = filter.map(|_| inv.format());
+    let res = wait_event_wait(
+        c.as_ref(),
+        inv.owning_client(),
+        format,
         name,
         filter,
         args_has(args, 'v' as i32 as u_char),
-    )
+    );
+    drop(c);
+    match res {
+        Ok(fut) => {
+            inv.suspend(self_0);
+            fut.await;
+            ExecOutcome::ok()
+        }
+        Err(err) => {
+            inv.error(|out| write_cstr(out, err));
+            ExecOutcome::err()
+        }
+    }
 }
 
 #[cfg(feature = "test-support")]
 pub mod wait_for_tests {
-    use super::{CStr, cmd_wait_for_entry, cmd_wait_for_event, cmdq_item};
-    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use super::{CStr, Future, Invocation, Pin, cmd, cmd_wait_for_entry, cmd_wait_for_event};
+    use crate::cmd::invocation::ExecOutcome;
+    use crate::cmd::run::test_harness::spawn_invocation;
     use std::cell::RefCell;
-    use std::future::Future;
     use std::rc::{Rc, Weak};
-    use tiri_core::actions::Completion as CmdqWaiter;
-    use tiri_core::actions::TaskOutcome as CmdOutcome;
+    use tiri_core::reactor::Lane;
     use tiri_core::server_client::Client as _;
     use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::shared::client::{CLIENT_DEAD, ClientRef};
     use tiri_core::wait::test_support::{
-        channel, event_sinks, event_waiter_cancelled, with_channel_mut,
+        Waiter, channel, event_sinks, event_waiter_cancelled, with_channel_mut,
     };
     use tiri_core::wait::{
         wait_channel_lock, wait_channel_signal, wait_channel_unlock, wait_channel_wait,
@@ -131,8 +193,8 @@ pub mod wait_for_tests {
 
     fn waiter_on_wake(
         on_wake: impl FnOnce() + 'static,
-    ) -> (CmdqWaiter, tiri_core::tiri_rt::oneshot::Receiver<()>) {
-        let (waiter, mut resumed) = CmdqWaiter::detached(Weak::new());
+    ) -> (Waiter, tiri_core::tiri_rt::oneshot::Receiver<()>) {
+        let (waiter, mut resumed) = Waiter::detached(Weak::new());
         let waker = std::task::LocalWaker::from(Rc::new(OnWake(std::cell::Cell::new(Some(
             Box::new(on_wake),
         )))));
@@ -151,7 +213,7 @@ pub mod wait_for_tests {
         count: usize,
         trace: &Rc<RefCell<Vec<usize>>>,
     ) -> (
-        Vec<CmdqWaiter>,
+        Vec<Waiter>,
         Vec<tiri_core::tiri_rt::oneshot::Receiver<()>>,
     ) {
         (0..count)
@@ -162,30 +224,72 @@ pub mod wait_for_tests {
             .unzip()
     }
 
-    fn run_on(
-        owner: &ClientRef,
-        name: &'static CStr,
-        exec: fn(&Rc<cmdq_item>, &CStr) -> CmdOutcome,
-    ) -> Weak<cmdq_item> {
-        let item = cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(c"wait-for", Some(Box::new(move |item| exec(item, name)))),
-        );
-        cmdq_next(Some(owner));
+    type WaitOp = for<'a, 'ctx> fn(
+        &'a cmd,
+        &'a mut Invocation<'ctx>,
+        &'a CStr,
+    ) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>>;
+
+    fn run_on(owner: &ClientRef, name: &'static CStr, exec: WaitOp) -> Weak<()> {
+        let item = spawn_invocation(Some(owner), move |cmd_ref, inv| exec(cmd_ref, inv, name));
+        Lane::drive(Some(owner));
         item
     }
 
-    fn wait_fn(item: &Rc<cmdq_item>, name: &CStr) -> CmdOutcome {
-        wait_channel_wait(item, name)
+    fn wait_fn<'a, 'ctx>(
+        cmd_ref: &'a cmd,
+        inv: &'a mut Invocation<'ctx>,
+        name: &'a CStr,
+    ) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+        Box::pin(async move {
+            let c = inv.client();
+            let fut = wait_channel_wait(c.as_ref(), inv.owning_client(), name).unwrap();
+            drop(c);
+            if let Some(fut) = fut {
+                inv.suspend(cmd_ref);
+                fut.await;
+            }
+            ExecOutcome::ok()
+        })
     }
-    fn lock_fn(item: &Rc<cmdq_item>, name: &CStr) -> CmdOutcome {
-        wait_channel_lock(item, name)
+
+    fn lock_fn<'a, 'ctx>(
+        cmd_ref: &'a cmd,
+        inv: &'a mut Invocation<'ctx>,
+        name: &'a CStr,
+    ) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+        Box::pin(async move {
+            let c = inv.client();
+            let fut = wait_channel_lock(c.as_ref(), inv.owning_client(), name).unwrap();
+            drop(c);
+            if let Some(fut) = fut {
+                inv.suspend(cmd_ref);
+                fut.await;
+            }
+            ExecOutcome::ok()
+        })
     }
-    fn unlock_fn(item: &Rc<cmdq_item>, name: &CStr) -> CmdOutcome {
-        wait_channel_unlock(item, name)
+
+    fn unlock_fn<'a, 'ctx>(
+        _cmd_ref: &'a cmd,
+        _inv: &'a mut Invocation<'ctx>,
+        name: &'a CStr,
+    ) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+        Box::pin(async move {
+            wait_channel_unlock(name).unwrap();
+            ExecOutcome::ok()
+        })
     }
-    fn signal_fn(_: &Rc<cmdq_item>, name: &CStr) -> CmdOutcome {
-        wait_channel_signal(name)
+
+    fn signal_fn<'a, 'ctx>(
+        _cmd_ref: &'a cmd,
+        _inv: &'a mut Invocation<'ctx>,
+        name: &'a CStr,
+    ) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+        Box::pin(async move {
+            wait_channel_signal(name);
+            ExecOutcome::ok()
+        })
     }
 
     pub fn signal_resumes_waiters_in_fifo_order() {
@@ -196,7 +300,7 @@ pub mod wait_for_tests {
             wc.waiters.extend(waiters);
             wc.lockers.extend(lockers);
         });
-        assert!(matches!(wait_channel_signal(c"fifo"), CmdOutcome::Normal));
+        wait_channel_signal(c"fifo");
         assert_eq!(*trace.borrow(), (0..128).collect::<Vec<_>>());
         assert_eq!(
             channel(c"fifo", |wc| (wc.waiters.len(), wc.woken)),
@@ -214,14 +318,14 @@ pub mod wait_for_tests {
         assert!(first_item.upgrade().is_some() && second_item.upgrade().is_some());
 
         assert!(run_on(&holder, c"l", unlock_fn).upgrade().is_none());
-        cmdq_next(Some(&first));
-        cmdq_next(Some(&second));
+        Lane::drive(Some(&first));
+        Lane::drive(Some(&second));
         assert!(first_item.upgrade().is_none());
         assert!(second_item.upgrade().is_some());
         assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
         assert!(run_on(&first, c"l", unlock_fn).upgrade().is_none());
-        cmdq_next(Some(&second));
+        Lane::drive(Some(&second));
         assert!(second_item.upgrade().is_none());
         assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
@@ -232,11 +336,11 @@ pub mod wait_for_tests {
     fn reenter_on_wake(
         owner: &ClientRef,
         name: &'static CStr,
-        exec: fn(&Rc<cmdq_item>, &CStr) -> CmdOutcome,
+        exec: WaitOp,
     ) -> (
-        CmdqWaiter,
+        Waiter,
         tiri_core::tiri_rt::oneshot::Receiver<()>,
-        Rc<std::cell::OnceCell<Weak<cmdq_item>>>,
+        Rc<std::cell::OnceCell<Weak<()>>>,
     ) {
         let reentered = Rc::new(std::cell::OnceCell::new());
         let (owner, cell) = (owner.clone(), reentered.clone());
@@ -251,7 +355,7 @@ pub mod wait_for_tests {
         let (waiter, _resumed, rewaited) = reenter_on_wake(&owner, c"rewait", wait_fn);
         with_channel_mut(c"rewait", |wc| wc.waiters.push(waiter));
 
-        assert!(matches!(wait_channel_signal(c"rewait"), CmdOutcome::Normal));
+        wait_channel_signal(c"rewait");
         let item = rewaited.get().expect("signal woke the waiter");
         assert!(item.upgrade().is_some());
         assert_eq!(
@@ -259,18 +363,15 @@ pub mod wait_for_tests {
             Some((1, 0))
         );
 
-        assert!(matches!(wait_channel_signal(c"rewait"), CmdOutcome::Normal));
-        cmdq_next(Some(&owner));
+        wait_channel_signal(c"rewait");
+        Lane::drive(Some(&owner));
         assert!(item.upgrade().is_none());
     }
 
     pub fn a_waiter_woken_by_signal_can_signal_the_same_channel_again() {
         let trace = Default::default();
         let (resignaller, _resignalled) = waiter_on_wake(|| {
-            assert!(matches!(
-                wait_channel_signal(c"resignal"),
-                CmdOutcome::Normal
-            ));
+            wait_channel_signal(c"resignal");
         });
         let (waiters, _resumed) = recorded_waiters(1, &trace);
         with_channel_mut(c"resignal", |wc| {
@@ -278,10 +379,7 @@ pub mod wait_for_tests {
             wc.waiters.extend(waiters);
         });
 
-        assert!(matches!(
-            wait_channel_signal(c"resignal"),
-            CmdOutcome::Normal
-        ));
+        wait_channel_signal(c"resignal");
         assert_eq!(*trace.borrow(), [0]);
         assert_eq!(
             channel(c"resignal", |wc| (wc.waiters.len(), wc.woken)),
@@ -325,7 +423,7 @@ pub mod wait_for_tests {
         );
 
         assert!(run_on(&holder, c"relock", unlock_fn).upgrade().is_none());
-        cmdq_next(Some(&relocker));
+        Lane::drive(Some(&relocker));
         assert!(item.upgrade().is_none());
         assert_eq!(
             channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
@@ -372,7 +470,7 @@ pub mod wait_for_tests {
         assert!(run_on(&holder, c"l", lock_fn).upgrade().is_none());
 
         wait_for_client_lost(&lost);
-        cmdq_next(Some(&lost));
+        Lane::drive(Some(&lost));
         assert!(lost_waiter.upgrade().is_none());
         assert!(kept_waiter.upgrade().is_some());
         assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(1));
@@ -380,7 +478,7 @@ pub mod wait_for_tests {
         let lost_locker = run_on(&lost, c"l", lock_fn);
         let kept_locker = run_on(&holder, c"l", lock_fn);
         wait_for_client_lost(&lost);
-        cmdq_next(Some(&lost));
+        Lane::drive(Some(&lost));
         assert!(lost_locker.upgrade().is_none());
         assert!(kept_locker.upgrade().is_some());
         assert!(kept_waiter.upgrade().is_some());
@@ -393,7 +491,7 @@ pub mod wait_for_tests {
         let head = run_on(&owner, c"c", wait_fn);
         owner.update_flags(CLIENT_DEAD as u64, 0);
         wait_for_client_lost(&owner);
-        cmdq_next(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_none());
         assert!(channel(c"c", |_| ()).is_none());
         let client = Rc::downgrade(&owner);
@@ -401,7 +499,7 @@ pub mod wait_for_tests {
         assert!(client.upgrade().is_none());
     }
 
-    fn wait_event(owner: &ClientRef, name: &'static CStr, flags: &[&CStr]) -> Weak<cmdq_item> {
+    fn wait_event(owner: &ClientRef, name: &'static CStr, flags: &[&CStr]) -> Weak<()> {
         let values = [c"wait-for", c"-E"]
             .into_iter()
             .chain(flags.iter().copied())
@@ -409,14 +507,13 @@ pub mod wait_for_tests {
             .map(tiri_core::arguments::ParseValue::String)
             .collect::<Vec<_>>();
         let args = tiri_core::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
-        let item = cmdq_append(
+        let item = spawn_invocation(
             Some(owner),
-            cmdq_get_callback_owned(
-                c"wait-for",
-                Some(Box::new(move |item| cmd_wait_for_event(item, name, &args))),
-            ),
+            move |cmd_ref: &cmd, inv: &mut Invocation<'_>| -> Pin<Box<dyn Future<Output = ExecOutcome> + '_>> {
+                Box::pin(async move { cmd_wait_for_event(cmd_ref, inv, name, &args).await })
+            },
         );
-        cmdq_next(Some(owner));
+        Lane::drive(Some(owner));
         item
     }
 
@@ -431,16 +528,12 @@ pub mod wait_for_tests {
     fn append_flag(owner: &ClientRef) -> Rc<std::cell::Cell<bool>> {
         let ran = Rc::new(std::cell::Cell::new(false));
         let flag = ran.clone();
-        cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"after",
-                Some(Box::new(move |_| {
-                    flag.set(true);
-                    CmdOutcome::Normal
-                })),
-            ),
-        );
+        spawn_invocation(Some(owner), move |_, _| {
+            Box::pin(async move {
+                flag.set(true);
+                ExecOutcome::ok()
+            })
+        });
         ran
     }
 
@@ -456,7 +549,7 @@ pub mod wait_for_tests {
         fire(c"@accepted", "y");
         assert!(event_sinks().is_empty());
         assert!(!tiri_core::events::events_has_sink(sink));
-        cmdq_next(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_none());
         assert!(ran.get());
     }
@@ -470,14 +563,14 @@ pub mod wait_for_tests {
         };
 
         fire(c"@rejected", "x");
-        cmdq_next(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_some());
         assert!(!ran.get());
         assert_eq!(event_sinks(), [sink]);
         assert!(tiri_core::events::events_has_sink(sink));
 
         fire(c"@rejected", "y");
-        cmdq_next(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_none());
         assert!(ran.get());
         assert!(!tiri_core::events::events_has_sink(sink));
@@ -510,8 +603,8 @@ pub mod wait_for_tests {
                 .upgrade()
                 .is_none()
         );
-        cmdq_next(Some(&first));
-        cmdq_next(Some(&second));
+        Lane::drive(Some(&first));
+        Lane::drive(Some(&second));
         assert!(first_item.upgrade().is_none());
         assert!(second_item.upgrade().is_some());
         assert!(!tiri_core::events::events_has_sink(first_sink));
@@ -527,8 +620,8 @@ pub mod wait_for_tests {
         };
 
         wait_for_client_lost(&lost);
-        cmdq_next(Some(&lost));
-        cmdq_next(Some(&kept));
+        Lane::drive(Some(&lost));
+        Lane::drive(Some(&kept));
         assert!(lost_item.upgrade().is_none());
         assert!(kept_item.upgrade().is_some());
         assert!(!tiri_core::events::events_has_sink(lost_sink));
@@ -549,8 +642,8 @@ pub mod wait_for_tests {
         for sink in sinks {
             assert!(!tiri_core::events::events_has_sink(sink));
         }
-        cmdq_next(Some(&first));
-        cmdq_next(Some(&second));
+        Lane::drive(Some(&first));
+        Lane::drive(Some(&second));
         assert!(items.iter().all(|item| item.upgrade().is_none()));
     }
 
@@ -562,7 +655,7 @@ pub mod wait_for_tests {
         };
         owner.update_flags(CLIENT_DEAD as u64, 0);
         wait_for_client_lost(&owner);
-        cmdq_next(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_none());
         assert!(event_sinks().is_empty());
         assert!(!tiri_core::events::events_has_sink(sink));

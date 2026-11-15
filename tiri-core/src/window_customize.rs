@@ -2606,7 +2606,6 @@ fn window_customize_help() -> mode_tree_help_info {
 }
 fn window_customize_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&dyn crate::actions::ContextSource>,
     fs: Option<&Target>,
     args: Option<&args>,
 ) -> bool {

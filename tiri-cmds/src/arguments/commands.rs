@@ -1,15 +1,12 @@
 //! Building command lists from command arguments.
 
+use crate::cmd::invocation::Invocation;
 use crate::cmd::parse::cmd_parse_from_string;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::cmd::{cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first};
 use crate::shared::command::{cmd, cmd_list, cmd_parse_input};
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-use tiri_core::actions::queue::target_client as cmdq_get_target_client;
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::log::{fatalx, log_bytes, log_cstr, log_debug};
 use tiri_core::shared::abi::u_int;
 use tiri_core::shared::client::ClientRef;
@@ -40,31 +37,30 @@ impl args_command_state {
 
 pub fn args_make_commands_now(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     idx: u_int,
     expand: ::core::ffi::c_int,
 ) -> Option<Rc<cmd_list>> {
-    let mut state = args_make_commands_prepare(self_0, item_handle, idx, None, 0, expand);
+    let mut state = args_make_commands_prepare(self_0, inv, idx, None, 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
         Err(error) => {
-            cmdq_error(item_handle, |out| write_cstr(out, error.as_deref()));
+            inv.error(|out| write_cstr(out, error.as_deref()));
             None
         }
     }
 }
 pub fn args_make_commands_prepare(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     mut idx: u_int,
     default_command: Option<&'static CStr>,
     mut wait: ::core::ffi::c_int,
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
-    let item = item_handle.borrow();
+    let target = inv.target().clone();
+    let tc_owner = inv.target_client();
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
     let values = &args.values;
     let command = if let Some(value) = values.get(idx as usize) {
@@ -78,7 +74,7 @@ pub fn args_make_commands_prepare(
         default_command.unwrap_or_else(|| fatalx(|out| out.write_all(b"argument out of range")))
     };
     if expand != 0 {
-        state.cmd = Some(format_single_from_target_cstring(item_handle, command));
+        state.cmd = Some(inv.format_single(command));
     } else {
         state.cmd = Some(command.to_owned());
     }
@@ -89,7 +85,7 @@ pub fn args_make_commands_prepare(
         log_cstr(state.cmd.as_deref().unwrap_or(c"(null)"))
     ));
     if wait != 0 {
-        state.pi.set_item(Some(item_handle));
+        state.pi.format = Some(inv.format());
     }
     let (source, line) = cmd_get_source(self_0);
     state.pi.line = line;
@@ -101,7 +97,7 @@ pub fn args_make_commands_prepare(
         .as_ref()
         .map_or_else(std::rc::Weak::new, Rc::downgrade);
     state.client = tc_owner;
-    state.pi.fs.copy_from(target);
+    state.pi.fs.copy_from(&target);
     state
 }
 pub fn args_make_commands(

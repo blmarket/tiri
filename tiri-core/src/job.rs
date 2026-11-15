@@ -1,6 +1,7 @@
 use crate::cfg::cfg_finished as configuration_finished;
-use crate::actions::queue::print;
 use crate::actions::{log_argv, stringify_argv};
+use crate::server_client::Client as _;
+use crate::shared::client::ClientRef;
 use crate::compat::fdforkpty::fdforkpty;
 use crate::environ::{environ_copy, environ_for_session, environ_push, environ_set};
 use crate::format::bytes::write_cstr;
@@ -482,7 +483,7 @@ pub fn job_still_running() -> ::core::ffi::c_int {
 }
 
 pub fn job_print_summary(
-    item_handle: &dyn crate::actions::ContextSource,
+    client: Option<&ClientRef>,
     mut blank: ::core::ffi::c_int,
 ) {
     for (n, handle) in jobs::snapshot().into_iter().enumerate() {
@@ -499,10 +500,10 @@ pub fn job_print_summary(
             )
         };
         if blank != 0 {
-            print(item_handle, |_| Ok(()));
+            ClientRef::print_line(client, |_| Ok(()));
             blank = 0;
         }
-        print(item_handle, |out| {
+        ClientRef::print_line(client, |out| {
             write!(out, "Job {}: ", n)?;
             out.write_all(cmd.as_deref().unwrap_or(c"(null)").to_bytes())?;
             write!(

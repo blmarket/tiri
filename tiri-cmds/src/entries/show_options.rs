@@ -1,5 +1,6 @@
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use tiri_core::hooks::hooks_is_event;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
@@ -7,13 +8,9 @@ use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::{
-    format_add, format_add_time, format_create_from_target, format_expand_cstring,
-    format_single_from_target_cstring,
-};
+use tiri_core::format::{format_add, format_add_time, format_expand_cstring};
 use tiri_core::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
@@ -111,10 +108,13 @@ pub static cmd_show_hooks_entry: cmd_entry = {
         exec: Some(cmd_show_options_exec),
     }
 };
-fn cmd_show_options_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_show_options_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let mut target_state = tiri_core::actions::queue::target(&item).clone();
+    let mut target_state = inv.target().clone();
     let target = &mut target_state;
     let window = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_window_options_entry) as i32;
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);
@@ -123,7 +123,7 @@ fn cmd_show_options_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     if args_count(args) == 0 {
         let (scope, selected) = match options_scope_from_flags(args, window, &*target) {
             Ok(selected) => selected,
-            Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
+            Err(cause) => return show_options_scope_error(inv, quiet, &cause),
         };
         if monitor {
             let names = selected.with_local(|table| {
@@ -132,28 +132,27 @@ fn cmd_show_options_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
                     .collect::<Vec<_>>()
             });
             for name in names {
-                if !cmd_show_hooks_print_monitor(self_0, item_handle, &selected, &name) {
+                if !cmd_show_hooks_print_monitor(self_0, inv, &selected, &name) {
                     break;
                 }
             }
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
-        return cmd_show_options_all(self_0, item_handle, scope, &selected);
+        return cmd_show_options_all(self_0, inv, scope, &selected);
     }
 
-    let argument =
-        format_single_from_target_cstring(item_handle, args_string(args, 0).unwrap_or(c""));
+    let argument = inv.format_single( args_string(args, 0).unwrap_or(c""));
     let parsed = match options_match_owned(&argument) {
         Ok(parsed) => parsed,
         Err(failure) => {
             if quiet {
-                return CmdOutcome::Normal;
+                return ExecOutcome::ok();
             }
             let ambiguous = matches!(
                 failure,
                 OptionMatchFailure::Parse | OptionMatchFailure::Ambiguous
             );
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(if ambiguous {
                     b"ambiguous option: "
                 } else {
@@ -161,30 +160,30 @@ fn cmd_show_options_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
                 })?;
                 write_cstr(out, &*argument)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     };
     let selected = match options_scope_from_name(args, window, &parsed.name, &*target) {
         Ok((_, selected)) => selected,
-        Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
+        Err(cause) => return show_options_scope_error(inv, quiet, &cause),
     };
     let resolved = show_options_resolve(&selected, &parsed.name, args_has(args, b'A') != 0);
     let Some((resolved, parent)) = resolved else {
         if parsed.name.as_bytes().first() == Some(&b'@') && !quiet {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"invalid option: ")?;
                 write_cstr(out, &*argument)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     };
     if monitor {
-        cmd_show_hooks_print_monitor(self_0, item_handle, &resolved, &parsed.name);
+        cmd_show_hooks_print_monitor(self_0, inv, &resolved, &parsed.name);
     } else {
         cmd_show_options_print(
             self_0,
-            item_handle,
+            inv,
             &resolved,
             &parsed.name,
             parsed.array_key.as_deref(),
@@ -192,19 +191,20 @@ fn cmd_show_options_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
             true,
         );
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }
 
 fn show_options_scope_error(
-    item: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     quiet: bool,
     cause: &CStr,
-) -> CmdOutcome {
+) -> ExecOutcome {
     if quiet {
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
-    cmdq_error(item, |out| write_cstr(out, cause));
-    CmdOutcome::Error
+    inv.error( |out| write_cstr(out, cause));
+    ExecOutcome::err()
 }
 
 /// Capture the defining scope once. A later local override must not redirect an
@@ -225,7 +225,7 @@ fn show_options_resolve(
 
 fn cmd_show_options_print(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     scope: &OptionsScope,
     name: &CStr,
     array_key: Option<&CStr>,
@@ -266,7 +266,7 @@ fn cmd_show_options_print(
                     }
                     cmd_show_options_print(
                         self_0,
-                        item_handle,
+                        inv,
                         scope,
                         name,
                         Some(&key),
@@ -283,7 +283,7 @@ fn cmd_show_options_print(
     let template = args_get(args, b'F').map(CStr::to_owned);
     let value_only = args_has(args, b'v');
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);
-    let mut ft_owner = format_create_from_target(item_handle);
+    let mut ft_owner = inv.format_from_target();
     let ft = &mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
         let is_array = options_is_array(entry);
@@ -340,7 +340,7 @@ fn cmd_show_options_print(
     let template = template.as_deref().unwrap_or(SHOW_OPTIONS_TEMPLATE);
     let line = format_expand_cstring(ft, template);
     drop(ft_owner);
-    cmdq_print(item_handle, |out| write_cstr(out, &*line));
+    inv.print( |out| write_cstr(out, &*line));
 }
 
 fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
@@ -358,7 +358,7 @@ fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
 
 fn cmd_show_hooks_print_monitor(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     scope: &OptionsScope,
     name: &CStr,
 ) -> bool {
@@ -366,7 +366,7 @@ fn cmd_show_hooks_print_monitor(
     let template = args_get(args, b'F')
         .map(CStr::to_owned)
         .unwrap_or_else(|| SHOW_HOOKS_MONITOR_TEMPLATE.to_owned());
-    let mut ft_owner = format_create_from_target(item_handle);
+    let mut ft_owner = inv.format_from_target();
     let ft = &mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
         let Some(value) = hooks_monitor_to_cstring(name, entry) else {
@@ -412,7 +412,7 @@ fn cmd_show_hooks_print_monitor(
     if print == Some(true) {
         let line = format_expand_cstring(ft, &template);
         drop(ft_owner);
-        cmdq_print(item_handle, |out| write_cstr(out, &*line));
+        inv.print( |out| write_cstr(out, &*line));
     } else {
         drop(ft_owner);
     }
@@ -421,10 +421,10 @@ fn cmd_show_hooks_print_monitor(
 
 fn cmd_show_options_all(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     scope: i32,
     selected: &OptionsScope,
-) -> CmdOutcome {
+) -> ExecOutcome {
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);
     let args = cmd_get_args(self_0);
     let include_hooks = args_has(args, b'H') != 0;
@@ -449,7 +449,7 @@ fn cmd_show_options_all(
         let user_hook =
             name.as_bytes().first() == Some(&b'@') && (hooks_is_event(&name) != 0 || monitor);
         if (show_hooks && user_hook) || (!show_hooks && (!user_hook || include_hooks)) {
-            cmd_show_options_print(self_0, item_handle, selected, &name, None, 0, false);
+            cmd_show_options_print(self_0, inv, selected, &name, None, 0, false);
         }
     }
     for definition in options_table
@@ -465,8 +465,8 @@ fn cmd_show_options_all(
         }
         let name = definition.name.unwrap();
         if let Some((resolved, parent)) = show_options_resolve(selected, name, include_parent) {
-            cmd_show_options_print(self_0, item_handle, &resolved, name, None, parent, false);
+            cmd_show_options_print(self_0, inv, &resolved, name, None, parent, false);
         }
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
 }

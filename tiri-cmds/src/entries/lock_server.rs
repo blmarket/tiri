@@ -1,12 +1,12 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_entry;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
 };
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::target_client as cmdq_get_target_client;
 use tiri_core::arguments::args_parse;
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_fn::{server_lock, server_lock_client, server_lock_session};
@@ -85,10 +85,13 @@ pub static cmd_lock_client_entry: cmd_entry = {
         exec: Some(cmd_lock_server_exec),
     }
 };
-fn cmd_lock_server_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let target = tiri_core::actions::queue::target(&item);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+fn cmd_lock_server_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+    let target = inv.target().clone();
+    let tc_owner = inv.target_client();
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_lock_server_entry) {
         server_lock();
     } else if std::ptr::eq(cmd_get_entry(self_0), &cmd_lock_session_entry) {
@@ -97,5 +100,6 @@ fn cmd_lock_server_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         server_lock_client(tc_owner.as_ref().expect("lock target client"));
     }
     recalculate_sizes();
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

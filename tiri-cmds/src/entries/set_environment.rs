@@ -1,15 +1,14 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use tiri_core::environ::{environ_clear, environ_set, environ_unset};
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::session::Session;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::environment::ENVIRON_HIDDEN;
@@ -40,23 +39,26 @@ pub static cmd_set_environment_entry: cmd_entry = {
         exec: Some(cmd_set_environment_exec),
     }
 };
-fn cmd_set_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_set_environment_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
 
     let mut name: &CStr = args_string(args, 0 as u_int).expect("argument is present");
     let mut value: Option<&CStr> = None;
     let mut expanded: Option<std::ffi::CString> = None;
     if name.is_empty() {
-        cmdq_error(item_handle, |out| out.write_all(b"empty variable name"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"empty variable name"));
+        return ExecOutcome::err();
     }
     if name.to_bytes().contains(&b'=') {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"variable name contains =")
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if args_count(args) < 2 as u_int {
         value = None;
@@ -64,21 +66,21 @@ fn cmd_set_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) 
         value = args_string(args, 1 as u_int);
     }
     if let Some(unexpanded) = value.filter(|_| args_has(args, 'F' as i32 as u_char) != 0) {
-        expanded = Some(format_single_from_target_cstring(item_handle, unexpanded));
+        expanded = Some(inv.format_single( unexpanded));
         value = expanded.as_deref();
     }
     let global = args_has(args, b'g') != 0;
     let session = target.session_handle();
     if !global && session.is_none() {
         if let Some(target) = args_get(args, b't') {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"no such session: ")?;
                 out.write_all(target.to_bytes())
             });
         } else {
-            cmdq_error(item_handle, |out| out.write_all(b"no current session"));
+            inv.error( |out| out.write_all(b"no current session"));
         }
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     let unset = args_has(args, b'u') != 0;
     let remove = args_has(args, b'r') != 0;
@@ -92,8 +94,8 @@ fn cmd_set_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) 
         None
     };
     if let Some(error) = error {
-        cmdq_error(item_handle, |out| out.write_all(error));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(error));
+        return ExecOutcome::err();
     }
     let hidden = if args_has(args, b'h') != 0 {
         ENVIRON_HIDDEN
@@ -118,5 +120,6 @@ fn cmd_set_environment_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) 
             .with_environment_mut(edit)
             .expect("session environment");
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

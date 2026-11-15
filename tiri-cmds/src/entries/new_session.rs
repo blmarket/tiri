@@ -1,11 +1,9 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use tiri_core::cfg::{cfg_finished, cfg_show_causes};
-use crate::cmd::queue::{cmdq_error, cmdq_get_flags, cmdq_insert_hook, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::entries::attach_session::cmd_attach_session;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
-};
 use tiri_core::arguments::{
     args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector,
 };
@@ -20,7 +18,6 @@ use tiri_core::options::{
 use tiri_core::server_client::Client as _;
 use tiri_core::text::numbers::scan_u32_pair;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE, CMDQ_STATE_REPEAT,
 };
@@ -96,15 +93,17 @@ pub static cmd_has_session_entry: cmd_entry = {
         exec: Some(cmd_new_session_exec),
     }
 };
-fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let queue_client = cmdq_get_client(Some(&*item));
+fn cmd_new_session_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+    let queue_client = inv.client();
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
     let args = cmd_get_args(self_0);
-    let current = cmdq_get_state_owned(&(item));
-    let target = tiri_core::actions::queue::target(&item);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let target = inv.target().clone();
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
     let mut as_0: Option<SessionRef> = None;
@@ -129,7 +128,8 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     let mut count: u_int = args_count(args);
     let mut sc: spawn_context = spawn_context {
         geometry: None,
-        item: tiri_core::actions::ContextWeak::new(),
+        format: None,
+        target_session: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
@@ -142,7 +142,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut retval: CmdOutcome = CmdOutcome::Normal;
+    let mut retval: ExecOutcome = ExecOutcome::ok();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -152,19 +152,20 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         idx: 0,
     };
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_has_session_entry) {
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if args_has(args, 't' as i32 as u_char) != 0
         && (count != 0 as u_int || args_has(args, 'n' as i32 as u_char) != 0)
     {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"command or window name given with target")
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
+    let cf = inv.format();
     if let Some(tmp) = args_get(args, 'n' as i32 as u_char) {
         let ename = format_single_cstring(
-            Some(item_handle),
+            Some(&cf),
             tmp,
             c.as_ref(),
             None,
@@ -172,11 +173,11 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             None,
         );
         if !check_name(&ename) {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(ename.as_bytes())
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         wname_owned = Some(
             clean_name_cstring(ename.as_c_str(), 0).expect("check_name validated the window name"),
@@ -184,7 +185,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     }
     if let Some(tmp) = args_get(args, 's' as i32 as u_char) {
         let ename = format_single_cstring(
-            Some(item_handle),
+            Some(&cf),
             tmp,
             c.as_ref(),
             None,
@@ -192,7 +193,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             None,
         );
         if !check_name(&ename) {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"invalid session name: ")?;
                 out.write_all(ename.as_bytes())
             });
@@ -216,7 +217,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             }
             if let Some(as_0_value) = as_0.as_ref() {
                 retval = cmd_attach_session(
-                    item_handle,
+                    inv,
                     Some(&*(as_0_value.name())),
                     args_has(args, 'D' as i32 as u_char),
                     args_has(args, 'X' as i32 as u_char),
@@ -232,7 +233,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             .as_deref()
             .is_some_and(|sname| tiri_core::session::sessions::find(sname).is_some())
         {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"duplicate session: ")?;
                 write_cstr(out, sname_owned.as_deref())
             });
@@ -257,7 +258,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                     prefix = Some(groupwith_value.name().clone());
                     current_block = 6717214610478484138;
                 } else if !check_name(group) {
-                    cmdq_error(item_handle, |out| {
+                    inv.error( |out| {
                         out.write_all(b"invalid session group name: ")?;
                         write_cstr(out, group)
                     });
@@ -291,7 +292,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                     }
                     if let Some(tmp) = args_get(args, 'c' as i32 as u_char) {
                         cwd = Some(format_single_cstring(
-                            Some(item_handle),
+                            Some(&cf),
                             tmp,
                             c.as_ref(),
                             None,
@@ -308,7 +309,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                             != 0
                     {
                         if queue_client_ptr.as_ref().expect("live client").is_nested() {
-                            cmdq_error(item_handle, |out| {
+                            inv.error( |out| {
                                 out.write_all(
                                     b"sessions should be nested with care, unset $TMUX to force",
                                 )
@@ -329,7 +330,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                 if let Err(open_error) =
                                     (c_owner.as_ref().expect("terminal client")).open_terminal()
                                 {
-                                    cmdq_error(item_handle, |out| {
+                                    inv.error( |out| {
                                         out.write_all(b"open terminal failed: ")?;
                                         out.write_all(open_error.as_bytes())
                                     });
@@ -361,7 +362,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                             );
                                             dsx = parsed.unwrap_or(0) as u_int;
                                             if let Err(errstr) = parsed {
-                                                cmdq_error(item_handle, |out| {
+                                                inv.error( |out| {
                                                     out.write_all(b"width ")?;
                                                     write_cstr(out, errstr)
                                                 });
@@ -395,7 +396,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                     );
                                                     dsy = parsed.unwrap_or(0) as u_int;
                                                     if let Err(errstr) = parsed {
-                                                        cmdq_error(item_handle, |out| {
+                                                        inv.error( |out| {
                                                             out.write_all(b"height ")?;
                                                             write_cstr(out, errstr)
                                                         });
@@ -527,10 +528,8 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                     let session_owner = tiri_core::shared::session::SessionRef::create(prefix.as_deref(), sname_owned.as_deref(), cwd.as_deref().expect("client working directory is set at identify"), env.take()
                                                             .expect("new session environment"), oo.take(), tio.as_ref());
                                                     s = Some(session_owner.clone());
-                                                    sc.item = crate::engine::context(
-                                                        item_handle.clone(),
-                                                    )
-                                                    .downgrade();
+                                                    sc.format = Some(cf.clone());
+                                                    sc.target_session = target.s.clone();
                                                     sc.s = std::rc::Rc::downgrade(&session_owner);
                                                     if detached == 0 {
                                                         sc.tc = c_owner.as_ref().map_or_else(
@@ -552,7 +551,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                             (0 as ::core::ffi::c_int) != 0,
                                                             c"cmd_new_session_exec",
                                                         );
-                                                        cmdq_error(item_handle, |out| {
+                                                        inv.error( |out| {
                                                             out.write_all(
                                                                 b"create window failed: ",
                                                             )?;
@@ -639,7 +638,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                             c.clone()
                                                                 .expect("live client")
                                                                 .set_session(s.as_ref());
-                                                            if !cmdq_get_flags(&(item))
+                                                            if !inv.flags()
                                                                 & CMDQ_STATE_REPEAT
                                                                 != 0
                                                             {
@@ -656,7 +655,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                             )
                                                             .unwrap_or(NEW_SESSION_TEMPLATE);
                                                             let cp = format_single_cstring(
-                                                                Some(item_handle),
+                                                                Some(&cf),
                                                                 template,
                                                                 c.as_ref(),
                                                                 s.as_ref(),
@@ -666,7 +665,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                                 .clone(),
                                                                 None,
                                                             );
-                                                            cmdq_print(item_handle, |out| {
+                                                            inv.print( |out| {
                                                                 out.write_all(cp.as_bytes())
                                                             });
                                                         }
@@ -680,7 +679,7 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                         }
                                                         if args_has(args, 'd' as i32 as u_char) == 0
                                                         {
-                                                            *current.current.borrow_mut() =
+                                                            inv.context_mut().current =
                                                                 cmd_find_state::from_session(
                                                                     &s.clone()
                                                                         .expect("live session"),
@@ -691,18 +690,13 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
                                                             &s.clone().expect("live session"),
                                                             0 as ::core::ffi::c_int,
                                                         );
-                                                        cmdq_insert_hook(
-                                                            s.as_ref(),
-                                                            item_handle,
-                                                            Some(&fs),
-                                                            |out| {
+                                                        inv.insert_hook(Some(&fs), self_0, |out| {
                                                                 out.write_all(b"after-new-session")
-                                                            },
-                                                        );
+                                                            });
                                                         if cfg_finished() {
                                                             cfg_show_causes(s.as_ref());
                                                         }
-                                                        return CmdOutcome::Normal;
+                                                        return ExecOutcome::ok();
                                                     }
                                                 }
                                             }
@@ -716,5 +710,6 @@ fn cmd_new_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             }
         }
     }
-    CmdOutcome::Error
+    ExecOutcome::err()
+})
 }

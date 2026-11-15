@@ -1,9 +1,9 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::execution_state as cmdq_get_state_owned;
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::server_fn::server_redraw_window;
 use tiri_core::shared::target::Target as cmd_find_state;
@@ -36,11 +36,13 @@ pub static cmd_rotate_window_entry: cmd_entry = {
     }
 };
 
-fn cmd_rotate_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_rotate_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let current = cmdq_get_state_owned(&(item));
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let window_owner = target.w.upgrade().expect("live rotation window");
     let result = {
@@ -65,12 +67,13 @@ fn cmd_rotate_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             .or_else(|| window_owner.step_pane(None, down).upgrade())
             .expect("rotation window has an active candidate");
         WindowRef::clone(&(window_owner)).select_pane(&selected_pane, true);
-        *current.current.borrow_mut() =
+        inv.context_mut().current =
             cmd_find_state::from_winlink_pane(wl.clone(), &selected_pane, 0 as ::core::ffi::c_int);
         window_owner.pop_zoom();
         server_redraw_window(&(window_owner));
-        CmdOutcome::Normal
+        ExecOutcome::ok()
     };
     drop(window_owner);
     result
+})
 }

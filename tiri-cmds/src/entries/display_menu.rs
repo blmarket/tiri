@@ -1,8 +1,11 @@
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use crate::shared::command::CMD_FIND_PANE;
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{event as cmdq_get_event, target_client as cmdq_get_target_client};
+use std::future::Future;
+use std::pin::Pin;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count,
     args_flag_values, args_get, args_has, args_parse, args_parse_type, args_percentage_result,
@@ -10,19 +13,10 @@ use tiri_core::arguments::{
 };
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::{
-    format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
-};
+use tiri_core::format::{format_add, format_expand_cstring};
 use tiri_core::key_string::key_string_parse_cstr;
 use tiri_core::menu::{menu_add_item, menu_create, menu_display};
 use tiri_core::options::{options_find_choice, options_get_number};
-use tiri_core::shared::target::Target as cmd_find_state;
-use tiri_core::text::numbers::strtol_prefix;
-
-use crate::cmd::queue::cmdq_item;
-use crate::shared::command::CMD_FIND_PANE;
-use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::server_client::Client as _;
 use tiri_core::session::Session;
 use tiri_core::shared::abi::u_int;
@@ -35,9 +29,12 @@ use tiri_core::shared::layout::{
 use tiri_core::shared::limits::UINT_MAX;
 use tiri_core::shared::menu::{MENU_NOMOUSE, MENU_STAYOPEN, menu_item};
 use tiri_core::shared::style::STYLE_RANGE_WINDOW;
+use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::status::{status_at_line, status_line_size};
+use tiri_core::text::numbers::strtol_prefix;
 use tiri_core::window::Window as _;
 use tiri_core::window_pane::WindowPane as _;
+
 pub static cmd_display_menu_entry: cmd_entry = {
     cmd_entry {
         name: c"display-menu",
@@ -46,9 +43,7 @@ pub static cmd_display_menu_entry: cmd_entry = {
             template: c"b:c:C:H:s:S:MOt:T:x:y:",
             lower: 1 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
-            cb: Some(
-                cmd_display_menu_args_parse
-            ),
+            cb: Some(cmd_display_menu_args_parse),
         },
         usage: c"[-MO] [-b border-lines] [-c target-client] [-C starting-choice] [-H selected-style] [-s style] [-S border-style] [-t target-pane] [-T title] [-x position] [-y position] name [key] [command] ...",
         source: cmd_entry_flag {
@@ -65,6 +60,7 @@ pub static cmd_display_menu_entry: cmd_entry = {
         exec: Some(cmd_display_menu_exec),
     }
 };
+
 pub static cmd_display_popup_entry: cmd_entry = {
     cmd_entry {
         name: c"display-popup",
@@ -90,9 +86,10 @@ pub static cmd_display_popup_entry: cmd_entry = {
         exec: Some(cmd_display_popup_exec),
     }
 };
+
 fn cmd_display_menu_args_parse(args: &args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     let mut i: u_int = 0 as u_int;
-    let mut type_0: args_parse_type = ARGS_PARSE_STRING;
+    let mut type_0: args_parse_type;
     loop {
         type_0 = ARGS_PARSE_STRING;
         if i == idx {
@@ -121,6 +118,7 @@ fn cmd_display_menu_args_parse(args: &args, idx: u_int) -> Result<args_parse_typ
     }
     Ok(type_0)
 }
+
 fn cmd_display_menu_status_position(
     client: &ClientRef,
     lines: u_int,
@@ -140,15 +138,15 @@ fn cmd_display_menu_status_position(
 
 fn cmd_display_menu_get_menu_pos(
     client: &ClientRef,
-    item: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     args: &args,
     px: &mut u_int,
     py: &mut u_int,
     width: u_int,
     height: u_int,
 ) -> i32 {
-    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
-    let event = cmdq_get_event(&item.borrow()).metadata_snapshot();
+    let target = inv.target().clone();
+    let event = inv.event();
     let window = if event.m.valid != 0 {
         client
             .attached_session()
@@ -174,7 +172,7 @@ fn cmd_display_menu_get_menu_pos(
     } else {
         event.m.y as i64 + oy
     };
-    let mut format = format_create_from_target(item);
+    let mut format = inv.format_from_target();
     let (last_x, last_y) = window.last_menu_position();
     for (name, value) in [
         (c"popup_mouse_x", mouse_x),
@@ -266,325 +264,342 @@ fn cmd_display_menu_get_menu_pos(
         .min(bottom.saturating_sub(height) as _) as u32;
     1
 }
-fn cmd_display_menu_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let args = cmd_get_args(self_0);
-    let mut target_state = tiri_core::actions::queue::target(&item).clone();
-    let target = &target_state;
-    let event = cmdq_get_event(&(item));
-    let tc_owner = cmdq_get_target_client(Some(&*item));
-    let mut tc: Option<ClientRef> = tc_owner.clone();
-    let style = args_get(args, b's');
-    let border_style = args_get(args, b'S');
-    let selected_style = args_get(args, b'H');
-    let mut starting_choice = 0;
-    if args_has(args, b'C') != 0 {
-        if args_get(args, b'C').expect("argument is present") == c"-" {
-            starting_choice = -1;
-        } else {
-            match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
-                Ok(value) => starting_choice = value as i32,
-                Err(error) => {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"starting choice ")?;
-                        write_cstr(out, error.message())
-                    });
-                    return CmdOutcome::Error;
+
+fn cmd_display_menu_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+        let args = cmd_get_args(self_0);
+        let target_state = inv.target().clone();
+        let target = &target_state;
+        let event = inv.event();
+        let tc_owner = inv.target_client();
+        let tc: Option<ClientRef> = tc_owner.clone();
+        let style = args_get(args, b's');
+        let border_style = args_get(args, b'S');
+        let selected_style = args_get(args, b'H');
+        let mut starting_choice = 0;
+        if args_has(args, b'C') != 0 {
+            if args_get(args, b'C').expect("argument is present") == c"-" {
+                starting_choice = -1;
+            } else {
+                match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
+                    Ok(value) => starting_choice = value as i32,
+                    Err(error) => {
+                        inv.error(|out| {
+                            out.write_all(b"starting choice ")?;
+                            write_cstr(out, error.message())
+                        });
+                        return ExecOutcome::err();
+                    }
                 }
             }
         }
-    }
-    let title = if args_has(args, b'T') != 0 {
-        Some(format_single_from_target_cstring(
-            item_handle,
-            args_get(args, b'T').unwrap_or(c""),
-        ))
-    } else {
-        None
-    };
-    let mut menu = menu_create(title.as_deref().unwrap_or(c""));
-    drop(title);
-    let count = args_count(args);
-    let mut i = 0;
-    while i != count {
-        let name = args_string(args, i)
-            .expect("argument is present")
-            .to_owned();
-        i += 1;
-        if name.is_empty() {
+        let title = if args_has(args, b'T') != 0 {
+            Some(inv.format_single(args_get(args, b'T').unwrap_or(c"")))
+        } else {
+            None
+        };
+        let mut menu = menu_create(title.as_deref().unwrap_or(c""));
+        drop(title);
+        let cf = inv.format();
+        let count = args_count(args);
+        let mut i = 0;
+        while i != count {
+            let name = args_string(args, i)
+                .expect("argument is present")
+                .to_owned();
+            i += 1;
+            if name.is_empty() {
+                menu_add_item(
+                    &mut menu,
+                    None,
+                    Some(&cf),
+                    tc_owner.as_ref(),
+                    Some(target),
+                );
+                continue;
+            }
+            if count - i < 2 {
+                inv.error(|out| out.write_all(b"not enough arguments"));
+                return ExecOutcome::err();
+            }
+            let key = key_string_parse_cstr(args_string(args, i).expect("argument is present"))
+                .unwrap_or(KEYC_UNKNOWN);
+            let command = args_string(args, i + 1).expect("argument is present");
+            i += 2;
+            let definition = menu_item {
+                name: &name,
+                key,
+                command: Some(command),
+            };
             menu_add_item(
                 &mut menu,
-                None,
-                Some(item_handle),
+                Some(&definition),
+                Some(&cf),
                 tc_owner.as_ref(),
                 Some(target),
             );
-            continue;
         }
-        if count - i < 2 {
-            cmdq_error(item_handle, |out| out.write_all(b"not enough arguments"));
-            return CmdOutcome::Error;
+        let mut px = 0;
+        let mut py = 0;
+        if menu.count() == 0
+            || cmd_display_menu_get_menu_pos(
+                &tc.expect("live client"),
+                inv,
+                args,
+                &mut px,
+                &mut py,
+                menu.width.wrapping_add(4),
+                menu.count().wrapping_add(2),
+            ) == 0
+        {
+            return ExecOutcome::ok();
         }
-        let key = key_string_parse_cstr(args_string(args, i).expect("argument is present"))
-            .unwrap_or(KEYC_UNKNOWN);
-        let command = args_string(args, i + 1).expect("argument is present");
-        i += 2;
-        let definition = menu_item {
-            name: &name,
-            key,
-            command: Some(command),
-        };
-        menu_add_item(
-            &mut menu,
-            Some(&definition),
-            Some(item_handle),
-            tc_owner.as_ref(),
-            Some(target),
-        );
-    }
-    let mut px = 0;
-    let mut py = 0;
-    if menu.count() == 0
-        || cmd_display_menu_get_menu_pos(
-            &tc.clone().expect("live client"),
-            item_handle,
-            args,
-            &mut px,
-            &mut py,
-            menu.width.wrapping_add(4),
-            menu.count().wrapping_add(2),
-        ) == 0
-    {
-        return CmdOutcome::Normal;
-    }
-    let mut lines = BOX_LINES_DEFAULT;
-    if let Some(value) = args_get(args, b'b') {
-        match options_find_choice(
-            tiri_core::options::options_table
-                .iter()
-                .find(|entry| entry.name == Some(c"menu-border-lines"))
-                .expect("built-in border choice"),
-            value,
-        ) {
-            Ok(choice) => lines = choice as box_lines,
-            Err(cause) => {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"menu-border-lines ")?;
-                    write_cstr(out, cause.as_c_str())
-                });
-                return CmdOutcome::Error;
+        let mut lines = BOX_LINES_DEFAULT;
+        if let Some(value) = args_get(args, b'b') {
+            match options_find_choice(
+                tiri_core::options::options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"menu-border-lines"))
+                    .expect("built-in border choice"),
+                value,
+            ) {
+                Ok(choice) => lines = choice as box_lines,
+                Err(cause) => {
+                    inv.error(|out| {
+                        out.write_all(b"menu-border-lines ")?;
+                        write_cstr(out, cause.as_c_str())
+                    });
+                    return ExecOutcome::err();
+                }
             }
         }
-    }
-    let mut flags = 0;
-    if args_has(args, b'O') != 0 {
-        flags |= MENU_STAYOPEN;
-    }
-    if event.m.valid == 0 && args_has(args, b'M') == 0 {
-        flags |= MENU_NOMOUSE;
-    }
-    menu_display(
-        menu,
-        flags,
-        starting_choice,
-        Some(&event),
-        px,
-        py,
-        tc_owner.as_ref(),
-        lines,
-        style,
-        selected_style,
-        border_style,
-        Some(target),
-        None,
-    );
-    CmdOutcome::Normal
+        let mut flags = 0;
+        if args_has(args, b'O') != 0 {
+            flags |= MENU_STAYOPEN;
+        }
+        if event.m.valid == 0 && args_has(args, b'M') == 0 {
+            flags |= MENU_NOMOUSE;
+        }
+        menu_display(
+            menu,
+            flags,
+            starting_choice,
+            Some(&event),
+            px,
+            py,
+            tc_owner.as_ref(),
+            lines,
+            style,
+            selected_style,
+            border_style,
+            Some(target),
+            None,
+        );
+        ExecOutcome::ok()
+    })
 }
-fn cmd_display_popup_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    use crate::cmd::queue::cmdq_wait;
+
+fn cmd_display_popup_exec<'a, 'ctx>(
+    command: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
     use std::rc::Rc;
     use tiri_core::options::{options_set_number, options_set_string};
     use tiri_core::shared::pane::{PaneWaitFor, window_pane};
     use tiri_core::shared::spawn::{SPAWN_MODAL, spawn_context};
 
-    let args = cmd_get_args(command);
-    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
-    let client = cmdq_get_target_client(Some(&item.borrow())).expect("popup target client");
-    let session = target.session_handle().expect("popup session");
-    let window = target.window_handle().expect("popup window");
-    if args_has(args, b'C') != 0 {
-        if let Some(pane) = window.modal_pane().upgrade() {
-            pane.kill_process();
-        }
-        return CmdOutcome::Normal;
-    }
-    if client.flags() & CLIENT_CONTROL as u64 != 0 || window.modal_pane().upgrade().is_some() {
-        return CmdOutcome::Normal;
-    }
-    for flag in [b's', b'S'] {
-        if let Some(value) = args_get(args, flag) {
-            let mut style = tiri_core::shared::style::style::default();
-            tiri_core::style::style_set(&mut style, &tiri_core::grid::grid_default_cell);
-            if tiri_core::style::style_parse(&mut style, &tiri_core::grid::grid_default_cell, value)
-                != 0
-            {
-                cmdq_error(item, |out| {
-                    out.write_all(b"bad style: ")?;
-                    write_cstr(out, value)
-                });
-                return CmdOutcome::Error;
+    Box::pin(async move {
+        let args = cmd_get_args(command);
+        let target = inv.target().clone();
+        let client = inv.target_client().expect("popup target client");
+        let session = target.session_handle().expect("popup session");
+        let window = target.window_handle().expect("popup window");
+        if args_has(args, b'C') != 0 {
+            if let Some(pane) = window.modal_pane().upgrade() {
+                pane.kill_process();
             }
+            return ExecOutcome::ok();
         }
-    }
-    let lines = if args_has(args, b'B') != 0 {
-        PANE_LINES_NONE
-    } else {
-        let value = match args_get(args, b'b').unwrap_or(c"single").to_bytes() {
-            b"rounded" => c"single",
-            b"padded" => c"spaces",
-            _ => args_get(args, b'b').unwrap_or(c"single"),
-        };
-        let entry = tiri_core::options::options_table
-            .iter()
-            .find(|entry| entry.name == Some(c"pane-border-lines"))
-            .expect("pane border option");
-        match options_find_choice(entry, value) {
-            Ok(value) => value as pane_lines,
-            Err(error) => {
-                cmdq_error(item, |out| {
-                    out.write_all(b"pane-border-lines ")?;
-                    write_cstr(out, error.as_c_str())
-                });
-                return CmdOutcome::Error;
-            }
+        if client.flags() & CLIENT_CONTROL as u64 != 0 || window.modal_pane().upgrade().is_some() {
+            return ExecOutcome::ok();
         }
-    };
-    let (sx, sy) = window.size();
-    let mut dimensions = [sx / 2, sy / 2];
-    for (index, flag, limit, label) in [
-        (0, b'w', sx, b"width ".as_slice()),
-        (1, b'h', sy, b"height ".as_slice()),
-    ] {
-        if args_has(args, flag) != 0 {
-            match args_percentage_result(args, flag, 1, limit as i64, limit as i64) {
-                Ok(value) => dimensions[index] = value as u32,
-                Err(error) => {
-                    cmdq_error(item, |out| {
-                        out.write_all(label)?;
-                        write_cstr(out, error.message())
+        for flag in [b's', b'S'] {
+            if let Some(value) = args_get(args, flag) {
+                let mut style = tiri_core::shared::style::style::default();
+                tiri_core::style::style_set(&mut style, &tiri_core::grid::grid_default_cell);
+                if tiri_core::style::style_parse(
+                    &mut style,
+                    &tiri_core::grid::grid_default_cell,
+                    value,
+                ) != 0
+                {
+                    inv.error(|out| {
+                        out.write_all(b"bad style: ")?;
+                        write_cstr(out, value)
                     });
-                    return CmdOutcome::Error;
+                    return ExecOutcome::err();
                 }
             }
         }
-    }
-    let [width, height] = dimensions;
-    if width < 1 || height < 1 || lines != PANE_LINES_NONE && (width < 3 || height < 3) {
-        return CmdOutcome::Normal;
-    }
-    let mut x = 0;
-    let mut y = 0;
-    cmd_display_menu_get_menu_pos(&client, item, args, &mut x, &mut y, width, height);
-    let mut environment = environ_create();
-    for value in args_flag_values(args, b'e') {
-        environ_put(
-            &mut environment,
-            value.as_string().expect("environment argument"),
-            0,
-        );
-    }
-    let source = target.pane_handle().expect("popup source pane");
-    let mut context = spawn_context {
-        geometry: Some(layout_geometry {
-            sx: width,
-            sy: height,
-            xoff: x as i32,
-            yoff: y as i32,
-        }),
-        item: crate::engine::context(item.clone()).downgrade(),
-        s: Rc::downgrade(&session),
-        wl: target.winlink_handle(),
-        tc: Rc::downgrade(&client),
-        wp0: Rc::downgrade(&source),
-        name: None,
-        argv: if args_count(args) == 1 && args_string(args, 0).is_some_and(CStr::is_empty) {
-            Vec::new()
+        let lines = if args_has(args, b'B') != 0 {
+            PANE_LINES_NONE
         } else {
-            args_to_vector(args)
-        },
-        environ: Some(environment),
-        idx: -1,
-        cwd: args_get(args, b'd').map(CStr::to_owned),
-        flags: SPAWN_MODAL,
-    };
-    let pane =
-        match <Rc<std::cell::RefCell<window_pane>> as tiri_core::window_pane::WindowPane>::spawn_process(
+            let value = match args_get(args, b'b').unwrap_or(c"single").to_bytes() {
+                b"rounded" => c"single",
+                b"padded" => c"spaces",
+                _ => args_get(args, b'b').unwrap_or(c"single"),
+            };
+            let entry = tiri_core::options::options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"pane-border-lines"))
+                .expect("pane border option");
+            match options_find_choice(entry, value) {
+                Ok(value) => value as pane_lines,
+                Err(error) => {
+                    inv.error(|out| {
+                        out.write_all(b"pane-border-lines ")?;
+                        write_cstr(out, error.as_c_str())
+                    });
+                    return ExecOutcome::err();
+                }
+            }
+        };
+        let (sx, sy) = window.size();
+        let mut dimensions = [sx / 2, sy / 2];
+        for (index, flag, limit, label) in [
+            (0, b'w', sx, b"width ".as_slice()),
+            (1, b'h', sy, b"height ".as_slice()),
+        ] {
+            if args_has(args, flag) != 0 {
+                match args_percentage_result(args, flag, 1, limit as i64, limit as i64) {
+                    Ok(value) => dimensions[index] = value as u32,
+                    Err(error) => {
+                        inv.error(|out| {
+                            out.write_all(label)?;
+                            write_cstr(out, error.message())
+                        });
+                        return ExecOutcome::err();
+                    }
+                }
+            }
+        }
+        let [width, height] = dimensions;
+        if width < 1 || height < 1 || lines != PANE_LINES_NONE && (width < 3 || height < 3) {
+            return ExecOutcome::ok();
+        }
+        let mut x = 0;
+        let mut y = 0;
+        cmd_display_menu_get_menu_pos(&client, inv, args, &mut x, &mut y, width, height);
+        let mut environment = environ_create();
+        for value in args_flag_values(args, b'e') {
+            environ_put(
+                &mut environment,
+                value.as_string().expect("environment argument"),
+                0,
+            );
+        }
+        let source = target.pane_handle().expect("popup source pane");
+        let mut context = spawn_context {
+            geometry: Some(layout_geometry {
+                sx: width,
+                sy: height,
+                xoff: x as i32,
+                yoff: y as i32,
+            }),
+            format: Some(inv.format()),
+            target_session: target.s.clone(),
+            s: Rc::downgrade(&session),
+            wl: target.winlink_handle(),
+            tc: Rc::downgrade(&client),
+            wp0: Rc::downgrade(&source),
+            name: None,
+            argv: if args_count(args) == 1 && args_string(args, 0).is_some_and(CStr::is_empty) {
+                Vec::new()
+            } else {
+                args_to_vector(args)
+            },
+            environ: Some(environment),
+            idx: -1,
+            cwd: args_get(args, b'd').map(CStr::to_owned),
+            flags: SPAWN_MODAL,
+        };
+        let pane = match <Rc<std::cell::RefCell<window_pane>> as tiri_core::window_pane::WindowPane>::spawn_process(
             &mut context,
         ) {
             Ok(pane) => pane,
             Err(error) => {
-                cmdq_error(item, |out| {
+                inv.error(|out| {
                     out.write_all(b"create pane failed: ")?;
                     write_cstr(out, error.as_c_str())
                 });
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
         };
-    pane.set_modal(args_has(args, b'E') != 1);
-    {
-        let mut options = pane.borrow_options_mut();
-        options_set_number(&mut options, c"pane-border-lines", lines as i64);
-        let remain = match (args_has(args, b'E'), args_has(args, b'k') != 0) {
-            (2.., true) => 4,
-            (2.., false) => 2,
-            (1, _) => 0,
-            (_, true) => 3,
-            _ => 1,
-        };
-        options_set_number(&mut options, c"remain-on-exit", remain);
-        options_set_string(&mut options, c"remain-on-exit-format", 0, |_| Ok(()));
-        for (flag, names) in [
-            (b's', [c"window-style", c"window-active-style"]),
-            (b'S', [c"pane-border-style", c"pane-active-border-style"]),
-        ] {
-            if let Some(style) = args_get(args, flag) {
-                for name in names {
-                    options_set_string(&mut options, name, 0, |out| write_cstr(out, style));
+        pane.set_modal(args_has(args, b'E') != 1);
+        {
+            let mut options = pane.borrow_options_mut();
+            options_set_number(&mut options, c"pane-border-lines", lines as i64);
+            let remain = match (args_has(args, b'E'), args_has(args, b'k') != 0) {
+                (2.., true) => 4,
+                (2.., false) => 2,
+                (1, _) => 0,
+                (_, true) => 3,
+                _ => 1,
+            };
+            options_set_number(&mut options, c"remain-on-exit", remain);
+            options_set_string(&mut options, c"remain-on-exit-format", 0, |_| Ok(()));
+            for (flag, names) in [
+                (b's', [c"window-style", c"window-active-style"]),
+                (b'S', [c"pane-border-style", c"pane-active-border-style"]),
+            ] {
+                if let Some(style) = args_get(args, flag) {
+                    for name in names {
+                        options_set_string(&mut options, name, 0, |out| write_cstr(out, style));
+                    }
                 }
             }
+            if args_has(args, b'T') != 0 {
+                options_set_number(
+                    &mut options,
+                    c"pane-border-status",
+                    tiri_core::shared::pane::PANE_STATUS_TOP as i64,
+                );
+                options_set_string(&mut options, c"pane-border-format", 0, |out| {
+                    out.write_all(b"#{pane_title}")
+                });
+            }
         }
-        if args_has(args, b'T') != 0 {
-            options_set_number(
-                &mut options,
-                c"pane-border-status",
-                tiri_core::shared::pane::PANE_STATUS_TOP as i64,
-            );
-            options_set_string(&mut options, c"pane-border-format", 0, |out| {
-                out.write_all(b"#{pane_title}")
+        if let Some(title) = args_get(args, b'T') {
+            use tiri_core::events_payload::{
+                event_payload_create, event_payload_set_pane, event_payload_set_string,
+                event_payload_set_target, event_payload_set_window,
+            };
+            let title = inv.format_single(title);
+            pane.set_title(&title);
+            let mut event = event_payload_create();
+            let target = cmd_find_state::from_winlink_pane(context.winlink_handle(), &pane, 0);
+            event_payload_set_target(&mut event, &target);
+            event_payload_set_pane(&mut event, c"pane", pane.clone());
+            event_payload_set_window(&mut event, c"window", window.clone());
+            event_payload_set_string(&mut event, c"new_title", |out| {
+                write_cstr(out, title.as_c_str())
             });
+            tiri_core::events::events_fire(c"pane-title-changed", event);
         }
-    }
-    if let Some(title) = args_get(args, b'T') {
-        use tiri_core::events_payload::{
-            event_payload_create, event_payload_set_pane, event_payload_set_string,
-            event_payload_set_target, event_payload_set_window,
-        };
-        let title = format_single_from_target_cstring(item, title);
-        pane.set_title(&title);
-        let mut event = event_payload_create();
-        let target = cmd_find_state::from_winlink_pane(context.winlink_handle(), &pane, 0);
-        event_payload_set_target(&mut event, &target);
-        event_payload_set_pane(&mut event, c"pane", pane.clone());
-        event_payload_set_window(&mut event, c"window", window.clone());
-        event_payload_set_string(&mut event, c"new_title", |out| {
-            write_cstr(out, title.as_c_str())
-        });
-        tiri_core::events::events_fire(c"pane-title-changed", event);
-    }
-    pane.invalidate_style();
-    window.refit();
-    tiri_core::server_fn::server_redraw_session(&session);
-    let (waiter, outcome) = cmdq_wait(item);
-    pane.wait_for(PaneWaitFor::Closed, waiter);
-    outcome
+        pane.invalidate_style();
+        window.refit();
+        tiri_core::server_fn::server_redraw_session(&session);
+        let wait = pane.wait_for(PaneWaitFor::Closed, inv.owning_client());
+        drop(pane);
+        drop(source);
+        drop(window);
+        drop(session);
+        drop(client);
+        inv.suspend(command);
+        wait.await;
+        ExecOutcome::ok()
+    })
 }

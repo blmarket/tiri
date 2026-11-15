@@ -1,12 +1,12 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ArgsParseError, args, args_count, args_get, args_has,
     args_parse, args_parse_type, args_string, args_value,
@@ -44,7 +44,11 @@ pub static cmd_bind_key_entry: cmd_entry = {
 fn cmd_bind_key_args_parse(_args: &args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-fn cmd_bind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_bind_key_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let pr;
     let args = cmd_get_args(self_0);
     let mut key: key_code = 0;
@@ -57,11 +61,11 @@ fn cmd_bind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"unknown key: ")?;
             write_cstr(out, args_string(args, 0 as u_int))
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(args, 'T' as i32 as u_char).expect("-T has a value");
@@ -73,12 +77,12 @@ fn cmd_bind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
     repeat = args_has(args, 'r' as i32 as u_char);
     if count == 1 as u_int {
         key_bindings_add(tablename, key, note, repeat, None);
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if count == 2 {
         if let Some(commands) = (&args.values)[1].as_commands() {
             key_bindings_add(tablename, key, note, repeat, Some(commands.clone()));
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
     }
     if count == 2 as u_int {
@@ -96,10 +100,11 @@ fn cmd_bind_key_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
     let commands = match pr {
         Ok(commands) => commands,
         Err(error) => {
-            cmdq_error(item_handle, |out| write_cstr(out, error.as_c_str()));
-            return CmdOutcome::Error;
+            inv.error( |out| write_cstr(out, error.as_c_str()));
+            return ExecOutcome::err();
         }
     };
     key_bindings_add(tablename, key, note, repeat, Some(commands));
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

@@ -5,7 +5,7 @@ use crate::shared::colour::colour_palette;
 use crate::shared::style::style;
 use crate::shared::style::style_line_entry;
 use super::{
-    CStr, CString, Completion, PaneScreenSource, RefCell, Timer, WindowRef, client_theme,
+    CStr, CString, PaneScreenSource, PaneWaiter, RefCell, Timer, WindowRef, client_theme,
     grid_cell, input_ctx, options, pid_t, screen, size_t, spawn_editor_state, u_int, uint64_t,
     window_mode, window_mode_entry, window_pane_modes, window_pane_offset, window_pane_resize,
     window_pane_resizes,
@@ -41,8 +41,7 @@ pub struct window_pane {
     /// Set once the process is reaped; cleared on respawn.
     pub(super) exit_status: Option<std::process::ExitStatus>,
     pub(super) dead_time: SystemTime,
-    /// The `split-window -W` command waiting for this pane to close.
-    pub(super) wait_close: Option<(crate::shared::pane::PaneWaitFor, Completion)>,
+    pub(super) wait_close: Option<(crate::shared::pane::PaneWaitFor, PaneWaiter)>,
     pub(super) editor: Option<Box<spawn_editor_state>>,
     pub(super) output_generation: uint64_t,
     pub(super) last_output_time: time_t,

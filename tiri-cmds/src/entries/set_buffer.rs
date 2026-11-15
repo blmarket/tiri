@@ -1,5 +1,6 @@
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{
@@ -7,8 +8,6 @@ use crate::shared::command::{
 };
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::target_client as cmdq_get_target_client;
 use tiri_core::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use tiri_core::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
@@ -65,10 +64,13 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
         exec: Some(cmd_set_buffer_exec),
     }
 };
-fn cmd_set_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_set_buffer_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let tc_owner = inv.target_client();
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut bufname = args_get(args, b'b').map(CStr::to_owned);
     let mut pb = bufname.as_deref().and_then(paste_get_name);
@@ -77,21 +79,21 @@ fn cmd_set_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     if deleting || args_has(args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"unknown buffer: ")?;
                     out.write_all(name.as_bytes())
                 });
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
             pb = paste_get_top(Some(&mut bufname));
         }
         let Some(pb) = pb else {
-            cmdq_error(item_handle, |out| out.write_all(b"no buffer"));
-            return CmdOutcome::Error;
+            inv.error( |out| out.write_all(b"no buffer"));
+            return ExecOutcome::err();
         };
         if deleting {
             paste_free(&pb);
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         if paste_rename(
             bufname.as_deref(),
@@ -99,22 +101,22 @@ fn cmd_set_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             Some(&mut cause),
         ) != 0
         {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(cause.as_ref().unwrap().as_bytes())
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if args_count(args) != 1 {
-        cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"no data specified"));
+        return ExecOutcome::err();
     }
     let new_data = args_string(args, 0)
         .expect("argument is present")
         .to_bytes();
     if new_data.is_empty() {
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     let mut bufdata = Vec::new();
     if args_has(args, b'a') != 0 {
@@ -132,13 +134,14 @@ fn cmd_set_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         Some(&mut cause),
     ) != 0
     {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(cause.as_ref().unwrap().as_bytes())
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     if let Some(selection_data) = selection_data.as_ref() {
         tty_set_selection(tc.as_ref().expect("selection client"), c"", selection_data);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

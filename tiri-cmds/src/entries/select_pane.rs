@@ -1,7 +1,7 @@
-use crate::cmd::queue::{cmdq_error, cmdq_insert_hook, cmdq_print};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::execution_state as cmdq_get_state_owned;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::events::events_fire;
 use tiri_core::events_payload::{
@@ -9,7 +9,6 @@ use tiri_core::events_payload::{
     event_payload_set_target, event_payload_set_window,
 };
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
 use tiri_core::options::{options_get_string, options_set_string};
 use tiri_core::server::{
     marked_pane, server_check_marked, server_clear_marked, server_is_marked, server_set_marked,
@@ -29,7 +28,6 @@ use tiri_core::winlink::winlink_window;
 
 use tiri_core::window_pane::WindowPane as _;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::uint64_t;
@@ -145,10 +143,9 @@ fn cmd_select_pane_redraw(w_owner: &WindowRef) {
         c = registry_c_owner.clone();
     }
 }
-fn cmd_select_pane_marked_pane(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_select_pane_marked_pane(command: &cmd, inv: &Invocation<'_>) -> ExecOutcome {
     let arguments = cmd_get_args(command);
-    let mut target_state = tiri_core::actions::queue::target(&item).clone();
+    let mut target_state = inv.target().clone();
     let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
     let link = target.winlink_handle();
@@ -199,23 +196,24 @@ fn cmd_select_pane_marked_pane(command: &cmd, item_handle: &std::rc::Rc<cmdq_ite
         server_status_window(&window);
         drop(window);
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
 }
-fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_select_pane_exec<'a, 'ctx>(
+    command: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let entry = cmd_get_entry(command);
     let arguments = cmd_get_args(command);
-    let current = cmdq_get_state_owned(&item);
-    let mut target_state = tiri_core::actions::queue::target(&item).clone();
+    let mut target_state = inv.target().clone();
     let target = &mut target_state;
     let link = target.winlink_handle();
-    let session = target.session_handle();
     let original_pane = target.pane_handle().expect("select target pane");
     let window = target.w.upgrade().expect("select target window");
     let zoom = args_has(arguments, b'Z') != 0;
     let result = (|| {
         if args_has(arguments, b'm') != 0 && !original_pane.is_visible() {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(arguments, b'l') != 0 {
             let mut last = window.last_active_pane().upgrade();
@@ -227,8 +225,8 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
                     .or_else(|| window.step_pane(Some(&active), false).upgrade());
             }
             let Some(last) = last else {
-                cmdq_error(item_handle, |out| out.write_all(b"no last pane"));
-                return CmdOutcome::Error;
+                inv.error( |out| out.write_all(b"no last pane"));
+                return ExecOutcome::err();
             };
             if args_has(arguments, b'e') != 0 || args_has(arguments, b'd') != 0 {
                 last.set_input_enabled(args_has(arguments, b'e') != 0);
@@ -241,17 +239,17 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
                 }
                 window.redraw_active_switch(Some(&last));
                 if window.select_pane(&last, true) != 0 {
-                    *current.current.borrow_mut() = cmd_find_state::from_winlink(link.clone(), 0);
+                    inv.context_mut().current = cmd_find_state::from_winlink(link.clone(), 0);
                     cmd_select_pane_redraw(&window);
                 }
                 if !visible && window.pop_zoom() {
                     server_redraw_window(&window);
                 }
             }
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         if args_has(arguments, b'm') != 0 || args_has(arguments, b'M') != 0 {
-            return cmd_select_pane_marked_pane(command, item_handle);
+            return cmd_select_pane_marked_pane(command, inv);
         }
         if let Some(style) = args_get(arguments, b'P') {
             {
@@ -267,8 +265,8 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         }
         if args_has(arguments, b'g') != 0 {
             let style = options_get_string(&original_pane.borrow_options_mut(), c"window-style");
-            cmdq_print(item_handle, |out| write_cstr(out, &*style));
-            return CmdOutcome::Normal;
+            inv.print( |out| write_cstr(out, &*style));
+            return ExecOutcome::ok();
         }
         let direction = [
             (b'L', Direction::Left),
@@ -286,7 +284,7 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
                 .upgrade();
             window.pop_zoom();
             let Some(selected) = selected else {
-                return CmdOutcome::Normal;
+                return ExecOutcome::ok();
             };
             selected
         } else {
@@ -296,13 +294,11 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
             pane.set_input_enabled(args_has(arguments, b'e') != 0);
             server_redraw_window_borders(&window);
             server_status_window(&window);
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         if args_has(arguments, b'T') != 0 {
-            let title = format_single_from_target_cstring(
-                item_handle,
-                args_get(arguments, b'T').expect("pane title"),
-            );
+            let title =
+                inv.format_single( args_get(arguments, b'T').expect("pane title"));
             if pane.set_title(&title) {
                 let mut find = cmd_find_state::default();
                 find = cmd_find_state::from_pane(&pane, 0)
@@ -318,10 +314,10 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
                 server_redraw_window_borders(&window);
                 server_status_window(&window);
             }
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         if window.active_pane().ptr_eq(&std::rc::Rc::downgrade(&pane)) {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         let visible = pane.is_visible();
         if !visible && window.push_zoom(false, zoom) {
@@ -329,21 +325,20 @@ fn cmd_select_pane_exec(command: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         }
         window.redraw_active_switch(Some(&pane));
         if window.select_pane(&pane, true) != 0 {
-            *current.current.borrow_mut() =
+            inv.context_mut().current =
                 cmd_find_state::from_winlink_pane(link.clone(), &pane, 0);
         }
-        cmdq_insert_hook(
-            session.as_ref(),
-            item_handle,
-            Some(&current.current_snapshot()),
-            |out| out.write_all(b"after-select-pane"),
-        );
+        {
+            let hook_target = inv.context().current.clone();
+            inv.insert_hook(Some(&hook_target), command, |out| out.write_all(b"after-select-pane"));
+        }
         cmd_select_pane_redraw(&window);
         if !visible && window.pop_zoom() {
             server_redraw_window(&window);
         }
-        CmdOutcome::Normal
+        ExecOutcome::ok()
     })();
     drop(window);
     result
+})
 }

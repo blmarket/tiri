@@ -1,10 +1,10 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_count, args_has, args_parse, args_string, args_strtonum_result};
 use tiri_core::compat::strtonum::strtonum;
 use tiri_core::format::bytes::write_cstr;
@@ -43,10 +43,13 @@ pub static cmd_resize_window_entry: cmd_entry = {
         exec: Some(cmd_resize_window_exec),
     }
 };
-fn cmd_resize_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_resize_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let window_owner = winlink_window(&wl).expect("resize target window");
     let result = (|| {
@@ -66,11 +69,11 @@ fn cmd_resize_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             );
             adjust = parsed.unwrap_or(0) as u_int;
             if let Err(errstr) = parsed {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"adjustment ")?;
                     write_cstr(out, errstr)
                 });
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
         }
         sx = window_owner.size().0;
@@ -84,11 +87,11 @@ fn cmd_resize_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             ) {
                 Ok(value) => value as u_int,
                 Err(error) => {
-                    cmdq_error(item_handle, |out| {
+                    inv.error( |out| {
                         out.write_all(b"width ")?;
                         write_cstr(out, error.message())
                     });
-                    return CmdOutcome::Error;
+                    return ExecOutcome::err();
                 }
             };
         }
@@ -101,11 +104,11 @@ fn cmd_resize_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             ) {
                 Ok(value) => value as u_int,
                 Err(error) => {
-                    cmdq_error(item_handle, |out| {
+                    inv.error( |out| {
                         out.write_all(b"height ")?;
                         write_cstr(out, error.message())
                     });
-                    return CmdOutcome::Error;
+                    return ExecOutcome::err();
                 }
             };
         }
@@ -147,8 +150,9 @@ fn cmd_resize_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         }
         window_owner.set_manual_size(sx, sy);
         recalculate_size(&window_owner, 1 as ::core::ffi::c_int);
-        CmdOutcome::Normal
+        ExecOutcome::ok()
     })();
     drop(window_owner);
     result
+})
 }

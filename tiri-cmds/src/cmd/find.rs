@@ -1,9 +1,5 @@
-use crate::cmd::queue::cmdq_error;
+use crate::cmd::invocation::Invocation;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, event as cmdq_get_event, execution_state as cmdq_get_state_owned,
-};
 use tiri_core::compat::strtonum::strtonum;
 use tiri_core::format::bytes::cstr_suffix;
 use tiri_core::format::bytes::write_cstr;
@@ -31,7 +27,6 @@ use tiri_core::window::{
 use tiri_core::window_pane::WindowPane as _;
 use tiri_core::winlink::winlink_window;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_FIND_DEFAULT_MARKED, CMD_FIND_EXACT_SESSION, CMD_FIND_EXACT_WINDOW,
     CMD_FIND_PREFER_UNATTACHED, CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX,
@@ -96,7 +91,7 @@ pub trait TargetLookup: Sized {
 
     fn find_target(
         &mut self,
-        item_handle: Option<&std::rc::Rc<cmdq_item>>,
+        inv: Option<&Invocation<'_>>,
         target: Option<&CStr>,
         type_0: cmd_find_type,
         flags: ::core::ffi::c_int,
@@ -633,15 +628,14 @@ impl TargetLookup for cmd_find_state {
 
     fn find_target(
         &mut self,
-        item_handle: Option<&std::rc::Rc<cmdq_item>>,
+        inv: Option<&Invocation<'_>>,
         target: Option<&CStr>,
         mut type_0: cmd_find_type,
         mut flags: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int {
-        let item = item_handle.map(|item| item.borrow());
         let mouse_pane_owner;
-        let queue_client = cmdq_get_client(item.as_deref().map(|item| &item.context));
-        let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
+        let queue_client = inv.and_then(Invocation::client);
+        let queue_client_ptr: Option<ClientRef> = queue_client.clone();
         let mut current_block: u64;
         let mut c: Option<ClientRef> = None;
 
@@ -687,13 +681,12 @@ impl TargetLookup for cmd_find_state {
             "cmd_find_target",
             log_cstr(target.unwrap_or(c"none")),
             log_cstr(s),
-            log_pointer(item_handle.map_or(std::ptr::null(), std::rc::Rc::as_ptr)),
+            log_pointer(inv.map_or(std::ptr::null(), std::ptr::from_ref)),
             log_bytes(&tmp)
         ));
-        let item = item.expect("command queue item");
-        let queue_current = cmdq_get_state_owned(&item).current_snapshot();
-        let mut queue_event = cmdq_get_event(&item);
-        drop(item);
+        let inv_ref = inv.expect("command invocation");
+        let queue_current = inv_ref.context().current.clone();
+        let queue_event = inv_ref.event();
         let mut current_context: Option<cmd_find_state> = None;
         *self = Self::clear_state(flags);
         if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
@@ -717,9 +710,8 @@ impl TargetLookup for cmd_find_state {
             current_block = 1836292691772056875;
         } else {
             if !flags & CMD_FIND_QUIET != 0 {
-                cmdq_error(item_handle.expect("command queue item"), |out| {
-                    out.write_all(b"no current target")
-                });
+                inv.expect("command invocation")
+                    .error(|out| out.write_all(b"no current target"));
             }
             current_block = 5193823237153215208;
         }
@@ -773,9 +765,8 @@ impl TargetLookup for cmd_find_state {
                     );
                     current_block = 15319680530019787978;
                 } else {
-                    cmdq_error(item_handle.expect("command queue item"), |out| {
-                        out.write_all(b"no current client")
-                    });
+                    inv.expect("command invocation")
+                        .error(|out| out.write_all(b"no current client"));
                     current_block = 5193823237153215208;
                 }
             } else if target == Some(c"=") || target == Some(c"{mouse}") {
@@ -834,9 +825,8 @@ impl TargetLookup for cmd_find_state {
                 }
                 if self.pane_handle().is_none() {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item_handle.expect("command queue item"), |out| {
-                            out.write_all(b"no mouse target")
-                        });
+                        inv.expect("command invocation")
+                            .error(|out| out.write_all(b"no mouse target"));
                     }
                     current_block = 5193823237153215208;
                 } else {
@@ -845,9 +835,8 @@ impl TargetLookup for cmd_find_state {
             } else if target == Some(c"~") || target == Some(c"{marked}") {
                 if server_check_marked() == 0 {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item_handle.expect("command queue item"), |out| {
-                            out.write_all(b"no marked target")
-                        });
+                        inv.expect("command invocation")
+                            .error(|out| out.write_all(b"no marked target"));
                     }
                     current_block = 5193823237153215208;
                 } else {
@@ -935,16 +924,15 @@ impl TargetLookup for cmd_find_state {
                 }
                 if pane.is_some() && flags & CMD_FIND_WINDOW_INDEX != 0 {
                     if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item_handle.expect("command queue item"), |out| {
-                            out.write_all(b"can't specify pane here")
-                        });
+                        inv.expect("command invocation")
+                            .error(|out| out.write_all(b"can't specify pane here"));
                     }
                     current_block = 5193823237153215208;
                 } else {
                     match (session, window, pane) {
                         (Some(session), _, _) if self.get_session(session) != 0 => {
                             if !flags & CMD_FIND_QUIET != 0 {
-                                cmdq_error(item_handle.expect("command queue item"), |out| {
+                                inv.expect("command invocation").error(|out| {
                                     out.write_all(b"can't find session: ")?;
                                     write_cstr(out, session)
                                 });
@@ -1051,24 +1039,18 @@ impl TargetLookup for cmd_find_state {
                             match current_block {
                                 2743676411188200708 => {
                                     if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(
-                                            item_handle.expect("command queue item"),
-                                            |out| {
-                                                out.write_all(b"can't find window: ")?;
-                                                write_cstr(out, window)
-                                            },
-                                        );
+                                        inv.expect("command invocation").error(|out| {
+                                            out.write_all(b"can't find window: ")?;
+                                            write_cstr(out, window)
+                                        });
                                     }
                                 }
                                 _ => {
                                     if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(
-                                            item_handle.expect("command queue item"),
-                                            |out| {
-                                                out.write_all(b"can't find pane: ")?;
-                                                write_cstr(out, pane)
-                                            },
-                                        );
+                                        inv.expect("command invocation").error(|out| {
+                                            out.write_all(b"can't find pane: ")?;
+                                            write_cstr(out, pane)
+                                        });
                                     }
                                 }
                             }
@@ -1099,7 +1081,7 @@ impl TargetLookup for cmd_find_state {
     }
 }
 fn cmd_find_current_client(
-    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    inv: Option<&Invocation<'_>>,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<ClientRef> {
     let inside_pane_owner;
@@ -1114,8 +1096,8 @@ fn cmd_find_current_client(
         idx: 0,
     };
     let mut c_owner = None;
-    if let Some(item) = item_handle {
-        c_owner = cmdq_get_client(Some(&item.borrow()));
+    if let Some(inv) = inv {
+        c_owner = inv.client();
         c = c_owner.clone();
     }
     if !c.is_none()
@@ -1150,24 +1132,24 @@ fn cmd_find_current_client(
         }
     }
     if found.is_none() && quiet == 0 {
-        if let Some(item) = item_handle {
-            cmdq_error(item, |out| out.write_all(b"no current client"));
+        if let Some(inv) = inv {
+            inv.error(|out| out.write_all(b"no current client"));
         }
     }
     log_debug(format_args!(
         "{}: no target, return {}",
         "cmd_find_current_client",
-        log_pointer(found.as_ref().map_or(std::ptr::null(), std::rc::Rc::as_ptr))
+        log_pointer(found.as_ref().map_or(std::ptr::null(), |c| std::ptr::from_ref(&**c)))
     ));
     found
 }
 pub fn cmd_find_client(
-    item_handle: Option<&std::rc::Rc<cmdq_item>>,
+    inv: Option<&Invocation<'_>>,
     target: Option<&CStr>,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<ClientRef> {
     let Some(target) = target else {
-        return cmd_find_current_client(item_handle, quiet);
+        return cmd_find_current_client(inv, quiet);
     };
     let target_bytes = target.to_bytes();
     let trimmed = target_bytes.strip_suffix(b":").unwrap_or(target_bytes);
@@ -1194,7 +1176,7 @@ pub fn cmd_find_client(
         found = ClientRegistry::next(client);
     }
     if found.is_none() && quiet == 0 {
-        cmdq_error(item_handle.expect("command queue item"), |out| {
+        inv.expect("command invocation").error(|out| {
             out.write_all(b"can't find client: ")?;
             out.write_all(copy.as_bytes())
         });
@@ -1202,7 +1184,7 @@ pub fn cmd_find_client(
     log_debug(format_args!(
         "cmd_find_client: target {}, return {}",
         log_cstr(target),
-        log_pointer(found.as_ref().map_or(std::ptr::null(), Rc::as_ptr))
+        log_pointer(found.as_ref().map_or(std::ptr::null(), |c| std::ptr::from_ref(&**c)))
     ));
     found
 }

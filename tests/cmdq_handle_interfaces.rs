@@ -45,6 +45,9 @@ impl Interfaces<'_> {
         let mut raw = RawItem::default();
         raw.visit_type(ty);
         assert!(!raw.0, "raw queue item in interface: {}", self.0.display());
+        let mut item = ItemType::default();
+        item.visit_type(ty);
+        assert!(!item.0, "cmdq_item handle in interface: {}", self.0.display());
     }
 }
 impl<'ast> Visit<'ast> for Interfaces<'_> {
@@ -95,9 +98,6 @@ fn queue_item_interfaces_express_ownership_without_raw_transfers() {
     for directory in ["src", "tiri-core/src", "tiri-cmds/src"] {
         inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join(directory));
     }
-    let queue = include_str!("../tiri-cmds/src/cmd/queue.rs");
-    assert!(!queue.contains("Rc::into_raw"));
-    assert!(!queue.contains("Rc::from_raw"));
 }
 
 #[test]

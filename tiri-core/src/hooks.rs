@@ -1,11 +1,6 @@
-use crate::actions::queue::{
-    enqueue, event as context_event, execution_state, new_state, program_task, report_error,
-    running, target as context_target,
-};
 use crate::actions::sources::compile;
-use crate::actions::{
-    ContextRef, ContextSource, ExecutionState, NO_HOOKS, ProgramRef, ProgramSource, Target,
-};
+use crate::actions::{Context, NO_HOOKS, ProgramRef, ProgramSource, Target};
+use crate::reactor::Lane;
 use crate::events::{events_add_sink, events_fire};
 use crate::events_payload::{
     event_payload_add_formats, event_payload_create, event_payload_get_client,
@@ -28,11 +23,13 @@ use crate::options::{
     OPTIONS_TABLE_IS_HOOK, OptionsScope, options_hook_fired, options_search, options_set_string,
     options_table,
 };
-use crate::shared::client::ClientWeak;
+use crate::server_client::Client as _;
+use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::events::{
     EventPayloadIdentity, EventSinkId, event_payload, events_callback,
 };
-use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE, format_tree};
+use crate::shared::format::{CommandFormat, FORMAT_NOJOBS, FORMAT_NONE, format_tree};
+use crate::shared::key::key_event;
 use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;
 use crate::shared::window::{WindowRef, WindowWeak};
@@ -40,6 +37,32 @@ use crate::window::WindowPane;
 use crate::winlink::winlink_window;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
+
+pub struct HookCommandContext {
+    pub flags: i32,
+    pub event: key_event,
+    pub format: CommandFormat,
+    pub source: Option<(CString, u32)>,
+}
+
+impl Clone for HookCommandContext {
+    fn clone(&self) -> Self {
+        Self {
+            flags: self.flags,
+            event: self.event.metadata_snapshot(),
+            format: self.format.clone(),
+            source: self.source.clone(),
+        }
+    }
+}
+
+pub fn set_running_hook_context(ctx: Option<HookCommandContext>) -> Option<HookCommandContext> {
+    RUNNING_HOOK_CONTEXT.with_borrow_mut(|slot| std::mem::replace(slot, ctx))
+}
+
+pub fn running_hook_context() -> Option<HookCommandContext> {
+    RUNNING_HOOK_CONTEXT.with_borrow(Clone::clone)
+}
 
 #[derive(Default)]
 struct HooksEvents {
@@ -74,13 +97,18 @@ thread_local! {
     static HOOK_EVENTS: std::cell::RefCell<HooksEvents> = const {
         std::cell::RefCell::new(HooksEvents { events: Vec::new() })
     };
+    static RUNNING_HOOK_CONTEXT: std::cell::RefCell<Option<HookCommandContext>> = const {
+        std::cell::RefCell::new(None)
+    };
 }
 
 fn hooks_build_one(
     hd: &hooks_data,
     commands: Option<&dyn ProgramSource>,
-    state: &Rc<ExecutionState>,
-) -> Option<ContextRef> {
+    exec_client: ClientWeak,
+    fs: &Target,
+    event: Option<&key_event>,
+) -> Option<(ProgramRef, Context)> {
     let commands = commands?.program_ref();
     if log_get_level() != 0 {
         let s = commands.text(0);
@@ -91,7 +119,9 @@ fn hooks_build_one(
             log_cstr(&s)
         ));
     }
-    Some(program_task(&commands, Some(state)))
+    let mut context = Context::new(exec_client, Some(fs), event, NO_HOOKS);
+    context.add_formats(&hd.formats);
+    Some((commands, context))
 }
 
 fn hooks_parse(hd: &mut hooks_data, fs: &Target, value: &CStr) -> Result<ProgramRef, CString> {
@@ -170,16 +200,15 @@ fn hooks_find(
 }
 
 fn hooks_collect(
-    item: Option<&dyn ContextSource>,
+    exec_client: ClientWeak,
+    event: Option<&key_event>,
+    ctx: Option<&HookCommandContext>,
     hd: &mut hooks_data,
     source: OptionsScope,
     fs: Target,
-) -> Vec<ContextRef> {
+) -> Vec<(ProgramRef, Context)> {
     let mut tasks = Vec::new();
     let name = hd.name;
-    let event = item.map(|item| context_event(&item.borrow()));
-    let state = new_state(Some(&fs), event.as_ref(), NO_HOOKS);
-    state.add_formats(&hd.formats);
     if name.to_bytes().starts_with(b"@") {
         let value = source
             .with_entry(name, |entry| {
@@ -194,7 +223,7 @@ fn hooks_collect(
                 log_cstr(&error)
             )),
             Ok(commands) => {
-                if let Some(task) = hooks_build_one(hd, Some(&commands), &state) {
+                if let Some(task) = hooks_build_one(hd, Some(&commands), exec_client, &fs, event) {
                     tasks.push(task);
                 }
             }
@@ -230,12 +259,17 @@ fn hooks_collect(
                 let pr = hooks_parse(hd, &fs, &value);
                 match pr {
                     Err(error) => {
-                        report_error(item.expect("hook command item"), |out| {
+                        let client = ctx.and_then(|ctx| ctx.format.client.upgrade());
+                        let source_ref = ctx
+                            .and_then(|ctx| ctx.source.as_ref().map(|(f, l)| (f.as_c_str(), *l)));
+                        ClientRef::report_error(client.as_ref(), source_ref, |out| {
                             write_cstr(out, error.as_c_str())
                         });
                     }
                     Ok(commands) => {
-                        if let Some(task) = hooks_build_one(hd, Some(&commands), &state) {
+                        if let Some(task) =
+                            hooks_build_one(hd, Some(&commands), exec_client.clone(), &fs, event)
+                        {
                             tasks.push(task);
                         }
                     }
@@ -258,7 +292,9 @@ fn hooks_collect(
                     commands
                         .as_ref()
                         .map(|commands| commands as &dyn ProgramSource),
-                    &state,
+                    exec_client.clone(),
+                    &fs,
+                    event,
                 ) {
                     tasks.push(task);
                 }
@@ -269,13 +305,14 @@ fn hooks_collect(
 }
 
 fn hooks_collect_event(
-    item: Option<&dyn ContextSource>,
+    exec_client: ClientWeak,
+    ctx: Option<&HookCommandContext>,
     name: &CStr,
     ep: &event_payload,
     oo: Option<OptionsScope>,
     expand: ::core::ffi::c_int,
-) -> Vec<ContextRef> {
-    if item.is_some_and(|item| execution_state(&item.borrow()).flags & NO_HOOKS != 0) {
+) -> Vec<(ProgramRef, Context)> {
+    if ctx.is_some_and(|ctx| ctx.flags & NO_HOOKS != 0) {
         return Vec::new();
     }
     let mut target = Target::default();
@@ -284,7 +321,7 @@ fn hooks_collect_event(
         return Vec::new();
     };
     let c = event_payload_get_client(ep);
-    let mut formats = format_create(c, item, FORMAT_NONE, FORMAT_NOJOBS);
+    let mut formats = format_create(c, ctx.map(|ctx| &ctx.format), FORMAT_NONE, FORMAT_NOJOBS);
     let ft = &mut *formats;
     event_payload_add_formats(ep, ft, Some(c"hook_"));
     format_add(ft, c"hook", |out| write_cstr(out, &*name));
@@ -295,22 +332,30 @@ fn hooks_collect_event(
         client: c.map(Rc::downgrade).unwrap_or_default(),
         expand,
     };
-    let tasks = hooks_collect(item, &mut hd, source, fs);
+    let tasks = hooks_collect(
+        exec_client,
+        ctx.map(|ctx| &ctx.event),
+        ctx,
+        &mut hd,
+        source,
+        fs,
+    );
     drop(hd.formats);
     tasks
 }
 
 pub fn hooks_fire_command(
-    item: &dyn ContextSource,
+    identity: usize,
+    ctx: &HookCommandContext,
     name: &CStr,
     mut ep: Box<event_payload>,
-) -> Vec<ContextRef> {
+) -> Vec<(ProgramRef, Context)> {
     event_payload_set_identity(
         &mut ep,
         c"_hooks_command",
-        EventPayloadIdentity::CommandHook(item.downgrade().address()),
+        EventPayloadIdentity::CommandHook(identity),
     );
-    let tasks = hooks_collect_event(Some(item), name, &ep, None, 0);
+    let tasks = hooks_collect_event(ctx.format.client.clone(), Some(ctx), name, &ep, None, 0);
     events_fire(name, ep);
     tasks
 }
@@ -326,13 +371,15 @@ fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     ) {
         return;
     }
-    let active = running().upgrade();
-    if active
-        .as_ref()
-        .is_none_or(|item| execution_state(&item.borrow()).flags & NO_HOOKS == 0)
-    {
-        for task in hooks_collect_event(None, name, ep, None, 0) {
-            enqueue(None, task);
+    let suppress = RUNNING_HOOK_CONTEXT
+        .with_borrow(|slot| slot.as_ref().is_some_and(|ctx| ctx.flags & NO_HOOKS != 0));
+    if !suppress {
+        for (program, context) in
+            hooks_collect_event(std::rc::Weak::new(), None, name, ep, None, 0)
+        {
+            Lane::push(None, async move {
+                let _ = crate::actions::run(program, context).await;
+            });
         }
     }
 }
@@ -368,23 +415,24 @@ pub fn hooks_build_events() {
     }
 }
 
-pub fn hooks_run(item: &dyn ContextSource, name: &CStr) -> Vec<ContextRef> {
-    let (target_state, client) = {
-        let context = item.borrow();
-        (context_target(&context).clone(), context.client.clone())
-    };
-    let Some((source, fs)) = hooks_find(None, name, &target_state) else {
+pub fn hooks_run(
+    target_state: &Target,
+    client: ClientWeak,
+    event: &key_event,
+    name: &CStr,
+) -> Vec<(ProgramRef, Context)> {
+    let Some((source, fs)) = hooks_find(None, name, target_state) else {
         return Vec::new();
     };
     let mut hd = hooks_data {
         name,
         formats: format_create(None, None, 0, FORMAT_NOJOBS),
-        client,
+        client: client.clone(),
         expand: 0,
     };
     format_add(&mut hd.formats, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(&mut hd.formats, c"hooks_run");
-    let tasks = hooks_collect(Some(item), &mut hd, source, fs);
+    let tasks = hooks_collect(client, Some(event), None, &mut hd, source, fs);
     drop(hd.formats);
     tasks
 }
@@ -416,15 +464,18 @@ fn hooks_monitor_hook_cb(
     {
         return;
     }
-    let active = running().upgrade();
-    for task in hooks_collect_event(
-        active.as_ref().map(|item| item as &dyn ContextSource),
+    let active = RUNNING_HOOK_CONTEXT.with_borrow(Clone::clone);
+    for (program, context) in hooks_collect_event(
+        std::rc::Weak::new(),
+        active.as_ref(),
         name,
         payload,
         Some(scope.clone()),
         1,
     ) {
-        enqueue(None, task);
+        Lane::push(None, async move {
+            let _ = crate::actions::run(program, context).await;
+        });
     }
 }
 

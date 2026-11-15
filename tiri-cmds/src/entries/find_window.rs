@@ -1,9 +1,10 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{
     args_create, args_has, args_parse, args_set_flag, args_set_string, args_string,
 };
@@ -35,10 +36,13 @@ pub static cmd_find_window_entry: cmd_entry = {
         exec: Some(cmd_find_window_exec),
     }
 };
-fn cmd_find_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_find_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let wp = target.pane_handle();
     let mut s: &CStr = args_string(args, 0 as u_int).expect("argument is present");
     let mut suffix: &CStr = c"";
@@ -74,12 +78,12 @@ fn cmd_find_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     wp.as_ref().expect("mode target pane").set_mode(
         None,
         &window_tree_mode,
-        Some(item_handle),
-        Some(target),
+        Some(&target),
         Some(&new_args),
     );
     drop(new_args);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }
 
 fn append_find_window_c_match(out: &mut Vec<u8>, suffix: &[u8], pattern: &[u8]) {

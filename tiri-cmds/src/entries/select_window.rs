@@ -1,9 +1,7 @@
-use crate::cmd::queue::{cmdq_error, cmdq_insert_hook};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, execution_state as cmdq_get_state_owned,
-};
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_client::Client as _;
@@ -11,7 +9,6 @@ use tiri_core::server_fn::server_redraw_session;
 use tiri_core::session::Session;
 use tiri_core::winlink::{winlink_index, winlink_window};
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_TARGET_SESSION_USAGE;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -121,13 +118,15 @@ pub static cmd_last_window_entry: cmd_entry = {
         exec: Some(cmd_select_window_exec),
     }
 };
-fn cmd_select_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_select_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
-    let current = cmdq_get_state_owned(&(item));
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut next: ::core::ffi::c_int = 0;
@@ -153,46 +152,44 @@ fn cmd_select_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             if (s.as_ref().expect("live session")).select_adjacent_window(false, (activity) != 0)
                 != 0 as ::core::ffi::c_int
             {
-                cmdq_error(item_handle, |out| out.write_all(b"no next window"));
-                return CmdOutcome::Error;
+                inv.error( |out| out.write_all(b"no next window"));
+                return ExecOutcome::err();
             }
         } else if previous != 0 {
             if (s.as_ref().expect("live session")).select_adjacent_window(true, (activity) != 0)
                 != 0 as ::core::ffi::c_int
             {
-                cmdq_error(item_handle, |out| out.write_all(b"no previous window"));
-                return CmdOutcome::Error;
+                inv.error( |out| out.write_all(b"no previous window"));
+                return ExecOutcome::err();
             }
         } else if (s.as_ref().expect("live session")).select_last_window()
             != 0 as ::core::ffi::c_int
         {
-            cmdq_error(item_handle, |out| out.write_all(b"no last window"));
-            return CmdOutcome::Error;
+            inv.error( |out| out.write_all(b"no last window"));
+            return ExecOutcome::err();
         }
-        *current.current.borrow_mut() = cmd_find_state::from_session(
+        inv.context_mut().current = cmd_find_state::from_session(
             s.as_ref().expect("live session"),
             0 as ::core::ffi::c_int,
         );
         server_redraw_session(s.as_ref().expect("live session"));
-        cmdq_insert_hook(
-            s.as_ref(),
-            item_handle,
-            Some(&current.current_snapshot()),
-            |out| out.write_all(b"after-select-window"),
-        );
+        {
+            let hook_target = inv.context().current.clone();
+            inv.insert_hook(Some(&hook_target), self_0, |out| out.write_all(b"after-select-window"));
+        }
     } else {
         if args_has(args, 'T' as i32 as u_char) != 0
             && wl == s.as_ref().expect("live session").current_winlink()
         {
             if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {
-                cmdq_error(item_handle, |out| out.write_all(b"no last window"));
-                return CmdOutcome::Error;
+                inv.error( |out| out.write_all(b"no last window"));
+                return ExecOutcome::err();
             }
             if tiri_core::shared::rc::same(
-                current.current.borrow().session_handle().as_ref(),
+                inv.context().current.session_handle().as_ref(),
                 s.as_ref(),
             ) {
-                *current.current.borrow_mut() = cmd_find_state::from_session(
+                inv.context_mut().current = cmd_find_state::from_session(
                     s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,
                 );
@@ -201,18 +198,16 @@ fn cmd_select_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         } else if (s.as_ref().expect("live session")).select_index(winlink_index(&wl))
             == 0 as ::core::ffi::c_int
         {
-            *current.current.borrow_mut() = cmd_find_state::from_session(
+            inv.context_mut().current = cmd_find_state::from_session(
                 s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );
             server_redraw_session(s.as_ref().expect("live session"));
         }
-        cmdq_insert_hook(
-            s.as_ref(),
-            item_handle,
-            Some(&current.current_snapshot()),
-            |out| out.write_all(b"after-select-window"),
-        );
+        {
+            let hook_target = inv.context().current.clone();
+            inv.insert_hook(Some(&hook_target), self_0, |out| out.write_all(b"after-select-window"));
+        }
     }
     if !c.is_none()
         && !c
@@ -227,5 +222,6 @@ fn cmd_select_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
             .set_latest_client(c.as_ref());
     }
     recalculate_sizes();
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

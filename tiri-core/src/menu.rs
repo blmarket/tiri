@@ -1,6 +1,7 @@
-use crate::actions::queue::{enqueue, error_task, new_state};
-use crate::actions::sources::submit;
-use crate::actions::Target;
+use crate::actions::sources::compile;
+use crate::actions::{Context, Target};
+use crate::format::bytes::write_cstr;
+use crate::reactor::Lane;
 use crate::format::{format_create_defaults, format_single_cstring, format_single_from_state_cstring};
 use crate::format_draw::{format_trim_right_bytes, format_width};
 use crate::grid::grid_default_cell;
@@ -60,7 +61,7 @@ pub fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], client_owner: Op
 pub fn menu_add_item(
     menu: &mut menu,
     item: Option<&menu_item<'_>>,
-    qitem_handle: Option<&dyn crate::actions::ContextSource>,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
     client_owner: Option<&ClientRef>,
     fs: Option<&Target>,
 ) {
@@ -72,10 +73,10 @@ pub fn menu_add_item(
     };
     let index = menu.push_empty();
     let expanded = if let Some(fs) = fs {
-        format_single_from_state_cstring(qitem_handle, item.name, client_owner, fs)
+        format_single_from_state_cstring(cmd_format, item.name, client_owner, fs)
     } else {
         format_single_cstring(
-            qitem_handle,
+            cmd_format,
             item.name,
             client_owner,
             None,
@@ -124,10 +125,10 @@ pub fn menu_add_item(
     menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
     menu.items[index].command = item.command.map(|command| {
         if let Some(fs) = fs {
-            format_single_from_state_cstring(qitem_handle, command, client_owner, fs)
+            format_single_from_state_cstring(cmd_format, command, client_owner, fs)
         } else {
             format_single_cstring(
-                qitem_handle,
+                cmd_format,
                 command,
                 client_owner,
                 None,
@@ -550,16 +551,28 @@ pub fn menu_key(
     } else {
         None
     };
-    let state = new_state(Some(&md.fs), event, 0);
-    if let Err(error) = submit(
+    let client_weak = client_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    let ctx = Context::new(client_weak.clone(), Some(&md.fs), event, 0);
+    let result = compile(
         md.menu.items[index]
             .command
             .as_deref()
             .expect("menu command row has a command"),
-        client_owner,
-        Some(&state),
-    ) {
-        enqueue(client_owner, error_task(&error));
+    );
+    drop(md);
+    match result {
+        Ok(program) => {
+            Lane::push(client_owner, async move {
+                let _ = crate::actions::run(program, ctx).await;
+            });
+        }
+        Err(error) => {
+            Lane::push(client_owner, async move {
+                ClientRef::report_error(client_weak.upgrade().as_ref(), None, |out| {
+                    write_cstr(out, error.as_c_str())
+                });
+            });
+        }
     }
 
     1

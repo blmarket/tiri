@@ -30,7 +30,6 @@ pub use model::window_pane;
 mod pane_sync;
 use self::input::{input_parse_buffer, input_parse_pane};
 use crate::actions::mouse_at;
-use crate::actions::queue::{client, Completion};
 use crate::arguments::{args, args_has};
 use crate::compat::strtonum::strtonum;
 use crate::events::{events_fire, events_fire_pane};
@@ -126,6 +125,39 @@ use crate::shared::window::{
     WINDOW_MODE_ZOOM, WINDOW_PANE_NO_MODE,
 };
 use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
+
+pub(super) struct PaneWaiter {
+    client: crate::shared::client::ClientWeak,
+    done: crate::tiri_rt::oneshot::Sender<()>,
+}
+
+impl PaneWaiter {
+    pub(super) fn pair(
+        client: crate::shared::client::ClientWeak,
+    ) -> (Self, impl std::future::Future<Output = ()> + 'static) {
+        let (done, receiver) = crate::tiri_rt::oneshot::channel();
+        let wait = async move {
+            if receiver.await.is_none() {
+                std::future::pending::<()>().await;
+            }
+        };
+        (Self { client, done }, wait)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn is_cancelled(&self) -> bool {
+        self.done.is_closed()
+    }
+
+    pub(super) fn finish(self, status: i32) {
+        if let Some(client) = self.client.upgrade() {
+            if client.attached_session().upgrade().is_none() {
+                client.set_return_value(status);
+            }
+        }
+        let _ = self.done.send(());
+    }
+}
 
 struct window_pane_input_data {
     client: Option<ClientRef>,
@@ -806,7 +838,6 @@ fn window_pane_set_mode(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     source_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     mode: &'static window_mode,
-    item_handle: Option<&dyn crate::actions::ContextSource>,
     fs: Option<&Target>,
     args: Option<&args>,
 ) -> ::core::ffi::c_int {
@@ -854,7 +885,7 @@ fn window_pane_set_mode(
             .mode
             .init
             .expect("non-null function pointer");
-        let entered = init(wme.clone(), item_handle, fs, args);
+        let entered = init(wme.clone(), fs, args);
         if !entered {
             let entry = window_pane_mode_remove(&mut pane_owner.borrow_mut(), wme.clone())
                 .expect("mode entry is owned by pane");
@@ -1561,15 +1592,13 @@ async fn window_pane_input_complete(
 
 fn window_pane_start_input(
     wp_owner: &Rc<std::cell::RefCell<window_pane>>,
-    item_handle: &dyn crate::actions::ContextSource,
+    c_owner: Option<&ClientRef>,
 ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, std::ffi::CString> {
-    let item = item_handle.borrow();
     let (flags, wp_id) = {
         let wp = wp_owner.borrow();
         (wp.flags, wp.id)
     };
-    let c_owner = client(Some(&*item));
-    let mut c: Option<ClientRef> = c_owner.clone();
+    let c: Option<ClientRef> = c_owner.cloned();
     if flags & PANE_EMPTY == 0 {
         return Err(c"pane is not empty".to_owned());
     }
@@ -1591,12 +1620,12 @@ fn window_pane_start_input(
         file: Weak::new(),
     });
     let mut input = Weak::new();
-    let wait = file_read_wait(c_owner.as_ref(), c"-", |file| {
+    let wait = file_read_wait(c_owner, c"-", |file| {
         input = file.clone();
         cdata.file = file;
         cdata.into_callback()
     });
-    let client = c_owner.as_ref().map_or_else(Weak::new, Rc::downgrade);
+    let client = c_owner.map_or_else(Weak::new, Rc::downgrade);
     Ok(Some(window_pane_input_complete(wait, input, client, wp_id)))
 }
 
@@ -2153,53 +2182,41 @@ mod pane_prompt_data_tests {
 #[cfg(feature = "test-support")]
 pub mod wait_close_tests {
     use super::{
-        ClientRef, Completion, ExitStatusExt, PANE_EXITED, Rc, SIGHUP, WindowPane, pid_t, pty,
+        ClientRef, ExitStatusExt, PANE_EXITED, Rc, SIGHUP, Weak, WindowPane, pid_t, pty,
         window_pane, window_pane_tree,
     };
-    use crate::actions::queue::{callback, drive, enqueue, wait};
-    use crate::actions::TaskOutcome;
+    use crate::reactor::{Lane, LaneTarget};
     use crate::server_client::queue_test_clients as clients;
     use crate::session::session_new_for_test;
     use std::cell::{Cell, RefCell};
     use std::io::Write;
     use std::process::ExitStatus;
 
-    /// Queue on `owner` a head that waits and an item recording that it ran;
-    /// return the head's waiter once it is suspended.
     fn waiting_head(
         owner: &ClientRef,
+        pane: &Rc<RefCell<window_pane>>,
         ran: &Rc<Cell<bool>>,
-    ) -> (Completion, crate::actions::ContextWeak) {
-        let slot: Rc<RefCell<Option<Completion>>> = Default::default();
-        let stored = slot.clone();
-        let head = enqueue(
-            Some(owner),
-            callback(
-                c"pane waiter",
-                Some(Box::new(move |item| {
-                    let (waiter, retval) = wait(item);
-                    *stored.borrow_mut() = Some(waiter);
-                    retval
-                })),
-            ),
+    ) -> Weak<()> {
+        let guard = Rc::new(());
+        let head = Rc::downgrade(&guard);
+        let target = LaneTarget::for_client(Some(owner));
+        let wait = pane.wait_for(
+            crate::shared::pane::PaneWaitFor::ProcessExit,
+            Rc::downgrade(owner),
         );
+        Lane::push(Some(owner), async move {
+            let _guard = guard;
+            wait.await;
+            target.yield_to_drive().await;
+        });
         let ran = ran.clone();
-        enqueue(
-            Some(owner),
-            callback(
-                c"after pane",
-                Some(Box::new(move |_| {
-                    ran.set(true);
-                    TaskOutcome::Normal
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(owner)), 0);
-        (slot.take().expect("suspended head"), head)
+        Lane::push(Some(owner), async move {
+            ran.set(true);
+        });
+        assert_eq!(Lane::drive(Some(owner)), 0);
+        head
     }
 
-    /// A pane running `pid` whose PTY still holds unread output, so its exit
-    /// does not destroy it.
     fn draining_pane(pid: pid_t) -> Rc<RefCell<window_pane>> {
         let pane = window_pane::new();
         let (output, mut input) = std::io::pipe().unwrap();
@@ -2213,18 +2230,15 @@ pub mod wait_close_tests {
         pane
     }
 
-    /// Wait on a new pane for `pid` and reap it with `status`; return what
-    /// the waiting client's return value is then.
     fn reap(owner: &ClientRef, pid: pid_t, status: i32) -> i32 {
         let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(owner, &ran);
         let pane = draining_pane(pid);
-        pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
+        let head = waiting_head(owner, &pane, &ran);
         assert!(pane.process_exited(pid, ExitStatus::from_raw(status)));
         assert!(pane.borrow().wait_close.is_none());
         let retval = clients::return_value(owner);
         assert!(!ran.get());
-        assert_eq!(drive(Some(owner)), 2);
+        assert_eq!(Lane::drive(Some(owner)), 2);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
         pane.destroy();
@@ -2244,13 +2258,12 @@ pub mod wait_close_tests {
     pub fn destroying_a_waited_pane_before_its_exit_reports_sighup() {
         let owner = clients::with_queue();
         let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(&owner, &ran);
         let pane = draining_pane(4245);
-        pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
+        let head = waiting_head(&owner, &pane, &ran);
         pane.destroy();
         assert_eq!(clients::return_value(&owner), 128 + SIGHUP);
         assert!(!ran.get());
-        assert_eq!(drive(Some(&owner)), 2);
+        assert_eq!(Lane::drive(Some(&owner)), 2);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
     }
@@ -2258,7 +2271,6 @@ pub mod wait_close_tests {
     pub fn a_cancelled_waiter_keeps_an_exited_pane_until_its_status_is_ready() {
         let owner = clients::with_queue();
         let ran = Rc::new(Cell::new(false));
-        let (waiter, head) = waiting_head(&owner, &ran);
         let pane = window_pane::new();
         {
             let mut state = pane.borrow_mut();
@@ -2267,7 +2279,7 @@ pub mod wait_close_tests {
         }
         window_pane_tree::insert(Rc::clone(&pane));
         assert!(pane.destroy_ready());
-        pane.wait_for(crate::shared::pane::PaneWaitFor::ProcessExit, waiter);
+        let head = waiting_head(&owner, &pane, &ran);
         assert!(!pane.destroy_ready());
         let client = Rc::downgrade(&owner);
         drop(owner);
@@ -2292,32 +2304,24 @@ pub mod input_wait_tests {
         Client, ClientRef, FileOutcome, Rc, Weak, WindowPane, u_int, uint64_t, window_pane,
         window_pane_input_complete, window_pane_tree,
     };
-    use crate::actions::queue::{callback, drive, enqueue};
-    use crate::actions::TaskOutcome;
+    use crate::reactor::{Lane, LaneTarget};
     use crate::server_client::queue_test_clients as clients;
 
-    /// Queue on `owner` a head whose stdin for pane `wp` ends with `done`.
     fn append_input(
         owner: &ClientRef,
         done: tiri_rt::oneshot::Receiver<FileOutcome>,
         wp: u_int,
-    ) -> crate::actions::ContextWeak {
+    ) -> Weak<()> {
         let client = Rc::downgrade(owner);
-        let head = enqueue(
-            Some(owner),
-            callback(
-                c"pane input",
-                Some(Box::new(move |_| {
-                    TaskOutcome::Suspend(Box::pin(window_pane_input_complete(
-                        done,
-                        Weak::new(),
-                        client,
-                        wp,
-                    )))
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(owner)), 0);
+        let guard = Rc::new(());
+        let head = Rc::downgrade(&guard);
+        let target = LaneTarget::for_client(Some(owner));
+        Lane::push(Some(owner), async move {
+            let _guard = guard;
+            window_pane_input_complete(done, Weak::new(), client, wp).await;
+            target.yield_to_drive().await;
+        });
+        assert_eq!(Lane::drive(Some(owner)), 0);
         head
     }
 
@@ -2340,7 +2344,7 @@ pub mod input_wait_tests {
         let (tx, rx) = tiri_rt::oneshot::channel();
         let head = append_input(&owner, rx, pane.borrow().id);
         assert!(tx.send(eof()).is_ok());
-        drive(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_none());
         assert!(!exiting(&owner));
         pane.destroy();
@@ -2356,7 +2360,7 @@ pub mod input_wait_tests {
         assert!(tx.send(eof()).is_ok());
         assert!(exiting(&owner));
         assert_eq!(clients::return_value(&owner), 1);
-        assert_eq!(drive(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         assert!(head.upgrade().is_some(), "nothing after the input runs");
     }
 
@@ -2366,7 +2370,7 @@ pub mod input_wait_tests {
         let head = append_input(&owner, rx, u_int::MAX);
         drop(tx);
         assert!(!exiting(&owner));
-        assert_eq!(drive(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         assert!(head.upgrade().is_some());
         drop(owner);
         assert!(head.upgrade().is_none());

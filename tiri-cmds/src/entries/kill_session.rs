@@ -1,8 +1,8 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use tiri_core::server_fn::{server_destroy_session, server_redraw_session};
@@ -10,7 +10,6 @@ use tiri_core::session::Session;
 use tiri_core::session::sessions;
 use tiri_core::winlink::winlink_window;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use tiri_core::shared::abi::u_char;
@@ -46,10 +45,13 @@ pub static cmd_kill_session_entry: cmd_entry = {
         exec: Some(cmd_kill_session_exec),
     }
 };
-fn cmd_kill_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_kill_session_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let source = target.s.upgrade().expect("live target session");
     let mut sg = tiri_core::refbox::Weak::new();
     let mut wl: tiri_core::refbox::Weak<winlink> = tiri_core::refbox::Weak::new();
@@ -57,8 +59,8 @@ fn cmd_kill_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
     if filter.is_some()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
     {
-        cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
-        return CmdOutcome::Error;
+        inv.error( |out| out.write_all(b"-f only valid with -a"));
+        return ExecOutcome::err();
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
@@ -71,7 +73,7 @@ fn cmd_kill_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         }
         server_redraw_session(&source);
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_session_all(item_handle, filter);
+        return cmd_kill_session_all(inv, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
         sg = tiri_core::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
         sg.is_alive()
@@ -84,11 +86,11 @@ fn cmd_kill_session_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> 
         server_destroy_session(&source);
         source.destroy((1 as ::core::ffi::c_int) != 0, c"cmd_kill_session_exec");
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }
-fn cmd_kill_session_all(item_handle: &std::rc::Rc<cmdq_item>, filter: Option<&CStr>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let mut s: Option<SessionRef> = tiri_core::actions::queue::target(&item).session_handle();
+fn cmd_kill_session_all(inv: &Invocation<'_>, filter: Option<&CStr>) -> ExecOutcome {
+    let mut s: Option<SessionRef> = inv.target().clone().session_handle();
     let mut sloop: Option<SessionRef> = None;
     let mut sloop_owner = sessions::first();
     sloop = sloop_owner.clone();
@@ -96,7 +98,7 @@ fn cmd_kill_session_all(item_handle: &std::rc::Rc<cmdq_item>, filter: Option<&CS
         let name = sloop.as_ref().expect("live session").name();
         if !(tiri_core::shared::rc::same(sloop.as_ref(), s.as_ref()))
             && !(cmd_kill_session_filter(
-                item_handle,
+                inv,
                 sloop.as_ref().expect("live session"),
                 filter,
             ) == 0)
@@ -108,22 +110,22 @@ fn cmd_kill_session_all(item_handle: &std::rc::Rc<cmdq_item>, filter: Option<&CS
         sloop_owner = sessions::after(&name);
         sloop = sloop_owner.clone();
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
 }
 fn cmd_kill_session_filter(
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     s_owner: &SessionRef,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
-    let item = item_handle.borrow();
 
-    let queue_client = cmdq_get_client(Some(&*item));
+    let queue_client = inv.client();
     let Some(filter) = filter else {
         return 1 as ::core::ffi::c_int;
     };
+    let cf = inv.format();
     let mut ft_owner = format_create(
         queue_client.as_ref(),
-        Some(item_handle),
+        Some(&cf),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );

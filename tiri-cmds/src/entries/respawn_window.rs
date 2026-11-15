@@ -1,10 +1,9 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::target_client as cmdq_get_target_client;
 use tiri_core::arguments::{args_flag_values, args_get, args_has, args_parse, args_to_vector};
 use tiri_core::environ::{environ_create, environ_put};
 use tiri_core::format::bytes::write_cstr;
@@ -42,13 +41,17 @@ pub static cmd_respawn_window_entry: cmd_entry = {
         exec: Some(cmd_respawn_window_exec),
     }
 };
-fn cmd_respawn_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_respawn_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let mut sc: spawn_context = spawn_context {
         geometry: None,
-        item: tiri_core::actions::ContextWeak::new(),
+        format: None,
+        target_session: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
@@ -61,11 +64,12 @@ fn cmd_respawn_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let tc_owner = inv.target_client();
     let mut _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: tiri_core::refbox::Weak<winlink> = target.winlink_handle();
-    sc.item = crate::engine::context(item_handle.clone()).downgrade();
+    sc.format = Some(inv.format());
+    sc.target_session = target.s.clone();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.tc = tc_owner
@@ -91,14 +95,15 @@ fn cmd_respawn_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
         sc.flags |= SPAWN_KILL;
     }
     if let Err(cause) = s.as_ref().expect("live session").spawn_window(&mut sc) {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"respawn window failed: ")?;
             write_cstr(out, cause.as_c_str())
         });
         drop(sc.environ.take());
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     server_redraw_window((winlink_window(&wl).as_ref()).expect("live window"));
     drop(sc.environ.take());
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

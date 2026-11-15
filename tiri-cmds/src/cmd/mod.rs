@@ -4,8 +4,9 @@ mod core;
 pub(crate) use self::core::cmd_list_print_cstring;
 pub(crate) use self::core::cmd_print_cstring;
 pub mod find;
+pub mod invocation;
 pub mod parse;
-pub mod queue;
+pub mod run;
 
 pub(crate) use self::core::{
     cmd_find, cmd_get_alias, cmd_get_args, cmd_get_entry, cmd_get_parse_flags, cmd_get_source,

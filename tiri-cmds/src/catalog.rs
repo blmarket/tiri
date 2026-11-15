@@ -167,3 +167,13 @@ pub static CMD_TABLE: [&cmd_entry; 89] = {
         &cmd_wait_for_entry,
     ]
 };
+
+pub static CMD_NAMES: [&std::ffi::CStr; CMD_TABLE.len()] = {
+    let mut names = [c""; CMD_TABLE.len()];
+    let mut i = 0;
+    while i < CMD_TABLE.len() {
+        names[i] = CMD_TABLE[i].name;
+        i += 1;
+    }
+    names
+};

@@ -117,6 +117,43 @@ pub const FORMAT_EXPAND_NOJOBS: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
 /// Box-owned by format_create; borrowed pointers are invalid after it is dropped.
+#[derive(Clone, Default)]
+pub struct CommandFormat {
+    pub client: ClientWeak,
+    pub action_name: Option<&'static std::ffi::CStr>,
+    pub mouse: mouse_event,
+    pub entries: Vec<(std::ffi::CString, std::ffi::CString)>,
+}
+
+impl CommandFormat {
+    pub fn new(
+        client: ClientWeak,
+        action_name: Option<&'static std::ffi::CStr>,
+        mouse: mouse_event,
+        formats: Option<&format_tree>,
+    ) -> Self {
+        let entries = formats
+            .map(|from| {
+                from.tree
+                    .values()
+                    .filter_map(|entry| {
+                        entry
+                            .state
+                            .text()
+                            .map(|value| (entry.key.clone(), value.to_owned()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            client,
+            action_name,
+            mouse,
+            entries,
+        }
+    }
+}
+
 #[derive(Default)]
 #[repr(C)]
 pub struct format_tree {
@@ -127,8 +164,7 @@ pub struct format_tree {
     pub w: WindowWeak,
     pub wp: std::rc::Weak<RefCell<window_pane>>,
     pub pb: Option<refbox::Weak<paste_buffer>>,
-    /// Queue item used for verbose output, observed without retaining it.
-    pub item: crate::actions::ContextWeak,
+    pub cmd_format: Option<CommandFormat>,
     pub client: Option<ClientRef>,
     pub flags: ::core::ffi::c_int,
     pub tag: u_int,

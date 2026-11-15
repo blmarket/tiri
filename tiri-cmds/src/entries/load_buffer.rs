@@ -1,26 +1,20 @@
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_resumed};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, target_client as cmdq_get_target_client,
-};
-use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
-use tiri_core::file::{FileOutcome, file_read_wait};
-use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
-use tiri_core::paste::paste_set_owned;
-use tiri_core::reactor::evbuffer_pullup;
-use tiri_core::shared::errno::ErrorText;
-
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use std::rc::Weak;
+use std::future::Future;
+use std::pin::Pin;
+use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
+use tiri_core::file::{FileOutcome, file_read_wait};
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::paste::paste_set_owned;
+use tiri_core::reactor::evbuffer_pullup;
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
+use tiri_core::shared::errno::ErrorText;
 use tiri_core::tty::tty_set_selection;
 
 #[repr(C)]
@@ -54,9 +48,10 @@ pub static cmd_load_buffer_entry: cmd_entry = {
         exec: Some(cmd_load_buffer_exec),
     }
 };
+
 fn cmd_load_buffer_done(
-    item_handle: &std::rc::Rc<cmdq_item>,
-    mut cdata: cmd_load_buffer_data,
+    inv: &Invocation<'_>,
+    cdata: cmd_load_buffer_data,
     mut outcome: FileOutcome,
 ) {
     let tc = cdata.client.as_ref();
@@ -66,7 +61,7 @@ fn cmd_load_buffer_done(
     let bdata: &[u8] = evbuffer_pullup(buffer, -1).map_or(&[], |bytes| bytes);
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
-        cmdq_error(item_handle, |out| {
+        inv.error(|out| {
             write!(
                 out,
                 "{}",
@@ -80,9 +75,7 @@ fn cmd_load_buffer_done(
         if paste_set_owned(owned, cdata.name.as_deref(), Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
-            cmdq_error(item_handle, |out| {
-                write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
-            });
+            inv.error(|out| write_cstr(out, (cause.as_ref().unwrap()).as_c_str()));
         } else if tc.is_some_and(|client| {
             client.attached_session().upgrade().is_some() && !client.is_dead()
         }) {
@@ -90,57 +83,56 @@ fn cmd_load_buffer_done(
         }
     }
 }
-/// Store the file once it is read. A file whose client died never reports
-/// (tmux's file_fire_done_cb): release the data, and the client with it, then
-/// park.
-async fn cmd_load_buffer_complete(
-    done: impl std::future::Future<Output = Option<FileOutcome>>,
+
+async fn cmd_load_buffer_wait<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+    done: impl Future<Output = Option<FileOutcome>>,
     cdata: cmd_load_buffer_data,
-    item: Weak<cmdq_item>,
-) {
+) -> ExecOutcome {
+    inv.suspend(self_0);
     let Some(outcome) = done.await else {
         drop(cdata);
         return std::future::pending().await;
     };
-    cmd_load_buffer_done(&cmdq_resumed(&item), cdata, outcome);
+    cmd_load_buffer_done(inv, cdata, outcome);
+    ExecOutcome::ok()
 }
-fn cmd_load_buffer_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let queue_client = cmdq_get_client(Some(&*item));
-    let args = cmd_get_args(self_0);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
-    let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut cdata = cmd_load_buffer_data {
-        client: None,
-        name: None,
-    };
-    cdata.name = args_get(args, 'b' as i32 as u_char).map(CStr::to_owned);
-    if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
-        cdata.client = tc_owner.clone();
-    }
-    let path = format_single_from_target_cstring(
-        item_handle,
-        args_string(args, 0 as u_int).unwrap_or(c""),
-    );
-    let wait = file_read_wait(queue_client.as_ref(), &path, |_| None);
-    CmdOutcome::Suspend(Box::pin(cmd_load_buffer_complete(
-        wait,
-        cdata,
-        std::rc::Rc::downgrade(item_handle),
-    )))
+
+fn cmd_load_buffer_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+        let queue_client = inv.client();
+        let args = cmd_get_args(self_0);
+        let tc_owner = inv.target_client();
+        let mut cdata = cmd_load_buffer_data {
+            client: None,
+            name: args_get(args, 'b' as i32 as u_char).map(CStr::to_owned),
+        };
+        if args_has(args, 'w' as i32 as u_char) != 0 && tc_owner.is_some() {
+            cdata.client = tc_owner.clone();
+        }
+        let path = inv.format_single(args_string(args, 0 as u_int).unwrap_or(c""));
+        let wait = file_read_wait(queue_client.as_ref(), &path, |_| None);
+        drop(tc_owner);
+        drop(queue_client);
+        cmd_load_buffer_wait(self_0, inv, wait, cdata).await
+    })
 }
 
 #[cfg(feature = "test-support")]
 pub mod load_buffer_tests {
     use super::{
-        CStr, CString, ClientRef, FileOutcome, Weak, cmd_load_buffer_complete,
-        cmd_load_buffer_data, cmdq_item, file_read_wait,
+        CStr, CString, ClientRef, FileOutcome, cmd_load_buffer_data, cmd_load_buffer_wait,
+        file_read_wait,
     };
-    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use std::rc::Rc;
+    use crate::cmd::run::test_harness::spawn_invocation;
+    use std::rc::{Rc, Weak};
     use std::time::Duration;
-    use tiri_core::actions::TaskOutcome as CmdOutcome;
     use tiri_core::paste::{paste_buffer_data, paste_get_name};
+    use tiri_core::reactor::Lane;
     use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::tiri_buffer::SegmentedBuf;
 
@@ -150,26 +142,15 @@ pub mod load_buffer_tests {
         Some(paste_buffer_data(&pb).unwrap_or_default().to_vec())
     }
 
-    /// Queue a head on `owner` that suspends until `done` reports the file.
     fn append_load(
         owner: &ClientRef,
         done: impl std::future::Future<Output = Option<FileOutcome>> + 'static,
         cdata: cmd_load_buffer_data,
-    ) -> Weak<cmdq_item> {
-        let head = cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"load",
-                Some(Box::new(move |item| {
-                    CmdOutcome::Suspend(Box::pin(cmd_load_buffer_complete(
-                        done,
-                        cdata,
-                        Rc::downgrade(item),
-                    )))
-                })),
-            ),
-        );
-        assert_eq!(cmdq_next(Some(owner)), 0);
+    ) -> Weak<()> {
+        let head = spawn_invocation(Some(owner), move |cmd_ref, inv| {
+            Box::pin(cmd_load_buffer_wait(cmd_ref, inv, done, cdata))
+        });
+        assert_eq!(Lane::drive(Some(owner)), 0);
         head
     }
 
@@ -189,7 +170,7 @@ pub mod load_buffer_tests {
         };
         assert!(tx.send(outcome).is_ok());
         assert_eq!(buffer(c"loaded").as_deref(), Some(&b"hello"[..]));
-        cmdq_next(Some(&owner));
+        Lane::drive(Some(&owner));
         assert!(head.upgrade().is_none());
     }
 
@@ -209,7 +190,7 @@ pub mod load_buffer_tests {
             assert!(buffer(c"local").is_none(), "not in the dispatching pass");
             runtime.poll(Some(Duration::ZERO)).unwrap();
             assert_eq!(buffer(c"local").as_deref(), Some(&b"local"[..]));
-            cmdq_next(Some(&owner));
+            Lane::drive(Some(&owner));
             assert!(head.upgrade().is_none());
             std::fs::remove_file(path.to_str().unwrap()).unwrap();
         }
@@ -226,7 +207,7 @@ pub mod load_buffer_tests {
         let head = append_load(&owner, rx, cdata);
         drop(tx);
         assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
-        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         assert!(head.upgrade().is_some(), "the command stays blocked");
         let client = Rc::downgrade(&owner);
         drop(owner);

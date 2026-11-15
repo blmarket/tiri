@@ -1,7 +1,7 @@
 //! Converting argument strings to bounded numbers.
 
 use super::store::{args, args_last_string, args_last_value};
-use crate::format::format_single_from_target_cstring;
+use crate::format::format_single_from_state_cstring;
 use crate::shared::abi::u_char;
 use std::ffi::{CStr, CString};
 
@@ -122,19 +122,17 @@ pub fn args_strtonum_result(
 }
 
 /// Converts the last string value after format expansion to a bounded integer.
-///
-/// # Safety
-/// `item` must be valid for format expansion.
 pub fn args_strtonum_and_expand_result(
     args: &args,
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
-    item_handle: Option<&dyn crate::actions::ContextSource>,
+    cmd_format: Option<&crate::shared::format::CommandFormat>,
+    tc: Option<&crate::shared::client::ClientRef>,
+    target: &crate::actions::Target,
 ) -> Result<i64, ArgumentValueError> {
     let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
-    let formatted =
-        format_single_from_target_cstring((item_handle).expect("command queue item"), value);
+    let formatted = format_single_from_state_cstring(cmd_format, value, tc, target);
     parse_number(formatted.as_c_str(), minval, maxval)
 }
 

@@ -621,7 +621,6 @@ fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
 }
 fn window_clock_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&dyn crate::actions::ContextSource>,
     _fs: Option<&Target>,
     _args: Option<&args>,
 ) -> bool {

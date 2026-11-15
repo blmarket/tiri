@@ -1,6 +1,5 @@
-use crate::actions::queue::{callback, enqueue};
 use crate::actions::Target;
-use crate::actions::{TaskOutcome};
+use crate::reactor::Lane;
 use crate::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_single_cstring,
@@ -1666,7 +1665,6 @@ fn window_tree_help() -> mode_tree_help_info {
 }
 fn window_tree_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&dyn crate::actions::ContextSource>,
     fs: Option<&Target>,
     args: Option<&args>,
 ) -> bool {
@@ -1918,26 +1916,22 @@ fn window_tree_command_each(
         );
     }
 }
-fn window_tree_command_done(mode: TreeMode) -> crate::actions::Callback {
-    Some(Box::new(move |_| {
-        if !mode.dead.get() {
-            let Some(mode_pane_owner) = window_tree_pane(&mode) else {
-                return TaskOutcome::Normal;
-            };
-            let tree_owner = window_tree_tree(&mode);
-            mode_tree_build(&tree_owner);
-            mode_tree_draw(&tree_owner);
-            mode_pane_owner.request_redraw(false);
-        }
-        TaskOutcome::Normal
-    }))
+fn window_tree_command_done(mode: TreeMode) {
+    if !mode.dead.get() {
+        let Some(mode_pane_owner) = window_tree_pane(&mode) else {
+            return;
+        };
+        let tree_owner = window_tree_tree(&mode);
+        mode_tree_build(&tree_owner);
+        mode_tree_draw(&tree_owner);
+        mode_pane_owner.request_redraw(false);
+    }
 }
 fn window_tree_enqueue_command_done(client_owner: Option<&ClientRef>, mode: &TreeMode) {
-    let item_allocation = callback(
-        c"window_tree_command_done",
-        window_tree_command_done(mode.clone()),
-    );
-    enqueue(client_owner, item_allocation);
+    let mode = mode.clone();
+    Lane::push(client_owner, async move {
+        window_tree_command_done(mode);
+    });
 }
 /// Prompt input handler that receives the live tree mode owner.
 type window_tree_prompt_fn =

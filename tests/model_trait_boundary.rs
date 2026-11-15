@@ -622,10 +622,10 @@ fn client_fields_remain_private_to_the_implementation_module() {
 
 #[test]
 fn queued_items_do_not_retain_raw_queue_component_pointers() {
-    let source = std::fs::read_to_string("tiri-cmds/src/cmd/queue.rs").unwrap();
+    let source = std::fs::read_to_string("tiri-core/src/reactor/lane.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
-    struct QueuePointers;
-    impl<'ast> Visit<'ast> for QueuePointers {
+    struct LanePointers;
+    impl<'ast> Visit<'ast> for LanePointers {
         fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
             if let Type::Path(path) = &*ty.elem {
                 assert!(
@@ -633,16 +633,22 @@ fn queued_items_do_not_retain_raw_queue_component_pointers() {
                         .path
                         .segments
                         .last()
-                        .is_some_and(|s| s.ident == "cmdq_list"),
-                    "queue pointers must not outlive the Client component borrow"
+                        .is_some_and(|s| s.ident == "Lane"),
+                    "lane pointers must not outlive the Client component borrow"
                 );
             }
             visit::visit_type_ptr(self, ty);
         }
     }
-    QueuePointers.visit_file(&syntax);
+    for path in ["src", "tiri-core/src", "tiri-cmds/src"]
+        .into_iter()
+        .flat_map(|directory| rust_sources(Path::new(directory)))
+    {
+        let file = syn::parse_file(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        LanePointers.visit_file(&file);
+    }
     assert!(syntax.items.iter().any(|item| matches!(item,
-        Item::Enum(target) if target.ident == "QueueTarget")));
+        Item::Enum(target) if target.ident == "LaneTarget")));
 }
 
 #[test]

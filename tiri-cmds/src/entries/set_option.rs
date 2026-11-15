@@ -1,12 +1,11 @@
-use crate::cmd::queue::{cmdq_error, cmdq_followup, cmdq_item};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use tiri_core::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
+use std::future::Future;
+use std::pin::Pin;
 use tiri_core::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, ArgsParseError, args, args_count, args_get,
     args_has, args_parse, args_parse_type, args_string,
@@ -17,7 +16,7 @@ use tiri_core::events_payload::{
     event_payload_set_session, event_payload_set_target, event_payload_set_window,
 };
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::format_single_from_target_cstring;
+use tiri_core::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use tiri_core::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION, monitor_parse_owned};
 use tiri_core::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
 use tiri_core::options::{
@@ -27,10 +26,10 @@ use tiri_core::options::{
 use tiri_core::session::Session;
 use tiri_core::session::sessions;
 use tiri_core::shared::abi::{u_char, u_int};
-use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::target::Target as cmd_find_state;
 use tiri_core::shared::window::WindowRef;
 use tiri_core::window::{Window, WindowPane};
+
 pub static cmd_set_option_entry: cmd_entry = {
     cmd_entry {
         name: c"set-option",
@@ -56,6 +55,7 @@ pub static cmd_set_option_entry: cmd_entry = {
         exec: Some(cmd_set_option_exec),
     }
 };
+
 pub static cmd_set_window_option_entry: cmd_entry = {
     cmd_entry {
         name: c"set-window-option",
@@ -81,6 +81,7 @@ pub static cmd_set_window_option_entry: cmd_entry = {
         exec: Some(cmd_set_option_exec),
     }
 };
+
 pub static cmd_set_hook_entry: cmd_entry = {
     cmd_entry {
         name: c"set-hook",
@@ -106,6 +107,7 @@ pub static cmd_set_hook_entry: cmd_entry = {
         exec: Some(cmd_set_option_exec),
     }
 };
+
 fn cmd_set_option_args_parse(args: &args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if args_has(args, 'B' as i32 as u_char) != 0 {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
@@ -115,49 +117,33 @@ fn cmd_set_option_args_parse(args: &args, idx: u_int) -> Result<args_parse_type,
     }
     Ok(ARGS_PARSE_STRING)
 }
-fn cmd_set_hook_event_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+
+fn cmd_set_hook_event_exec(self_0: &cmd, inv: &Invocation<'_>) -> ExecOutcome {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
-    let mut c: Option<ClientRef> = None;
+    let target = inv.target();
     if args_count(args) == 0 as u_int {
-        cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
-        return CmdOutcome::Error;
+        inv.error(|out| out.write_all(b"missing argument"));
+        return ExecOutcome::err();
     }
     if args_count(args) != 1 as u_int {
-        cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
-        return CmdOutcome::Error;
+        inv.error(|out| out.write_all(b"too many arguments"));
+        return ExecOutcome::err();
     }
-    let argument = format_single_from_target_cstring(
-        item_handle,
-        args_string(args, 0 as u_int).unwrap_or(c""),
-    );
+    let argument = inv.format_single(args_string(args, 0 as u_int).unwrap_or(c""));
     if argument.as_bytes().first() != Some(&b'@') {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"event name must start with @")
-        });
-        return CmdOutcome::Error;
+        inv.error(|out| out.write_all(b"event name must start with @"));
+        return ExecOutcome::err();
     }
     let mut ep = event_payload_create();
     event_payload_set_target(&mut ep, target);
-    let c_owner = cmdq_get_client(Some(&*item));
-    c = c_owner.clone();
-    if !c.is_none() {
-        event_payload_set_client(&mut ep, c.clone().expect("live client"));
+    if let Some(c) = inv.client() {
+        event_payload_set_client(&mut ep, c);
     }
-    if !target.session_handle().is_none() {
-        event_payload_set_session(
-            &mut ep,
-            c"session",
-            target.session_handle().expect("live session"),
-        );
+    if let Some(session) = target.session_handle() {
+        event_payload_set_session(&mut ep, c"session", session);
     }
-    if !target.window_handle().is_none() {
-        event_payload_set_window(
-            &mut ep,
-            c"window",
-            WindowRef::clone((target.window_handle().as_ref()).expect("live window")),
-        );
+    if let Some(window) = target.window_handle() {
+        event_payload_set_window(&mut ep, c"window", WindowRef::clone(&window));
     }
     if target.winlink_handle().is_alive() {
         event_payload_set_int(
@@ -171,22 +157,19 @@ fn cmd_set_hook_event_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -
     } else if target.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(&mut ep, c"window_index", target.idx);
     }
-    if !target.pane_handle().is_none() {
-        event_payload_set_pane(&mut ep, c"pane", target.pane_handle().expect("live pane"));
+    if let Some(pane) = target.pane_handle() {
+        event_payload_set_pane(&mut ep, c"pane", pane);
     }
     events_fire(&argument, ep);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
 }
-fn cmd_set_hook_monitor_exec(
-    item_handle: &std::rc::Rc<cmdq_item>,
-    args: &args,
-    window: i32,
-) -> CmdOutcome {
-    let mut target_state = tiri_core::actions::queue::target(&item_handle.borrow()).clone();
+
+fn cmd_set_hook_monitor_exec(inv: &Invocation<'_>, args: &args, window: i32) -> ExecOutcome {
+    let mut target_state = inv.target().clone();
     let target = &mut target_state;
     if args_count(args) > 1 {
-        cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
-        return CmdOutcome::Error;
+        inv.error(|out| out.write_all(b"too many arguments"));
+        return ExecOutcome::err();
     }
     let argument = args_get(args, b'B').expect("monitor argument").to_owned();
     let unsubscribe = args_has(args, b'u') != 0;
@@ -198,34 +181,32 @@ fn cmd_set_hook_monitor_exec(
         }
     } else {
         let Some(parsed) = parsed else {
-            cmdq_error(item_handle, |out| {
+            inv.error(|out| {
                 out.write_all(b"invalid subscription: ")?;
                 write_cstr(out, &*argument)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         };
         (parsed.name, parsed.type_0, parsed.id, Some(parsed.format))
     };
     if !name.as_bytes().starts_with(b"@") {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"monitor hook name must start with @")
-        });
-        return CmdOutcome::Error;
+        inv.error(|out| out.write_all(b"monitor hook name must start with @"));
+        return ExecOutcome::err();
     }
     let selected = match options_scope_from_name(args, window, &name, target) {
         Ok((_, selected)) => selected,
-        Err(cause) => return set_option_error(item_handle, &cause),
+        Err(cause) => return set_option_error(inv, &cause),
     };
     let mut fs = cmd_find_state::default();
     fs.copy_from(target);
     if unsubscribe {
         hooks_monitor_remove(&selected, &name);
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if args_count(args) != 0 {
         let mut value = args_string(args, 0).expect("monitor command").to_owned();
         if args_has(args, b'F') != 0 {
-            value = format_single_from_target_cstring(item_handle, &value);
+            value = inv.format_single(&value);
         }
         let exists = selected.with_entry(&name, |_| ()).is_some();
         if args_has(args, b'o') == 0 || !exists {
@@ -258,16 +239,14 @@ fn cmd_set_hook_monitor_exec(
     if let Some(session) = session {
         (session).release(c"set-hook monitor");
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
 }
 
-fn set_option_error(item: &std::rc::Rc<cmdq_item>, cause: &CStr) -> CmdOutcome {
-    cmdq_error(item, |out| write_cstr(out, &*cause));
-    CmdOutcome::Error
+fn set_option_error(inv: &Invocation<'_>, cause: &CStr) -> ExecOutcome {
+    inv.error(|out| write_cstr(out, &*cause));
+    ExecOutcome::err()
 }
 
-/// Pane traversal remains live between removals; a monitor teardown may change
-/// membership. Each successor is selected from the current pane's parent.
 fn unset_window_panes(
     target: &cmd_find_state,
     name: &CStr,
@@ -295,155 +274,164 @@ fn unset_window_panes(
     Ok(())
 }
 
-fn cmd_set_option_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let args = cmd_get_args(self_0);
-    let mut target_state = tiri_core::actions::queue::target(&item).clone();
-    let target = &mut target_state;
-    let window = std::ptr::eq(cmd_get_entry(self_0), &cmd_set_window_option_entry) as i32;
-    let set_hook = std::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry);
-    if set_hook && args_has(args, b'E') != 0 {
-        return cmd_set_hook_event_exec(self_0, item_handle);
-    }
-    if set_hook && args_has(args, b'B') != 0 {
-        return cmd_set_hook_monitor_exec(item_handle, args, window);
-    }
-    if args_count(args) == 0 {
-        return set_option_error(item_handle, c"missing argument");
-    }
-    let argument =
-        format_single_from_target_cstring(item_handle, args_string(args, 0).unwrap_or(c""));
-    if set_hook && args_has(args, b'R') != 0 {
-        let tasks = hooks_run(item_handle, &argument);
-        let mut followup = cmdq_followup(item_handle);
-        for task in tasks {
-            followup.push(crate::engine::native(&task));
+fn cmd_set_option_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+        let args = cmd_get_args(self_0);
+        let mut target_state = inv.target().clone();
+        let target = &mut target_state;
+        let window = std::ptr::eq(cmd_get_entry(self_0), &cmd_set_window_option_entry) as i32;
+        let set_hook = std::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry);
+        if set_hook && args_has(args, b'E') != 0 {
+            return cmd_set_hook_event_exec(self_0, inv);
         }
-        drop(item);
-        return followup.into_outcome();
-    }
-    let parsed = match options_match_owned(&argument) {
-        Ok(parsed) => parsed,
-        Err(failure) => {
-            if args_has(args, b'q') != 0 {
-                return CmdOutcome::Normal;
+        if set_hook && args_has(args, b'B') != 0 {
+            return cmd_set_hook_monitor_exec(inv, args, window);
+        }
+        if args_count(args) == 0 {
+            return set_option_error(inv, c"missing argument");
+        }
+        let argument = inv.format_single(args_string(args, 0).unwrap_or(c""));
+        if set_hook && args_has(args, b'R') != 0 {
+            let event = inv.event();
+            let tasks = hooks_run(target, inv.owning_client(), &event, &argument);
+            if tasks.is_empty() {
+                return ExecOutcome::ok();
             }
-            let ambiguous = match failure {
-                OptionMatchFailure::Ambiguous => true,
-                OptionMatchFailure::Parse => !sessions::is_empty(),
-                _ => false,
-            };
-            cmdq_error(item_handle, |out| {
-                out.write_all(if ambiguous {
-                    b"ambiguous option: "
-                } else {
-                    b"invalid option: "
-                })?;
-                write_cstr(out, &*argument)
-            });
-            return CmdOutcome::Error;
-        }
-    };
-    let mut value = if args_count(args) < 2 {
-        None
-    } else {
-        args_string(args, 1).map(CStr::to_owned)
-    };
-    if args_has(args, b'F') != 0 {
-        if let Some(old) = value.as_ref() {
-            value = Some(format_single_from_target_cstring(item_handle, old));
-        }
-    }
-    let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, target) {
-        Ok(selected) => selected,
-        Err(_) if args_has(args, b'q') != 0 => return CmdOutcome::Normal,
-        Err(cause) => return set_option_error(item_handle, &cause),
-    };
-    let name = parsed.name.as_c_str();
-    let array_key = parsed.array_key.as_deref();
-    let user = name.to_bytes().starts_with(b"@");
-    let definition = selected
-        .resolve(name, false)
-        .and_then(|source| source.with_entry(name, |entry| entry.tableentry)?);
-    let array = definition.is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
-    if array_key.is_some() && (user || !array) {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"not an array: ")?;
-            write_cstr(out, &*argument)
-        });
-        return CmdOutcome::Error;
-    }
-    if args_has(args, b'u') == 0 && args_has(args, b'o') != 0 {
-        let already = selected
-            .with_entry(name, |entry| {
-                array_key.is_none_or(|key| {
-                    entry
-                        .value
-                        .array()
-                        .and_then(|array| array.get(key))
-                        .is_some()
+            return ExecOutcome::tail(move |_| {
+                Box::pin(async move {
+                    for (program, hook_ctx) in tasks {
+                        let _ = crate::cmd::run::run(program, hook_ctx).await;
+                    }
                 })
-            })
-            .unwrap_or(false);
-        if already {
-            if args_has(args, b'q') != 0 {
-                return CmdOutcome::Normal;
+            });
+        }
+        let parsed = match options_match_owned(&argument) {
+            Ok(parsed) => parsed,
+            Err(failure) => {
+                if args_has(args, b'q') != 0 {
+                    return ExecOutcome::ok();
+                }
+                let ambiguous = match failure {
+                    OptionMatchFailure::Ambiguous => true,
+                    OptionMatchFailure::Parse => !sessions::is_empty(),
+                    _ => false,
+                };
+                inv.error(|out| {
+                    out.write_all(if ambiguous {
+                        b"ambiguous option: "
+                    } else {
+                        b"invalid option: "
+                    })?;
+                    write_cstr(out, &*argument)
+                });
+                return ExecOutcome::err();
             }
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"already set: ")?;
+        };
+        let mut value = if args_count(args) < 2 {
+            None
+        } else {
+            args_string(args, 1).map(CStr::to_owned)
+        };
+        if args_has(args, b'F') != 0 {
+            if let Some(old) = value.as_ref() {
+                value = Some(inv.format_single(old));
+            }
+        }
+        let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, target) {
+            Ok(selected) => selected,
+            Err(_) if args_has(args, b'q') != 0 => return ExecOutcome::ok(),
+            Err(cause) => return set_option_error(inv, &cause),
+        };
+        let name = parsed.name.as_c_str();
+        let array_key = parsed.array_key.as_deref();
+        let user = name.to_bytes().starts_with(b"@");
+        let definition = selected
+            .resolve(name, false)
+            .and_then(|source| source.with_entry(name, |entry| entry.tableentry)?);
+        let array =
+            definition.is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
+        if array_key.is_some() && (user || !array) {
+            inv.error(|out| {
+                out.write_all(b"not an array: ")?;
                 write_cstr(out, &*argument)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
-    }
-    if args_has(args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
-        if let Err(cause) = unset_window_panes(target, name, array_key) {
-            return set_option_error(item_handle, &cause);
-        }
-    }
-    let append = args_has(args, b'a') != 0;
-    let result = if args_has(args, b'u') != 0 || args_has(args, b'U') != 0 {
-        selected.remove_or_default(name, array_key)
-    } else if user {
-        selected
-            .set_from_string(None, name, value.as_deref(), append)
-            .map(|()| {
-                if set_hook {
-                    hooks_add_event(&*name);
+        if args_has(args, b'u') == 0 && args_has(args, b'o') != 0 {
+            let already = selected
+                .with_entry(name, |entry| {
+                    array_key.is_none_or(|key| {
+                        entry
+                            .value
+                            .array()
+                            .and_then(|array| array.get(key))
+                            .is_some()
+                    })
+                })
+                .unwrap_or(false);
+            if already {
+                if args_has(args, b'q') != 0 {
+                    return ExecOutcome::ok();
                 }
-                true
-            })
-    } else if !array {
-        let definition = definition.expect("built-in option definition");
-        selected
-            .set_from_string(
-                Some(definition),
-                definition.name.expect("built-in name"),
-                value.as_deref(),
-                append,
-            )
-            .map(|()| true)
-    } else if let Some(value) = value.as_deref() {
-        selected.ensure_array(definition.expect("array option definition"));
-        if let Some(key) = array_key {
-            selected
-                .set_array_item(name, key, Some(value), append)
-                .map(|()| true)
-        } else {
-            if !append {
-                selected.clear_array(name);
+                inv.error(|out| {
+                    out.write_all(b"already set: ")?;
+                    write_cstr(out, &*argument)
+                });
+                return ExecOutcome::err();
             }
-            selected.assign_array(name, value).map(|()| true)
         }
-    } else {
-        Err(c"empty value".to_owned())
-    };
-    match result {
-        Err(cause) => set_option_error(item_handle, &cause),
-        Ok(false) => CmdOutcome::Normal,
-        Ok(true) => {
-            options_push_changes(name);
-            CmdOutcome::Normal
+        if args_has(args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
+            if let Err(cause) = unset_window_panes(target, name, array_key) {
+                return set_option_error(inv, &cause);
+            }
         }
-    }
+        let append = args_has(args, b'a') != 0;
+        let result = if args_has(args, b'u') != 0 || args_has(args, b'U') != 0 {
+            selected.remove_or_default(name, array_key)
+        } else if user {
+            selected
+                .set_from_string(None, name, value.as_deref(), append)
+                .map(|()| {
+                    if set_hook {
+                        hooks_add_event(&*name);
+                    }
+                    true
+                })
+        } else if !array {
+            let definition = definition.expect("built-in option definition");
+            selected
+                .set_from_string(
+                    Some(definition),
+                    definition.name.expect("built-in name"),
+                    value.as_deref(),
+                    append,
+                )
+                .map(|()| true)
+        } else if let Some(value) = value.as_deref() {
+            selected.ensure_array(definition.expect("array option definition"));
+            if let Some(key) = array_key {
+                selected
+                    .set_array_item(name, key, Some(value), append)
+                    .map(|()| true)
+            } else {
+                if !append {
+                    selected.clear_array(name);
+                }
+                selected.assign_array(name, value).map(|()| true)
+            }
+        } else {
+            Err(c"empty value".to_owned())
+        };
+        match result {
+            Err(cause) => set_option_error(inv, &cause),
+            Ok(false) => ExecOutcome::ok(),
+            Ok(true) => {
+                options_push_changes(name);
+                ExecOutcome::ok()
+            }
+        }
+    })
 }

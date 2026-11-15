@@ -7,6 +7,7 @@
 //! loop. Scheduling helpers use the current handle without creating a runtime.
 #![allow(clippy::missing_safety_doc)]
 mod buffer;
+mod lane;
 mod streams;
 mod tasks;
 mod timers;
@@ -15,6 +16,7 @@ pub use buffer::{
     evbuffer_pullup, evbuffer_readline, evbuffer_readln,
 };
 pub(crate) use buffer::{buffer_prefix};
+pub use lane::{Lane, LaneTarget};
 use std::os::fd::BorrowedFd;
 pub use streams::{
     BufferEvent, Interests, StreamError, StreamHandle, StreamResult, bufferevent_disable,
@@ -23,7 +25,7 @@ pub use streams::{
 };
 pub(crate) use streams::{StreamState};
 pub use tasks::{defer, task_start};
-pub use timers::Timer;
+pub use timers::{Timer, background_timer, cancel_background_timers};
 
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
 pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::mio::Io> {

@@ -1,9 +1,8 @@
 //! Pane-owned process and pipe lifecycle operations.
 use super::{window_pane_destroy_ready, window_pane_exited};
+use crate::actions::Target;
 use crate::arguments::{args_count, args_has, args_string};
-
-use crate::actions::queue::{client, report_error, target_client};
-use crate::actions::{TaskOutcome};
+use crate::format::bytes::format_message_with;
 use crate::format::{format_create, format_defaults, format_expand_time_cstring};
 use crate::log::{fatalx, log_debug};
 use crate::proc::proc_clear_signals;
@@ -19,56 +18,51 @@ use crate::shared::client::ClientRef;
 use crate::shared::errno::ErrorText;
 use crate::shared::event::{bufferevent_data_callback, bufferevent_event_callback};
 use crate::shared::event::{EV_READ, EV_WRITE};
-use crate::shared::format::FORMAT_NONE;
+use crate::shared::format::{CommandFormat, FORMAT_NONE};
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{_PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO};
 use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
+use std::ffi::CString;
 use std::os::fd::AsFd;
 use tiri_sys::{
     block_signals, close_on_exec_from, exec_with_stdio, exit_now, fork, lead_process_group,
     set_signal_mask, Program,
 };
-/// Start or stop piping the pane's output through a shell command. The
-/// server is single-threaded, so the forked child may run ordinary code until
-/// it execs.
+
 pub(super) fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     args: &crate::arguments::args,
-    item_handle: &dyn crate::actions::ContextSource,
-) -> TaskOutcome {
+    cmd_format: Option<&CommandFormat>,
+    tc: Option<&ClientRef>,
+    target: &Target,
+) -> Result<(), CString> {
     {
-        let item = item_handle.borrow();
-        let queue_client = client(Some(&*item));
-
-        let target = crate::actions::queue::target(&item);
-        let tc_owner = target_client(Some(&*item));
-        let mut tc: Option<ClientRef> = tc_owner.clone();
-        let mut s: Option<SessionRef> = target.session_handle();
-        let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+        let queue_client = cmd_format.and_then(|cf| cf.client.upgrade());
+        let s: Option<SessionRef> = target.session_handle();
+        let wl: refbox::Weak<winlink> = target.winlink_handle();
         let had_pipe = pane_owner.borrow().pipe_event.is_alive();
-        let mut in_0: ::core::ffi::c_int = 0;
-        let mut out: ::core::ffi::c_int = 0;
+        let in_0: ::core::ffi::c_int;
+        let out: ::core::ffi::c_int;
         if window_pane_exited(&pane_owner.borrow()) != 0 {
-            report_error(item_handle, |out| out.write_all(b"target pane has exited"));
-            return TaskOutcome::Error;
+            return Err(c"target pane has exited".to_owned());
         }
         if had_pipe {
             let pipe_event = std::mem::take(&mut pane_owner.borrow_mut().pipe_event);
             pipe_event.free();
             if window_pane_destroy_ready(pane_owner) != 0 {
                 server_destroy_pane(pane_owner, 1);
-                return TaskOutcome::Normal;
+                return Ok(());
             }
         }
         if args_count(args) == 0 as u_int
             || args_string(args, 0 as u_int).is_none_or(std::ffi::CStr::is_empty)
         {
-            return TaskOutcome::Normal;
+            return Ok(());
         }
         if args_has(args, 'o' as i32 as u_char) != 0 && had_pipe {
-            return TaskOutcome::Normal;
+            return Ok(());
         }
         if args_has(args, 'I' as i32 as u_char) != 0 {
             in_0 = 1 as ::core::ffi::c_int;
@@ -80,18 +74,19 @@ pub(super) fn pipe_pane(
         let (parent, child) = match tiri_sys::socket_pair() {
             Ok(pair) => pair,
             Err(error) => {
-                report_error(item_handle, |out| write!(out, "socketpair error: {error}"));
-                return TaskOutcome::Error;
+                return Err(format_message_with(|out| {
+                    write!(out, "socketpair error: {error}")
+                }));
             }
         };
         let mut ft_owner = format_create(
             queue_client.as_ref(),
-            Some(item_handle),
+            cmd_format,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
         let ft = &mut *ft_owner;
-        format_defaults(ft, tc.as_ref(), s.as_ref(), wl.clone(), Some(pane_owner));
+        format_defaults(ft, tc, s.as_ref(), wl, Some(pane_owner));
         let cmd = format_expand_time_cstring(ft, args_string(args, 0 as u_int).unwrap_or(c""));
         drop(ft_owner);
         let oldset = block_signals();
@@ -104,11 +99,10 @@ pub(super) fn pipe_pane(
         match forked {
             Err(error) => {
                 set_signal_mask(&oldset);
-                report_error(item_handle, |out| {
+                Err(format_message_with(|out| {
                     out.write_all(b"fork error: ")?;
                     write!(out, "{}", ErrorText(&error))
-                });
-                TaskOutcome::Error
+                }))
             }
             Ok(None) => {
                 proc_clear_signals(&server_proc(), 1 as ::core::ffi::c_int);
@@ -178,7 +172,7 @@ pub(super) fn pipe_pane(
                         bufferevent_enable(event, EV_READ as ::core::ffi::c_short);
                     });
                 }
-                TaskOutcome::Normal
+                Ok(())
             }
         }
     }

@@ -1,10 +1,10 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::server_fn::{server_redraw_window, server_unzoom_window};
 use tiri_core::window::{LayoutAction, Window as _};
@@ -38,10 +38,13 @@ pub static cmd_resize_pane_entry: cmd_entry = {
         exec: Some(cmd_resize_pane_exec),
     }
 };
-fn cmd_resize_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_resize_pane_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let target = tiri_core::actions::queue::target(&item);
+    let target = inv.target().clone();
     let pane_owner = target.wp.upgrade().expect("live resize target pane");
     if args_has(args, b'Z') != 0 && args_has(args, b'T') == 0 {
         let window_owner = target.w.upgrade().expect("live resize target window");
@@ -51,7 +54,7 @@ fn cmd_resize_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             window_owner.zoom(&pane_owner);
         }
         server_redraw_window(&window_owner);
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     if args_has(args, b'T') == 0 {
         server_unzoom_window(&target.w.upgrade().expect("live resize target window"));
@@ -61,12 +64,13 @@ fn cmd_resize_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         let toggled = window_owner.layout_action(&pane_owner, LayoutAction::ToggleWidth);
         drop(window_owner);
         if let Err(cause) = toggled {
-            cmdq_error(item_handle, |out| out.write_all(cause.to_bytes()));
-            return CmdOutcome::Error;
+            inv.error( |out| out.write_all(cause.to_bytes()));
+            return ExecOutcome::err();
         }
     }
     if args_has(args, b'T') != 0 {
         pane_owner.trim_history();
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

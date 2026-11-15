@@ -1,12 +1,11 @@
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_find, cmd_get_args, cmd_table};
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_STARTSERVER};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::client as cmdq_get_client;
 use tiri_core::arguments::{args_get, args_parse, args_string};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{format_add, format_create, format_defaults, format_expand_cstring};
@@ -45,7 +44,7 @@ fn cmd_list_single_command(
     entry: &cmd_entry,
     ft: &mut format_tree,
     template: &CStr,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
 ) {
     format_add(ft, c"command_list_name", |out| {
         write_cstr(out, &*entry.name)
@@ -58,17 +57,21 @@ fn cmd_list_single_command(
     });
     let line = format_expand_cstring(ft, template);
     if !line.is_empty() {
-        cmdq_print(item_handle, |out| write_cstr(out, &*line));
+        inv.print( |out| write_cstr(out, &*line));
     }
 }
-fn cmd_list_commands(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
-    let queue_client = cmdq_get_client(Some(&*item));
+fn cmd_list_commands<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
+    let queue_client = inv.client();
     let args = cmd_get_args(self_0);
     let template: &CStr = args_get(args, 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
+    let cf = inv.format();
     let mut ft_owner = format_create(
         queue_client.as_ref(),
-        Some(item_handle),
+        Some(&cf),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
@@ -83,19 +86,20 @@ fn cmd_list_commands(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdO
     if let Some(command) = args_string(args, 0 as u_int) {
         match cmd_find(command) {
             Ok(found) => {
-                cmd_list_single_command(found, ft, template, item_handle);
+                cmd_list_single_command(found, ft, template, inv);
             }
             Err(cause) => {
-                cmdq_error(item_handle, |out| write_cstr(out, &*cause));
+                inv.error( |out| write_cstr(out, &*cause));
                 drop(ft_owner);
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
         }
     } else {
         for &entry in cmd_table() {
-            cmd_list_single_command(entry, ft, template, item_handle);
+            cmd_list_single_command(entry, ft, template, inv);
         }
     }
     drop(ft_owner);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

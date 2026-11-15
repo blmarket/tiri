@@ -1,6 +1,6 @@
-use crate::actions::queue::new_state;
-use crate::actions::sources::{capitalize_error, submit};
-use crate::actions::{mouse_at, replace_template};
+use crate::actions::sources::{capitalize_error, compile};
+use crate::actions::{Context, mouse_at, replace_template};
+use crate::reactor::Lane;
 use crate::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::format::bytes::write_cstr;
 use crate::format::{format_create, format_defaults, format_expand_cstring};
@@ -402,7 +402,6 @@ fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
 }
 fn window_switch_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&dyn crate::actions::ContextSource>,
     fs: Option<&Target>,
     args: Option<&args>,
 ) -> bool {
@@ -518,7 +517,6 @@ fn window_switch_run_command(
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut target: Option<CString> = None;
-    let state;
     if data.matches.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
@@ -570,19 +568,27 @@ fn window_switch_run_command(
     );
     drop(data);
     if !command.as_bytes().is_empty() {
-        state = new_state(Some(&fs), None, 0 as ::core::ffi::c_int);
-        if let Err(error) = submit(command.as_c_str(), client_owner, Some(&state)) {
-            if let Some(owner) = client_owner {
-                let mut error = Some(error);
-                capitalize_error(&mut error);
-                status_message_set(
-                    Some(owner),
-                    -(1 as ::core::ffi::c_int),
-                    1 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                    |out| write_cstr(out, error.as_deref()),
-                );
+        match compile(command.as_c_str()) {
+            Ok(program) => {
+                let client = client_owner.map_or_else(std::rc::Weak::new, Rc::downgrade);
+                let ctx = Context::new(client, Some(&fs), None, 0 as ::core::ffi::c_int);
+                Lane::push(client_owner, async move {
+                    let _ = crate::actions::run(program, ctx).await;
+                });
+            }
+            Err(error) => {
+                if let Some(owner) = client_owner {
+                    let mut error = Some(error);
+                    capitalize_error(&mut error);
+                    status_message_set(
+                        Some(owner),
+                        -(1 as ::core::ffi::c_int),
+                        1 as ::core::ffi::c_int,
+                        0 as ::core::ffi::c_int,
+                        0 as ::core::ffi::c_int,
+                        |out| write_cstr(out, error.as_deref()),
+                    );
+                }
             }
         }
     }

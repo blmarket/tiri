@@ -1,11 +1,11 @@
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::CStr;
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_get, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::prompt::{prompt_type, prompt_type_string};
@@ -63,7 +63,11 @@ pub static cmd_clear_prompt_history_entry: cmd_entry = {
         exec: Some(cmd_show_prompt_history_exec),
     }
 };
-fn cmd_show_prompt_history_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_show_prompt_history_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
     let typestr: Option<&CStr> = args_get(args, 'T' as i32 as u_char);
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
@@ -75,11 +79,11 @@ fn cmd_show_prompt_history_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_ite
             if type_0 as ::core::ffi::c_uint
                 == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"invalid type: ")?;
                     write_cstr(out, typestr)
                 });
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
             prompt_history_clear(type_0);
         } else {
@@ -89,14 +93,14 @@ fn cmd_show_prompt_history_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_ite
                 t = t.wrapping_add(1);
             }
         }
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     match typestr {
         None => {
             t = 0 as u_int;
             while t < PROMPT_NTYPES as u_int {
                 let type_name = prompt_type_string(t as prompt_type);
-                cmdq_print(item_handle, |out| {
+                inv.print( |out| {
                     out.write_all(b"History for ")?;
                     out.write_all(type_name.to_bytes())?;
                     out.write_all(b":\n")
@@ -105,13 +109,13 @@ fn cmd_show_prompt_history_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_ite
                 while h < prompt_history_size(t as prompt_type) {
                     let value =
                         prompt_history_get(t as prompt_type, h).expect("existing history entry");
-                    cmdq_print(item_handle, |out| {
+                    inv.print( |out| {
                         write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
                         out.write_all(value.to_bytes())
                     });
                     h = h.wrapping_add(1);
                 }
-                cmdq_print(item_handle, |out| write_cstr(out, c""));
+                inv.print( |out| write_cstr(out, c""));
                 t = t.wrapping_add(1);
             }
         }
@@ -120,13 +124,13 @@ fn cmd_show_prompt_history_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_ite
             if type_0 as ::core::ffi::c_uint
                 == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     out.write_all(b"invalid type: ")?;
                     write_cstr(out, typestr)
                 });
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
-            cmdq_print(item_handle, |out| {
+            inv.print( |out| {
                 out.write_all(b"History for ")?;
                 out.write_all(prompt_type_string(type_0).to_bytes())?;
                 out.write_all(b":\n")
@@ -134,14 +138,15 @@ fn cmd_show_prompt_history_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_ite
             h = 0 as u_int;
             while h < prompt_history_size(type_0) {
                 let value = prompt_history_get(type_0, h).expect("existing history entry");
-                cmdq_print(item_handle, |out| {
+                inv.print( |out| {
                     write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
                     out.write_all(value.to_bytes())
                 });
                 h = h.wrapping_add(1);
             }
-            cmdq_print(item_handle, |out| write_cstr(out, c""));
+            inv.print( |out| write_cstr(out, c""));
         }
     }
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

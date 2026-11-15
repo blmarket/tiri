@@ -2,12 +2,12 @@
 use crate::shared::display::visible_range;
 use crate::shared::key::key_code_mouse_location;
 use super::{
-    BufferEvent, CString, Completion, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_PASTE_END,
+    BufferEvent, CString, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_PASTE_END,
     KEYC_PASTE_START, KEYC_TYPE_FUNCTION, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, MODE_FOCUSON,
     PANE_CHANGED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_LINES_NONE,
     PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT,
-    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PaneScreenSource, Rc, RefCell,
-    Target, Timer, Window, args, colour_palette_get, events_fire_pane, grid_cell,
+    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PaneScreenSource, PaneWaiter, Rc,
+    RefCell, Target, Timer, Window, args, colour_palette_get, events_fire_pane, grid_cell,
     grid_cells_look_equal, key_code, layout_geometry, lifecycle, log_debug, mouse_event, options,
     options_get_number, pane_lines, pid_t, process, prompt_free_cb, prompt_key_result, prompt_type,
     screen, screen_init, sort, spawning, status_prompt_input_cb, style_range,
@@ -24,7 +24,6 @@ use super::{
     window_pane_start_input, window_pane_status_get_range, window_pane_tree,
     window_pane_update_prompt, window_pane_upgrade, winlink,
 };
-use crate::actions::TaskOutcome;
 use crate::grid::{grid_get_cell, grid_set_cell};
 use crate::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::options::OptionsScope;
@@ -161,7 +160,9 @@ pub trait WindowPane {
     fn capture(
         &self,
         arguments: &args,
-        item: &dyn crate::actions::ContextSource,
+        cmd_format: Option<&crate::shared::format::CommandFormat>,
+        tc: Option<&ClientRef>,
+        target: &Target,
     ) -> Result<Vec<u8>, CString>;
     /// Clear complete history after retiring modes; optionally reset link identities.
     fn clear_history(&self, reset_links: bool);
@@ -219,13 +220,16 @@ pub trait WindowPane {
     fn set_title(&self, title: &CStr) -> bool;
     /// Trim history below the base cursor when no mode owns the displayed screen.
     fn trim_history(&self);
-    /// Finish `waiter` with the exit status once this pane closes.
-    fn wait_for(&self, event: crate::shared::pane::PaneWaitFor, waiter: Completion);
+    fn wait_for(
+        &self,
+        event: crate::shared::pane::PaneWaitFor,
+        client: crate::shared::client::ClientWeak,
+    ) -> impl std::future::Future<Output = ()> + 'static;
     /// Start stdin delivery to an empty pane. The command suspends on the
     /// returned continuation, or does not wait without one.
     fn start_input(
         &self,
-        item: &dyn crate::actions::ContextSource,
+        client: Option<&ClientRef>,
     ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString>;
     /// Translate a mouse report after copying pane geometry; no pane borrow
     /// survives the coordinate calculation or the caller's following work.
@@ -338,7 +342,6 @@ pub trait WindowPane {
         &self,
         source: Option<&Rc<RefCell<window_pane>>>,
         mode: &'static window_mode,
-        item: Option<&dyn crate::actions::ContextSource>,
         find: Option<&Target>,
         arguments: Option<&args>,
     ) -> i32;
@@ -374,8 +377,10 @@ pub trait WindowPane {
     fn pipe(
         &self,
         command: &crate::arguments::args,
-        item: &dyn crate::actions::ContextSource,
-    ) -> TaskOutcome;
+        cmd_format: Option<&crate::shared::format::CommandFormat>,
+        tc: Option<&ClientRef>,
+        target: &Target,
+    ) -> Result<(), CString>;
     fn process_id(&self) -> pid_t;
     /// Record an exit before finishing waits/editors; false means a different process.
     fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool;
@@ -824,9 +829,11 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn capture(
         &self,
         arguments: &args,
-        item: &dyn crate::actions::ContextSource,
+        cmd_format: Option<&crate::shared::format::CommandFormat>,
+        tc: Option<&ClientRef>,
+        target: &Target,
     ) -> Result<Vec<u8>, CString> {
-        super::capture::capture(self, arguments, item)
+        super::capture::capture(self, arguments, cmd_format, tc, target)
     }
     fn clear_history(&self, reset_links: bool) {
         super::capture::clear_history(self, reset_links);
@@ -880,15 +887,21 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         pane.base.cy = pane.base.cy.wrapping_add(adjust);
         pane.flags |= PANE_REDRAW;
     }
-    fn wait_for(&self, event: crate::shared::pane::PaneWaitFor, waiter: Completion) {
+    fn wait_for(
+        &self,
+        event: crate::shared::pane::PaneWaitFor,
+        client: crate::shared::client::ClientWeak,
+    ) -> impl std::future::Future<Output = ()> + 'static {
+        let (waiter, wait) = PaneWaiter::pair(client);
         let old = self.borrow_mut().wait_close.replace((event, waiter));
         drop(old);
+        wait
     }
     fn start_input(
         &self,
-        item: &dyn crate::actions::ContextSource,
+        client: Option<&ClientRef>,
     ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString> {
-        window_pane_start_input(self, item)
+        window_pane_start_input(self, client)
     }
     fn apply_layout(
         &self,
@@ -1200,11 +1213,10 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         &self,
         source: Option<&Rc<RefCell<window_pane>>>,
         mode: &'static window_mode,
-        item: Option<&dyn crate::actions::ContextSource>,
         find: Option<&Target>,
         arguments: Option<&args>,
     ) -> i32 {
-        window_pane_set_mode(self, source, mode, item, find, arguments)
+        window_pane_set_mode(self, source, mode, find, arguments)
     }
 
     fn reset_mode(&self) {
@@ -1358,9 +1370,11 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn pipe(
         &self,
         command: &crate::arguments::args,
-        item: &dyn crate::actions::ContextSource,
-    ) -> TaskOutcome {
-        process::pipe_pane(self, command, item)
+        cmd_format: Option<&crate::shared::format::CommandFormat>,
+        tc: Option<&ClientRef>,
+        target: &Target,
+    ) -> Result<(), CString> {
+        process::pipe_pane(self, command, cmd_format, tc, target)
     }
     fn process_id(&self) -> pid_t {
         self.borrow().pid

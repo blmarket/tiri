@@ -1,14 +1,14 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::find::TargetLookup as _;
-use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::options::options_get_number;
 use tiri_core::resize::recalculate_sizes;
 use tiri_core::server_fn::{server_link_window, server_status_session, server_unlink_window};
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW};
 use crate::shared::command::{CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -68,10 +68,13 @@ pub static cmd_link_window_entry: cmd_entry = {
         exec: Some(cmd_move_window_exec),
     }
 };
-fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_move_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let source = tiri_core::actions::queue::source(&item);
+    let source = inv.source().clone();
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -90,10 +93,10 @@ fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
     let mut sflag: ::core::ffi::c_int = 0;
     let mut before: ::core::ffi::c_int = 0;
     if args_has(args, 'r' as i32 as u_char) != 0 {
-        if target.find_target(Some(item_handle), tflag, CMD_FIND_SESSION, CMD_FIND_QUIET)
+        if target.find_target(Some(&*inv), tflag, CMD_FIND_SESSION, CMD_FIND_QUIET)
             != 0 as ::core::ffi::c_int
         {
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         target
             .session_handle()
@@ -101,16 +104,15 @@ fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             .renumber_windows();
         recalculate_sizes();
         server_status_session(&target.session_handle().expect("live session"));
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
-    if target.find_target(
-        Some(item_handle),
+    if target.find_target(Some(&*inv),
         tflag,
         CMD_FIND_WINDOW,
         CMD_FIND_WINDOW_INDEX,
     ) != 0 as ::core::ffi::c_int
     {
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
     dst = target.session_handle();
     idx = target.idx;
@@ -133,7 +135,7 @@ fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
             );
         }
         if idx == -(1 as ::core::ffi::c_int) {
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     }
     if let Err(cause) = server_link_window(
@@ -144,8 +146,8 @@ fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         kflag,
         (dflag == 0) as ::core::ffi::c_int,
     ) {
-        cmdq_error(item_handle, |out| write_cstr(out, &*cause));
-        return CmdOutcome::Error;
+        inv.error( |out| write_cstr(out, &*cause));
+        return ExecOutcome::err();
     }
     if std::ptr::eq(cmd_get_entry(self_0), &cmd_move_window_entry) {
         server_unlink_window(src.as_ref().expect("live session"), wl.clone());
@@ -159,5 +161,6 @@ fn cmd_move_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> C
         (src.as_ref().expect("live session")).renumber_windows();
     }
     recalculate_sizes();
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

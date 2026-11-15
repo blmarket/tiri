@@ -1,7 +1,7 @@
 use crate::hooks::hooks_build_events;
 use crate::wait::wait_for_flush as flush;
 use crate::bindings::key_bindings_init as initialize_bindings;
-use crate::actions::queue::drive;
+use crate::reactor::Lane;
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::control_notify::control_build_events;
@@ -281,7 +281,7 @@ pub(crate) fn server_start(
     server_destroy_sessions(false);
     crate::plugin::shutdown();
     crate::window_pane::process_status::shutdown();
-    crate::actions::queue::cancel_background();
+    crate::reactor::cancel_background_timers();
     job_kill_all();
     prompt_save_history();
     drop(process_owner);
@@ -295,12 +295,12 @@ fn server_loop() -> ::core::ffi::c_int {
         std::time::SystemTime::now(),
     ));
     loop {
-        items = drive(None);
+        items = Lane::drive(None);
         let mut registry_c_owner = ClientRegistry::first();
         c = registry_c_owner.clone();
         while !c.is_none() {
             if c.as_ref().expect("live client").flags() & CLIENT_IDENTIFIED as uint64_t != 0 {
-                items = items.wrapping_add(drive(registry_c_owner.as_ref()));
+                items = items.wrapping_add(Lane::drive(registry_c_owner.as_ref()));
             }
             registry_c_owner =
                 ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));

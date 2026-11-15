@@ -5,7 +5,6 @@ pub use tiri_core::actions::{
     PARSE_ONLY as CMD_PARSE_PARSEONLY, PARSE_QUIET as CMD_PARSE_QUIET,
     PARSE_VERBOSE as CMD_PARSE_VERBOSE, REPEAT_STATE as CMDQ_STATE_REPEAT,
 };
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 
 use tiri_core::arguments::{args, args_parse};
 use tiri_core::shared::abi::u_int;
@@ -52,7 +51,7 @@ mod tests {
     }
 }
 
-use crate::cmd::queue::cmdq_item;
+use crate::cmd::invocation::{ExecOutcome, Invocation};
 
 use tiri_core::shared::target::Target as cmd_find_state;
 #[repr(C)]
@@ -93,13 +92,10 @@ pub struct cmd_entry {
     pub exec: Option<cmd_exec_fn>,
 }
 
-/// Command entry point; the dispatching queue item retains the command-list
-/// owner for the duration of the call.
-pub type cmd_exec_fn = fn(&cmd, &std::rc::Rc<cmdq_item>) -> CmdOutcome;
-
-/// Queue items and callers share ownership through ordinary Rc handles.
-
-pub type cmdq_cb = Option<Box<dyn FnOnce(&std::rc::Rc<cmdq_item>) -> CmdOutcome>>;
+pub type cmd_exec_fn = for<'a, 'ctx> fn(
+    &'a cmd,
+    &'a mut Invocation<'ctx>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ExecOutcome> + 'a>>;
 
 #[derive(Clone, Default)]
 #[repr(C)]
@@ -107,14 +103,7 @@ pub struct cmd_parse_input {
     pub flags: ::core::ffi::c_int,
     pub file: Option<::std::ffi::CString>,
     pub line: u_int,
-    pub item: std::rc::Weak<cmdq_item>,
-    /// Parser context observes the client; prepared commands own it separately.
+    pub format: Option<tiri_core::shared::format::CommandFormat>,
     pub c: ClientWeak,
     pub fs: cmd_find_state,
-}
-
-impl cmd_parse_input {
-    pub fn set_item(&mut self, item: Option<&std::rc::Rc<cmdq_item>>) {
-        self.item = item.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    }
 }

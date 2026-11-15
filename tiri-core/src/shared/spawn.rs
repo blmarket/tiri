@@ -71,10 +71,10 @@ pub type spawn_finish_edit_cb = Option<Box<dyn FnOnce(&spawn_editor_state, Optio
 #[repr(C)]
 pub struct spawn_context {
     pub geometry: Option<crate::shared::layout::layout_geometry>,
-    pub item: crate::actions::ContextWeak,
+    pub format: Option<crate::shared::format::CommandFormat>,
+    pub target_session: SessionWeak,
     pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
-    /// Observe the target client; each spawn operation retains an upgrade while using it.
     pub tc: ClientWeak,
     pub wp0: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub name: Option<std::ffi::CString>,

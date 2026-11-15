@@ -14,15 +14,12 @@ mod format;
 mod model;
 use crate::wait::wait_for_client_lost as client_lost;
 use crate::cfg::{
-    cfg_client as configuration_client, cfg_finished as configuration_finished,
+    cfg_add_cause, cfg_client as configuration_client, cfg_finished as configuration_finished,
     cfg_forget_client as forget_configuration_client, start_cfg as start_configuration,
 };
 use crate::bindings::key_bindings_dispatch as dispatch_binding;
 use crate::actions::log_argv;
-use crate::actions::queue::{
-    callback, client, defer as defer_task, drive, enqueue, error_task, new_queue, program_task,
-    report_error,
-};
+use crate::reactor::Lane;
 use crate::actions::sources::compile_argv;
 use crate::bindings::{key_bindings_get, key_bindings_get_table};
 use crate::compat::imsg::imsg_get_fd;
@@ -38,8 +35,10 @@ use crate::events_payload::{
     event_payload_set_session, event_payload_set_target, event_payload_set_uint,
     event_payload_set_window,
 };
-use crate::file::{file_print, file_read_data, file_read_done, file_write_done, file_write_ready};
-use crate::format::bytes::write_cstr;
+use crate::file::{
+    file_error, file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
+};
+use crate::format::bytes::{format_message_with, write_cstr};
 use crate::format::{
     format_create, format_defaults, format_expand_cstring, format_expand_time_cstring,
     format_lost_client,
@@ -57,14 +56,16 @@ use crate::reactor::{
 use crate::resize::{recalculate_size, recalculate_sizes};
 use crate::screen::screen_mode_display;
 use crate::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
-use crate::server::{current_time, server_add_accept, server_proc, server_update_socket};
+use crate::server::{
+    current_time, server_add_accept, server_add_message, server_proc, server_update_socket,
+};
 use crate::server_fn::{server_check_unattached, server_redraw_window_borders, server_status_window};
 pub use api::Client;
 pub use model::client;
 
 use crate::actions::unpack_argv;
 use crate::actions::Target;
-use crate::actions::{Program, TaskOutcome};
+use crate::actions::Program;
 use crate::compat::imsg::imsg;
 use crate::compat::imsg::{
     MSG_COMMAND, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID,
@@ -135,8 +136,8 @@ use crate::shared::window::WINDOW_SIZE_LATEST;
 use crate::shared::window::{window_mode_entry, winlink};
 use crate::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
-    status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
-    status_timer_start,
+    status_message_clear, status_message_set, status_prompt_clear, status_prompt_cursor,
+    status_prompt_key, status_timer_start,
 };
 use crate::style::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
@@ -399,7 +400,6 @@ fn server_client_create(fd: OwnedFd) -> ClientRef {
         c.environ = Some(environ_create());
         c.fd = None;
         c.out_fd = None;
-        c.queue = new_queue();
         tty_set_size(&mut c.tty, 80, 24, 0, 0);
         i = 0 as u_int;
         while i < COLOUR_THEME_COUNT as u_int {
@@ -673,7 +673,7 @@ fn server_client_lost(client_owner: &ClientRef) {
         log_pointer(Rc::as_ptr(client_owner))
     ));
     client_lost(client_owner);
-    drive(Some(client_owner));
+    Lane::drive(Some(client_owner));
     if client_owner.borrow().flags & CLIENT_ATTACHED as uint64_t != 0 {
         server_client_attached_lost(client_owner);
         events_fire_client(c"client-detached", std::rc::Rc::clone(client_owner));
@@ -1558,10 +1558,9 @@ fn server_client_handle_dead_key(pane: Option<&Rc<RefCell<window_pane>>>, key: k
     pane.is_some_and(|pane| pane.close_after_key(key)) as i32
 }
 fn server_client_key_callback(
-    item_handle: &dyn crate::actions::ContextSource,
     mut owned: QueuedKeyEvent,
-) -> TaskOutcome {
-    let item = item_handle.borrow();
+    exec_client: ClientWeak,
+) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>> {
     let mut current_block: u64;
     let event: &mut key_event = &mut owned.0;
     let mut key: key_code = event.key;
@@ -1588,10 +1587,8 @@ fn server_client_key_callback(
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
     let mut dispatched = None;
-    let c_owner = event.resolve_client(|| client(Some(&*item)));
-    let Some(c_owner) = c_owner else {
-        return TaskOutcome::Normal;
-    };
+    let c_owner = event.resolve_client(|| exec_client.upgrade());
+    let c_owner = c_owner?;
     s = c_owner.borrow().session_handle();
     if let Some(session) = s
         .as_ref()
@@ -1903,6 +1900,7 @@ fn server_client_key_callback(
                                         dispatched = Some(dispatch_binding(
                                             bd,
                                             Some(&c_owner),
+                                            exec_client.clone(),
                                             Some(&*event),
                                             &fs,
                                         ));
@@ -1983,11 +1981,7 @@ fn server_client_key_callback(
     if !s.is_none() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
         server_client_update_latest(&c_owner);
     }
-    if let Some(next) = dispatched {
-        drop(item);
-        return defer_task(item_handle, next);
-    }
-    TaskOutcome::Normal
+    dispatched
 }
 
 struct QueuedKeyEvent(Box<key_event>, Option<ClientRef>);
@@ -2039,8 +2033,9 @@ fn server_client_handle_menu_key(owner: &ClientRef, event: &key_event) -> ::core
 fn server_client_prepare_key(
     owner: &ClientRef,
     mut owned: Box<key_event>,
+    exec_client: ClientWeak,
     sent: bool,
-) -> Option<crate::actions::ContextRef> {
+) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>> {
     let event: &mut key_event = &mut owned;
     let mut s: Option<SessionRef> = owner.borrow().session_handle();
     if s.is_none() || owner.borrow().flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
@@ -2150,25 +2145,28 @@ fn server_client_prepare_key(
         Some(owner.clone())
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
-    Some(callback(
-        c"server_client_key_callback",
-        Some(Box::new(move |_item| {
-            server_client_key_callback(_item, queued_event)
-        })),
-    ))
+    let target = crate::reactor::LaneTarget::for_client(exec_client.upgrade().as_ref());
+    Some(Box::pin(async move {
+        let next = server_client_key_callback(queued_event, exec_client);
+        target.step();
+        if let Some(next) = next {
+            next.await;
+        }
+    }))
 }
 fn server_client_handle_key(owner: &ClientRef, event: Box<key_event>) -> ::core::ffi::c_int {
-    let Some(item_allocation) = server_client_prepare_key(owner, event, false) else {
+    let Some(fut) = server_client_prepare_key(owner, event, Rc::downgrade(owner), false) else {
         return 0;
     };
-    enqueue(Some(owner), item_allocation);
+    Lane::push(Some(owner), fut);
     1
 }
 fn server_client_prepare_sent_key(
     owner: &ClientRef,
     event: Box<key_event>,
-) -> Option<crate::actions::ContextRef> {
-    server_client_prepare_key(owner, event, true)
+    exec_client: ClientWeak,
+) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>> {
+    server_client_prepare_key(owner, event, exec_client, true)
 }
 fn server_client_loop() {
     let mut window_cursor = windows::first();
@@ -3082,29 +3080,27 @@ fn server_client_dispatch(owner: &ClientRef, message: crate::shared::process::Pe
         }
     }
 }
-fn server_client_read_only(item_handle: &dyn crate::actions::ContextSource) -> TaskOutcome {
-    report_error(item_handle, |out| out.write_all(b"client is read-only"));
-    TaskOutcome::Error
+fn server_client_read_only(client: ClientWeak) {
+    ClientRef::report_error(client.upgrade().as_ref(), None, |out| {
+        out.write_all(b"client is read-only")
+    });
 }
-fn server_client_default_command(item_handle: &dyn crate::actions::ContextSource) -> TaskOutcome {
-    let item = item_handle.borrow();
-    let c_owner = client(Some(&*item)).expect("live client");
-    let new_item_allocation;
+async fn server_client_default_command(client: ClientWeak) {
+    let c_owner = client.upgrade().expect("live client");
     let cmdlist = OptionsScope::GlobalServer.with_local(|oo| options_get_command(oo));
     if c_owner.borrow().flags & CLIENT_READONLY as uint64_t != 0 && !cmdlist.read_only() {
-        new_item_allocation = callback(
-            c"server_client_read_only",
-            Some(Box::new(|item| server_client_read_only(item))),
-        );
+        server_client_read_only(client);
     } else {
-        new_item_allocation = program_task(&cmdlist, None);
+        drop(c_owner);
+        let _ = crate::actions::run(
+            cmdlist,
+            crate::actions::Context::new(client, None, None, 0),
+        )
+        .await;
     }
-    drop(item);
-    defer_task(item_handle, new_item_allocation)
 }
-fn server_client_command_done(item_handle: &dyn crate::actions::ContextSource) -> TaskOutcome {
-    let item = item_handle.borrow();
-    let c_owner = client(Some(&*item)).expect("live client");
+fn server_client_command_done(client: ClientWeak) {
+    let c_owner = client.upgrade().expect("live client");
     let flags = c_owner.borrow().flags;
     if !flags & CLIENT_ATTACHED as uint64_t != 0 {
         c_owner.borrow_mut().flags |= CLIENT_EXIT as uint64_t;
@@ -3117,16 +3113,13 @@ fn server_client_command_done(item_handle: &dyn crate::actions::ContextSource) -
             tty_send_requests(terminal)
         };
     }
-    TaskOutcome::Normal
 }
 fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core::ffi::c_int {
-    let mut current_block: u64;
     let mut data: msg_command = msg_command { argc: 0 };
-    let mut len: size_t = 0;
-    let mut argv = Vec::new();
-    let mut argc: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut cause: Option<CString> = None;
-    let mut new_item_allocation = None;
+    let len: size_t;
+    let argv;
+    let argc: ::core::ffi::c_int;
+    let cause: Option<CString>;
     if owner.borrow().flags & CLIENT_EXIT as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
@@ -3151,59 +3144,49 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
         argv = decoded;
         argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
         if argc == 0 as ::core::ffi::c_int {
-            new_item_allocation = Some(callback(
-                c"server_client_default_command",
-                Some(Box::new(|item| server_client_default_command(item))),
-            ));
-            current_block = 13472856163611868459;
-        } else {
-            log_argv(&argv, c"cmd_unpack_argv");
-            let pr = compile_argv(&argv);
-            match pr {
-                Err(error) => {
-                    cause = Some(error);
-                    current_block = 12680788052841528405;
-                }
-                Ok(commands) => {
-                    if owner.borrow().flags & CLIENT_READONLY as uint64_t != 0
-                        && !commands.read_only()
-                    {
-                        new_item_allocation = Some(callback(
-                            c"server_client_read_only",
-                            Some(Box::new(|item| server_client_read_only(item))),
-                        ));
-                    } else {
-                        new_item_allocation = Some(program_task(&commands, None));
-                    }
-                    drop(commands);
-                    current_block = 13472856163611868459;
-                }
-            }
+            let weak = Rc::downgrade(owner);
+            Lane::push(Some(owner), server_client_default_command(weak));
+            let weak = Rc::downgrade(owner);
+            Lane::push(Some(owner), async move {
+                server_client_command_done(weak);
+            });
+            return 0 as ::core::ffi::c_int;
         }
-        match current_block {
-            12680788052841528405 => {}
-            _ => {
-                enqueue(
-                    Some(owner),
-                    new_item_allocation.take().expect("parsed command item"),
-                );
-                enqueue(
-                    Some(owner),
-                    callback(
-                        c"server_client_command_done",
-                        Some(Box::new(|item| server_client_command_done(item))),
-                    ),
-                );
+        log_argv(&argv, c"cmd_unpack_argv");
+        match compile_argv(&argv) {
+            Err(error) => {
+                cause = Some(error);
+            }
+            Ok(commands) => {
+                if owner.borrow().flags & CLIENT_READONLY as uint64_t != 0 && !commands.read_only()
+                {
+                    let weak = Rc::downgrade(owner);
+                    Lane::push(Some(owner), async move {
+                        server_client_read_only(weak);
+                    });
+                } else {
+                    let ctx = crate::actions::Context::new(Rc::downgrade(owner), None, None, 0);
+                    Lane::push(Some(owner), async move {
+                        let _ = crate::actions::run(commands, ctx).await;
+                    });
+                }
+                let weak = Rc::downgrade(owner);
+                Lane::push(Some(owner), async move {
+                    server_client_command_done(weak);
+                });
                 return 0 as ::core::ffi::c_int;
             }
         }
     } else {
         cause = Some(CString::new("command too long").unwrap());
     }
-    enqueue(
-        Some(owner),
-        error_task(cause.as_deref().expect("command error")),
-    );
+    let error = cause.expect("command error");
+    let weak = Rc::downgrade(owner);
+    Lane::push(Some(owner), async move {
+        ClientRef::report_error(weak.upgrade().as_ref(), None, |out| {
+            write_cstr(out, error.as_c_str())
+        });
+    });
     owner.borrow_mut().flags |= CLIENT_EXIT as uint64_t;
     0 as ::core::ffi::c_int
 }
@@ -3639,7 +3622,7 @@ fn server_client_print(
             // across these calls. Entering view mode first gives window_copy_add
             // the copy-mode data it requires.
             if !pane_owner.is_mode(&window_view_mode) {
-                pane_owner.set_mode(None, &window_view_mode, None, None, None);
+                pane_owner.set_mode(None, &window_view_mode, None, None);
             }
             if parse != 0 {
                 while let Some(line) = evbuffer_readln(evb) {
@@ -3688,6 +3671,80 @@ fn server_client_print(
         }
     }
 }
+fn server_client_report_error(
+    client_owner: Option<&ClientRef>,
+    source: Option<(&CStr, u32)>,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) {
+    let mut msg = format_message_with(write);
+    log_debug(format_args!(
+        "{}: {}",
+        "cmdq_error",
+        crate::log::log_bytes(msg.as_bytes())
+    ));
+    match client_owner {
+        None => {
+            if !configuration_finished() {
+                if let Some((file, line)) = source {
+                    cfg_add_cause(|out| {
+                        write_cstr(out, file)?;
+                        write!(out, ":{}: ", line)?;
+                        write_cstr(out, &*msg)
+                    });
+                } else {
+                    cfg_add_cause(|out| write_cstr(out, &*msg));
+                }
+            } else if let Some((file, line)) = source {
+                server_add_message(|out| {
+                    out.write_all(b"message: ")?;
+                    write_cstr(out, file)?;
+                    write!(out, ":{}: ", line)?;
+                    write_cstr(out, &*msg)
+                });
+            } else {
+                server_add_message(|out| {
+                    out.write_all(b"message: ")?;
+                    write_cstr(out, &*msg)
+                });
+            }
+        }
+        Some(client)
+            if client.attached_session().upgrade().is_none()
+                || client.flags() & CLIENT_CONTROL as uint64_t != 0 =>
+        {
+            server_add_message(|out| {
+                write_cstr(out, (client.name()).as_deref())?;
+                out.write_all(b" message: ")?;
+                write_cstr(out, &*msg)
+            });
+            if !client.flags() & CLIENT_UTF8 as uint64_t != 0 {
+                msg = utf8_sanitize_cstring(msg.as_c_str());
+            }
+            if client.flags() & CLIENT_CONTROL as uint64_t != 0 {
+                control_write(client, |out| write_cstr(out, &*msg));
+            } else {
+                file_error(client_owner, |out| {
+                    write_cstr(out, &*msg)?;
+                    out.write_all(b"\n")
+                });
+            }
+            client.set_return_value(1);
+        }
+        Some(_) => {
+            let mut bytes = msg.into_bytes_with_nul();
+            bytes[0] = bytes[0].to_ascii_uppercase();
+            msg = CString::from_vec_with_nul(bytes).expect("message has one terminator");
+            status_message_set(
+                client_owner,
+                -(1 as ::core::ffi::c_int),
+                1 as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+                |out| write_cstr(out, &*msg),
+            );
+        }
+    }
+}
 fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_theme) {
     let mut old: client_theme = c_owner.borrow().theme;
     if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -3731,7 +3788,7 @@ mod key_event_owner_tests {
 impl Drop for client {
     fn drop(&mut self) {
         log_debug(format_args!("free client {}", log_pointer(self)));
-        drop(self.queue.take());
+        self.lane.clear();
         assert!(
             crate::file::client_files_is_empty(&self.files),
             "client file index still contains live records at client teardown"
@@ -3739,15 +3796,13 @@ impl Drop for client {
     }
 }
 
-/// Clients for queue tests elsewhere, built without the server.
 #[cfg(any(test, feature = "test-support"))]
 pub mod queue_test_clients {
-    use super::{ClientRef, SessionRef, client, new_queue};
+    use super::{ClientRef, SessionRef, client};
 
-    /// A client owning only a command queue.
     pub fn with_queue() -> ClientRef {
         let owner = client::new();
-        owner.borrow_mut().queue = new_queue();
+        owner.borrow_mut().environ = Some(super::environ_create());
         owner
     }
 
@@ -3764,11 +3819,11 @@ pub mod queue_test_clients {
 #[cfg(feature = "test-support")]
 pub mod lost_queue_tests {
     use super::{
-        CLIENT_DEAD, ClientRef, Rc, callback, client, drive, enqueue, queue_test_clients,
-        server_client_retire, uint64_t,
+        CLIENT_DEAD, ClientRef, Lane, Rc, client, queue_test_clients, server_client_retire,
+        uint64_t,
     };
-    use crate::actions::TaskOutcome;
     use std::cell::Cell;
+    use std::rc::Weak;
 
     struct SetOnDrop(Rc<Cell<bool>>);
     impl Drop for SetOnDrop {
@@ -3777,21 +3832,13 @@ pub mod lost_queue_tests {
         }
     }
 
-    /// Queue a suffix item that records whether it ran or was released.
     fn append_suffix(owner: &ClientRef, ran: &Rc<Cell<bool>>, released: &Rc<Cell<bool>>) {
         let ran = ran.clone();
         let capture = SetOnDrop(released.clone());
-        enqueue(
-            Some(owner),
-            callback(
-                c"suffix",
-                Some(Box::new(move |_| {
-                    let _capture = &capture;
-                    ran.set(true);
-                    TaskOutcome::Normal
-                })),
-            ),
-        );
+        Lane::push(Some(owner), async move {
+            let _capture = capture;
+            ran.set(true);
+        });
     }
 
     pub fn dropping_a_lost_client_drops_its_suspended_future() {
@@ -3799,24 +3846,19 @@ pub mod lost_queue_tests {
         let (tx, rx) = tiri_rt::oneshot::channel::<()>();
         let (body_ran, future_released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
         let (body, guard) = (body_ran.clone(), SetOnDrop(future_released.clone()));
-        let head = enqueue(
-            Some(&owner),
-            callback(
-                c"suspended head",
-                Some(Box::new(move |_| {
-                    TaskOutcome::Suspend(Box::pin(async move {
-                        let _guard = guard;
-                        let _ = rx.await;
-                        body.set(true);
-                    }))
-                })),
-            ),
-        );
+        let head_guard = Rc::new(());
+        let head = Rc::downgrade(&head_guard);
+        Lane::push(Some(&owner), async move {
+            let _head = head_guard;
+            let _guard = guard;
+            let _ = rx.await;
+            body.set(true);
+        });
         let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
         append_suffix(&owner, &ran, &released);
-        assert_eq!(drive(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
-        assert_eq!(drive(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
 
         let client = Rc::downgrade(&owner);
         drop(owner);
@@ -3830,26 +3872,19 @@ pub mod lost_queue_tests {
         assert!(!ran.get());
     }
 
-    /// Queue a head that suspends on `future` built from a strong client
-    /// reference, then release the test's own reference.
     fn suspend_holding_client<F: std::future::Future<Output = ()> + 'static>(
         future: impl FnOnce(ClientRef) -> F + 'static,
-    ) -> (
-        std::rc::Weak<std::cell::RefCell<client>>,
-        crate::actions::ContextWeak,
-    ) {
+    ) -> (std::rc::Weak<std::cell::RefCell<client>>, Weak<()>) {
         let owner = queue_test_clients::with_queue();
         let held = owner.clone();
-        let head = enqueue(
-            Some(&owner),
-            callback(
-                c"client-holding head",
-                Some(Box::new(move |_| {
-                    TaskOutcome::Suspend(Box::pin(future(held)))
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(&owner)), 0);
+        let head_guard = Rc::new(());
+        let head = Rc::downgrade(&head_guard);
+        let inner = future(held);
+        Lane::push(Some(&owner), async move {
+            let _head = head_guard;
+            inner.await;
+        });
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         let client = Rc::downgrade(&owner);
         drop(owner);
         assert!(client.upgrade().is_some(), "the future holds the client");
@@ -3898,29 +3933,24 @@ pub mod lost_queue_tests {
             let mut capture = Some(SetOnDrop(cancelled.clone()));
             let file = Rc::new(Cell::new(std::rc::Weak::new()));
             let observed_file = file.clone();
-            let head = enqueue(
-                Some(&owner),
-                callback(
-                    c"file-backed head",
+            let head_guard = Rc::new(());
+            let head = Rc::downgrade(&head_guard);
+            Lane::push(Some(&owner), async move {
+                let _head = head_guard;
+                let wait = crate::file::file_read_wait(None, c"/dev/null", |file| {
+                    observed_file.set(file);
+                    let capture = capture.take();
                     Some(Box::new(move |_| {
-                        let wait = crate::file::file_read_wait(None, c"/dev/null", |file| {
-                            observed_file.set(file);
-                            let capture = capture.take();
-                            Some(Box::new(move |_| {
-                                let _capture = &capture;
-                                panic!("a dropped wait must not deliver progress")
-                            }))
-                        });
-                        TaskOutcome::Suspend(Box::pin(async move {
-                            let _ = wait.await;
-                            panic!("a dropped wait must not complete")
-                        }))
-                    })),
-                ),
-            );
+                        let _capture = &capture;
+                        panic!("a dropped wait must not deliver progress")
+                    }))
+                });
+                let _ = wait.await;
+                panic!("a dropped wait must not complete")
+            });
             let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
             append_suffix(&owner, &ran, &released);
-            assert_eq!(drive(Some(&owner)), 0, "local completion must be deferred");
+            assert_eq!(Lane::drive(Some(&owner)), 0, "local completion must be deferred");
             assert!(head.upgrade().is_some());
 
             owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
@@ -3935,28 +3965,19 @@ pub mod lost_queue_tests {
         }
     }
 
-    /// Queue a suspended head whose future records its release, then mark the
-    /// client lost the way `server_client_lost` does before retiring it.
-    fn lose_with_suspended_head(
-        owner: &ClientRef,
-    ) -> (crate::actions::ContextWeak, Rc<Cell<bool>>) {
+    fn lose_with_suspended_head(owner: &ClientRef) -> (Weak<()>, Rc<Cell<bool>>) {
         let released = Rc::new(Cell::new(false));
         let guard = SetOnDrop(released.clone());
-        let head = enqueue(
-            Some(owner),
-            callback(
-                c"suspended head",
-                Some(Box::new(move |_| {
-                    TaskOutcome::Suspend(Box::pin(async move {
-                        let _guard = guard;
-                        std::future::pending::<()>().await;
-                    }))
-                })),
-            ),
-        );
-        assert_eq!(drive(Some(owner)), 0);
+        let head_guard = Rc::new(());
+        let head = Rc::downgrade(&head_guard);
+        Lane::push(Some(owner), async move {
+            let _head = head_guard;
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+        assert_eq!(Lane::drive(Some(owner)), 0);
         owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
-        assert_eq!(drive(Some(owner)), 0);
+        assert_eq!(Lane::drive(Some(owner)), 0);
         (head, released)
     }
 

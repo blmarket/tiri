@@ -1,15 +1,11 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::{cmdq_error, cmdq_insert_hook, cmdq_print};
 use crate::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
 use std::ffi::{CStr, CString};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    client as cmdq_get_client, execution_state as cmdq_get_state_owned, target as cmdq_get_target,
-    target_client as cmdq_get_target_client,
-};
 use tiri_core::arguments::{
     args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
@@ -60,16 +56,19 @@ pub static cmd_new_window_entry: cmd_entry = {
         exec: Some(cmd_new_window_exec),
     }
 };
-fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_new_window_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let c_owner = cmdq_get_client(Some(&*item));
+    let c_owner = inv.client();
     let mut c: Option<ClientRef> = c_owner.clone();
-    let current = cmdq_get_state_owned(&(item));
-    let target = cmdq_get_target(&item).clone();
+    let target = inv.target().clone();
     let mut sc: spawn_context = spawn_context {
         geometry: None,
-        item: tiri_core::actions::ContextWeak::new(),
+        format: None,
+        target_session: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
         wl: tiri_core::refbox::Weak::new(),
         tc: std::rc::Weak::new(),
@@ -82,7 +81,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let tc_owner = inv.target_client();
     let mut _tc: Option<ClientRef> = tc_owner.clone();
     let session_owner = target.session_handle().expect("new-window target session");
     let s = Some(session_owner.clone());
@@ -107,14 +106,15 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 .expect("argument is present")
                 .is_empty())
     {
-        cmdq_error(item_handle, |out| {
+        inv.error( |out| {
             out.write_all(b"command cannot be given for empty pane")
         });
-        return CmdOutcome::Error;
+        return ExecOutcome::err();
     }
+    let cf = inv.format();
     if let Some(name) = args_get(args, 'n' as i32 as u_char) {
         let expanded = format_single_cstring(
-            Some(item_handle),
+            Some(&cf),
             name,
             c_owner.as_ref(),
             Some(&session_owner),
@@ -122,11 +122,11 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             None,
         );
         if !check_name(&expanded) {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(expanded.as_bytes())
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         wname_owned = Some(
             clean_name_cstring(expanded.as_c_str(), 0)
@@ -141,7 +141,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 .with_winlinks(|links| winlink_find_by_index(links, idx));
         } else if let Some(wname) = wname_owned.as_deref() {
             let expanded = format_single_cstring(
-                Some(item_handle),
+                Some(&cf),
                 wname,
                 c_owner.as_ref(),
                 Some(&session_owner),
@@ -157,11 +157,11 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                     if !new_wl.is_alive() {
                         new_wl = wl.clone();
                     } else {
-                        cmdq_error(item_handle, |out| {
+                        inv.error( |out| {
                             out.write_all(b"multiple windows named ")?;
                             write_cstr(out, wname)
                         });
-                        return CmdOutcome::Error;
+                        return ExecOutcome::err();
                     }
                 }
                 wl = winlink_next(&wl);
@@ -170,7 +170,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     }
     if new_wl.is_alive() {
         if args_has(args, 'd' as i32 as u_char) != 0 {
-            return CmdOutcome::Normal;
+            return ExecOutcome::ok();
         }
         if (s.as_ref().expect("live session")).select_winlink((new_wl).clone())
             == 0 as ::core::ffi::c_int
@@ -190,7 +190,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 .set_latest_client(c.as_ref());
         }
         recalculate_sizes();
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
@@ -199,7 +199,8 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             idx = target.idx;
         }
     }
-    sc.item = crate::engine::context(item_handle.clone()).downgrade();
+    sc.format = Some(cf.clone());
+    sc.target_session = target.s.clone();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.tc = tc_owner
         .as_ref()
@@ -235,18 +236,18 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     match session_owner.spawn_window(&mut sc) {
         Ok(link) => new_wl = link,
         Err(cause) => {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"create window failed: ")?;
                 write_cstr(out, cause.as_c_str())
             });
             drop(sc.environ.take());
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
     }
     if args_has(args, 'd' as i32 as u_char) == 0
         || new_wl == s.as_ref().expect("live session").current_winlink()
     {
-        *current.current.borrow_mut() =
+        inv.context_mut().current =
             cmd_find_state::from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
         server_redraw_session_group(s.as_ref().expect("live session"));
     } else {
@@ -255,7 +256,7 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
     if args_has(args, 'P' as i32 as u_char) != 0 {
         let template = args_get(args, 'F' as i32 as u_char).unwrap_or(NEW_WINDOW_TEMPLATE);
         let cp = format_single_cstring(
-            Some(item_handle),
+            Some(&cf),
             template,
             tc_owner.as_ref(),
             Some(&session_owner),
@@ -265,12 +266,13 @@ fn cmd_new_window_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 .upgrade())
             .as_ref(),
         );
-        cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
+        inv.print( |out| out.write_all(cp.as_bytes()));
     }
     fs = cmd_find_state::from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
-    cmdq_insert_hook(Some(&session_owner), item_handle, Some(&fs), |out| {
+    inv.insert_hook(Some(&fs), self_0, |out| {
         out.write_all(b"after-new-window")
     });
     drop(sc.environ.take());
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

@@ -1,7 +1,5 @@
-use crate::actions::queue::{callback, client, enqueue, guard, new_state};
-use crate::actions::sources::submit;
-use crate::actions::CONTROL_REPLY;
-use crate::actions::{TaskOutcome};
+use crate::actions::sources::compile;
+use crate::actions::{CONTROL_REPLY, Context};
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
 use crate::log::{fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
@@ -10,16 +8,17 @@ use crate::monitor::{
     monitor_type, MONITOR_NOTIFY_INITIAL,
 };
 use crate::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write,
+    Lane, bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write,
     bufferevent_write_buffer, evbuffer_add, evbuffer_add_formatted, evbuffer_get_length,
     evbuffer_new, evbuffer_pullup, evbuffer_readln,
 };
 use crate::server_client::Client as _;
 use crate::session::Session;
-use crate::shared::abi::{size_t, u_int, uint64_t};
-use crate::shared::client::ClientRef;
+use crate::shared::abi::{size_t, time_t, u_int, uint64_t};
+use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::client::{
-    CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
+    CLIENT_CONTROL, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT,
+    CLIENT_UNATTACHEDFLAGS,
 };
 use crate::shared::control::{
     control_block, control_pane, control_panes, control_state, control_window, control_windows,
@@ -569,20 +568,33 @@ pub fn control_write_output(client: &ClientRef, wp: &Rc<RefCell<window_pane>>) {
     cp.offset = offset;
     cp.queued = queued;
 }
-fn control_error(
-    item_handle: &dyn crate::actions::ContextSource,
-    error: Option<CString>,
-) -> TaskOutcome {
-    let item = item_handle.borrow();
-    let c_owner = client(Some(&*item));
-    let mut c: Option<ClientRef> = c_owner.clone();
-    guard(item_handle, c"begin", 1 as ::core::ffi::c_int);
-    control_write(&c.clone().expect("live client"), |out| {
+pub fn next_control_guard_stamp() -> (time_t, u_int) {
+    thread_local! {
+        static NUMBER: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+    }
+    let number = NUMBER.with(|cell| {
+        let next = cell.get().wrapping_add(1);
+        cell.set(next);
+        next
+    });
+    (crate::shared::time::unix_seconds(std::time::SystemTime::now()), number)
+}
+
+fn control_error(client: ClientWeak, error: Option<CString>) {
+    let Some(c) = client.upgrade() else {
+        return;
+    };
+    let (time, number) = next_control_guard_stamp();
+    if c.flags() & CLIENT_CONTROL as uint64_t != 0 {
+        control_write_guard(&c, c"begin", time as ::core::ffi::c_long, number, 1);
+    }
+    control_write(&c, |out| {
         out.write_all(b"parse error: ")?;
         write_cstr(out, error.as_deref())
     });
-    guard(item_handle, c"error", 1 as ::core::ffi::c_int);
-    TaskOutcome::Normal
+    if c.flags() & CLIENT_CONTROL as uint64_t != 0 {
+        control_write_guard(&c, c"error", time as ::core::ffi::c_long, number, 1);
+    }
 }
 fn control_error_callback(owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(owner.clone());
@@ -621,17 +633,20 @@ fn control_read_callback(owner: &ClientRef) {
                 .update_flags(CLIENT_EXIT as uint64_t, 0);
             break;
         } else {
-            let state = new_state(None, None, CONTROL_REPLY);
-            if let Err(error) = submit(
-                CStr::from_bytes_until_nul(&line).expect("control line is terminated"),
-                Some(owner),
-                Some(&state),
-            ) {
-                let error_item_allocation = callback(
-                    c"control_error",
-                    Some(Box::new(move |item| control_error(item, Some(error)))),
-                );
-                enqueue(Some(owner), error_item_allocation);
+            let source = CStr::from_bytes_until_nul(&line).expect("control line is terminated");
+            match compile(source) {
+                Ok(program) => {
+                    let ctx = Context::new(Rc::downgrade(owner), None, None, CONTROL_REPLY);
+                    Lane::push(Some(owner), async move {
+                        let _ = crate::actions::run(program, ctx).await;
+                    });
+                }
+                Err(error) => {
+                    let client = Rc::downgrade(owner);
+                    Lane::push(Some(owner), async move {
+                        control_error(client, Some(error));
+                    });
+                }
             }
         }
     }

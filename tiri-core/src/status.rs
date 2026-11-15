@@ -1,4 +1,4 @@
-use crate::actions::queue::{callback, enqueue};
+use crate::reactor::Lane;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
 use crate::format::{
@@ -31,7 +31,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::actions::Target;
-use crate::actions::TaskOutcome;
 use crate::shared::abi::{u_char, u_int, uint64_t};
 use crate::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWSTATUS, CLIENT_STATUSFORCE, CLIENT_STATUSOFF};
 use crate::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
@@ -516,12 +515,11 @@ pub fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     drop(old_screen);
     i32::from(changed)
 }
-fn status_prompt_accept(c_owner: &ClientRef) -> TaskOutcome {
+fn status_prompt_accept(c_owner: &ClientRef) {
     let _c: Option<ClientRef> = Some(c_owner.clone());
     if c_owner.prompt_observer().is_alive() {
         status_prompt_key(c_owner, 'y' as i32 as key_code, None);
     }
-    TaskOutcome::Normal
 }
 pub fn status_prompt_set(
     c_owner: &ClientRef,
@@ -565,20 +563,12 @@ pub fn status_prompt_set(
     let prompt = prompt_observer;
     prompt_incremental_start(&prompt);
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 {
-        enqueue(
-            c.as_ref(),
-            callback(
-                c"status_prompt_accept",
-                Some(Box::new({
-                    let observer = std::rc::Rc::downgrade(c_owner);
-                    move |_| {
-                        observer
-                            .upgrade()
-                            .map_or(TaskOutcome::Normal, |owner| status_prompt_accept(&owner))
-                    }
-                })),
-            ),
-        );
+        let observer = std::rc::Rc::downgrade(c_owner);
+        Lane::push(c.as_ref(), async move {
+            if let Some(owner) = observer.upgrade() {
+                status_prompt_accept(&owner);
+            }
+        });
     }
 }
 pub fn status_prompt_clear(c_owner: &ClientRef) {

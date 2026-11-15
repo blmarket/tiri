@@ -1,45 +1,80 @@
-use crate::actions::queue::{client as context_client, report_error, wait as context_wait};
-use crate::actions::{Completion, ContextSource, ContextWeak, TaskOutcome};
 use crate::events::{events_add_sink, events_remove_sink};
 use crate::events_payload::{
     event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
     event_payload_items,
 };
-use crate::format::bytes::write_cstr;
+use crate::format::bytes::{format_message_with, write_cstr};
 use crate::format::{format_create, format_expand_cstring, format_true};
 use crate::log::{log_cstr, log_debug, log_pointer};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::server_client::Client as _;
-use crate::shared::client::ClientRef;
+use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::events::{EventSinkId, event_payload, events_callback};
-use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use std::cell::RefCell;
+use crate::shared::format::{CommandFormat, FORMAT_NOJOBS, FORMAT_NONE};
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
+use std::future::Future;
+
+pub struct Waiter {
+    client: ClientWeak,
+    done: crate::tiri_rt::oneshot::Sender<()>,
+}
+
+impl Waiter {
+    fn pair(client: ClientWeak) -> (Self, impl Future<Output = ()> + use<>) {
+        let (done, receiver) = crate::tiri_rt::oneshot::channel();
+        let wait = async move {
+            if receiver.await.is_none() {
+                std::future::pending::<()>().await;
+            }
+        };
+        (Self { client, done }, wait)
+    }
+
+    pub fn client(&self) -> Option<ClientRef> {
+        self.client.upgrade()
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.done.is_closed()
+    }
+
+    pub fn resume(self) {
+        let _ = self.done.send(());
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn detached(client: ClientWeak) -> (Self, crate::tiri_rt::oneshot::Receiver<()>) {
+        let (done, receiver) = crate::tiri_rt::oneshot::channel();
+        (Self { client, done }, receiver)
+    }
+}
 
 #[repr(C)]
 pub struct wait_channel {
     pub locked: ::core::ffi::c_int,
     pub woken: ::core::ffi::c_int,
-    pub waiters: Vec<Completion>,
-    pub lockers: Vec<Completion>,
+    pub waiters: Vec<Waiter>,
+    pub lockers: Vec<Waiter>,
 }
 
 struct wait_channels {
     entries: BTreeMap<CString, wait_channel>,
 }
 
-#[repr(C)]
 struct wait_event_item {
-    item: ContextWeak,
-    waiter: Completion,
+    id: u64,
+    waiter: Waiter,
     sink: wait_event_sink,
     name: CString,
     filter: Option<CString>,
+    format: Option<CommandFormat>,
     verbose: ::core::ffi::c_int,
 }
 
 thread_local! {
+    static NEXT_WAIT_EVENT_ID: Cell<u64> = const { Cell::new(0) };
     static WAIT_EVENT_ITEMS: RefCell<Vec<wait_event_item>> = const { RefCell::new(Vec::new()) };
     static WAIT_CHANNELS: RefCell<wait_channels> = const {
         RefCell::new(wait_channels {
@@ -48,14 +83,14 @@ thread_local! {
     };
 }
 
-fn wait_items_continue_all(list: Vec<Completion>) {
+fn wait_items_continue_all(list: Vec<Waiter>) {
     for waiter in list {
         waiter.resume();
     }
 }
 
-fn wait_event_items_position(items: &[wait_event_item], item: &ContextWeak) -> Option<usize> {
-    items.iter().position(|owner| owner.item.ptr_eq(item))
+fn wait_event_items_position(items: &[wait_event_item], id: u64) -> Option<usize> {
+    items.iter().position(|owner| owner.id == id)
 }
 
 fn wait_channel_add<'a>(channels: &'a mut wait_channels, name: &CStr) -> &'a mut wait_channel {
@@ -98,7 +133,7 @@ fn wait_channel_remove_empty(channels: &mut wait_channels, name: &CStr) {
     channels.entries.remove(name);
 }
 
-fn waiter_client_name(waiter: &Completion) -> CString {
+fn waiter_client_name(waiter: &Waiter) -> CString {
     waiter
         .client()
         .and_then(|owner| owner.name())
@@ -129,37 +164,38 @@ fn wait_event_print(client: Option<&ClientRef>, ep: &event_payload) {
     }
 }
 
-fn wait_event_cb(_name: &CStr, payload: &mut event_payload, key: &ContextWeak) {
+fn wait_event_cb(_name: &CStr, payload: &mut event_payload, id: u64) {
     let found = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
-        let index = wait_event_items_position(items, key)?;
+        let index = wait_event_items_position(items, id)?;
         let wei = &items[index];
         if wei.waiter.is_cancelled() {
             drop(items.remove(index));
             return None;
         }
-        Some((wei.verbose, wei.filter.clone(), wei.waiter.client()))
+        Some((
+            wei.verbose,
+            wei.filter.clone(),
+            wei.format.clone(),
+            wei.waiter.client(),
+        ))
     });
-    let Some((verbose, filter, queue_client)) = found else {
+    let Some((verbose, filter, cmd_format, queue_client)) = found else {
         return;
     };
     let ep = &*payload;
     if verbose != 0 {
         wait_event_print(queue_client.as_ref(), ep);
-        if WAIT_EVENT_ITEMS.with_borrow(|items| wait_event_items_position(items, key).is_none()) {
+        if WAIT_EVENT_ITEMS.with_borrow(|items| wait_event_items_position(items, id).is_none()) {
             return;
         }
     }
     if let Some(filter) = &filter {
-        let Some(item_owner) = key.upgrade() else {
-            return;
-        };
         let mut ft_owner = format_create(
             queue_client.as_ref(),
-            Some(&item_owner),
+            cmd_format.as_ref(),
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
-        drop(item_owner);
         let ft = &mut *ft_owner;
         event_payload_add_formats(ep, ft, None);
         let expanded = format_expand_cstring(ft, filter);
@@ -171,7 +207,7 @@ fn wait_event_cb(_name: &CStr, payload: &mut event_payload, key: &ContextWeak) {
     }
     drop(queue_client);
     let woken = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
-        wait_event_items_position(items, key).map(|index| items.remove(index))
+        wait_event_items_position(items, id).map(|index| items.remove(index))
     });
     if let Some(wei) = woken {
         wei.resume();
@@ -196,32 +232,38 @@ fn wait_event_prune_expired(items: &mut Vec<wait_event_item>) {
 }
 
 pub fn wait_event_wait(
-    item: &dyn ContextSource,
+    client: Option<&ClientRef>,
+    owning_client: ClientWeak,
+    format: Option<CommandFormat>,
     name: &CStr,
     filter: Option<&CStr>,
     verbose: ::core::ffi::c_int,
-) -> TaskOutcome {
-    if context_client(Some(&*item.borrow())).is_none() {
-        report_error(item, |out| out.write_all(b"not able to wait"));
-        return TaskOutcome::Error;
+) -> Result<impl Future<Output = ()> + use<>, &'static CStr> {
+    if client.is_none() {
+        return Err(c"not able to wait");
     }
-    let key = item.downgrade();
-    let sink = wait_event_sink(events_add_sink(name, {
-        let key = key.clone();
-        events_callback(move |name, payload| wait_event_cb(name, payload, &key))
-    }));
-    let (waiter, retval) = context_wait(item);
+    let id = NEXT_WAIT_EVENT_ID.with(|cell| {
+        let next = cell.get().wrapping_add(1);
+        cell.set(next);
+        next
+    });
+    let sink = wait_event_sink(events_add_sink(
+        name,
+        events_callback(move |name, payload| wait_event_cb(name, payload, id)),
+    ));
+    let (waiter, wait) = Waiter::pair(owning_client);
     WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
         items.push(wait_event_item {
-            item: key,
+            id,
             waiter,
             sink,
             name: name.to_owned(),
             filter: filter.map(CStr::to_owned),
+            format,
             verbose,
         })
     });
-    retval
+    Ok(wait)
 }
 
 pub fn wait_event_list(name: &CStr) -> Vec<CString> {
@@ -235,7 +277,7 @@ pub fn wait_event_list(name: &CStr) -> Vec<CString> {
     })
 }
 
-pub fn wait_event_wake(item: &dyn ContextSource, name: &CStr, client_name: &CStr) -> TaskOutcome {
+pub fn wait_event_wake(name: &CStr, client_name: &CStr) -> Result<(), CString> {
     let woken = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
         wait_event_prune_expired(items);
         let index = items.iter().position(|wei| {
@@ -246,14 +288,13 @@ pub fn wait_event_wake(item: &dyn ContextSource, name: &CStr, client_name: &CStr
     });
     if let Some(wei) = woken {
         wei.resume();
-        return TaskOutcome::Normal;
+        return Ok(());
     }
-    report_error(item, |out| {
+    Err(format_message_with(|out| {
         out.write_all(b"waiter ")?;
         write_cstr(out, client_name)?;
         out.write_all(b" not found")
-    });
-    TaskOutcome::Error
+    }))
 }
 
 pub fn wait_channel_list(name: &CStr) -> Vec<CString> {
@@ -290,7 +331,7 @@ pub fn wait_channel_wake(name: &CStr, client_name: &CStr) {
     }
 }
 
-pub fn wait_channel_signal(name: &CStr) -> TaskOutcome {
+pub fn wait_channel_signal(name: &CStr) {
     let waiters = WAIT_CHANNELS.with_borrow_mut(|channels| {
         let wc = wait_channel_add(channels, name);
         wait_channel_prune_expired(wc);
@@ -311,54 +352,59 @@ pub fn wait_channel_signal(name: &CStr) -> TaskOutcome {
         waiters
     });
     wait_items_continue_all(waiters);
-    TaskOutcome::Normal
 }
 
-pub fn wait_channel_wait(item: &dyn ContextSource, name: &CStr) -> TaskOutcome {
-    let Some(c) = context_client(Some(&*item.borrow())) else {
-        report_error(item, |out| out.write_all(b"not able to wait"));
-        return TaskOutcome::Error;
+pub fn wait_channel_wait(
+    client: Option<&ClientRef>,
+    owning_client: ClientWeak,
+    name: &CStr,
+) -> Result<Option<impl Future<Output = ()> + use<>>, &'static CStr> {
+    let Some(c) = client else {
+        return Err(c"not able to wait");
     };
-    WAIT_CHANNELS.with_borrow_mut(|channels| {
+    Ok(WAIT_CHANNELS.with_borrow_mut(|channels| {
         let wc = wait_channel_add(channels, name);
         if wc.woken != 0 {
             log_debug(format_args!(
                 "wait channel {} already woken ({})",
                 log_cstr(name),
-                log_pointer(std::rc::Rc::as_ptr(&c))
+                log_pointer(std::rc::Rc::as_ptr(c))
             ));
             wait_channel_remove(channels, name);
-            return TaskOutcome::Normal;
+            return None;
         }
         log_debug(format_args!(
             "wait channel {} not woken ({})",
             log_cstr(name),
-            log_pointer(std::rc::Rc::as_ptr(&c))
+            log_pointer(std::rc::Rc::as_ptr(c))
         ));
-        let (waiter, retval) = context_wait(item);
+        let (waiter, wait) = Waiter::pair(owning_client);
         wc.waiters.push(waiter);
-        retval
-    })
+        Some(wait)
+    }))
 }
 
-pub fn wait_channel_lock(item: &dyn ContextSource, name: &CStr) -> TaskOutcome {
-    if context_client(Some(&*item.borrow())).is_none() {
-        report_error(item, |out| out.write_all(b"not able to lock"));
-        return TaskOutcome::Error;
+pub fn wait_channel_lock(
+    client: Option<&ClientRef>,
+    owning_client: ClientWeak,
+    name: &CStr,
+) -> Result<Option<impl Future<Output = ()> + use<>>, &'static CStr> {
+    if client.is_none() {
+        return Err(c"not able to lock");
     }
-    WAIT_CHANNELS.with_borrow_mut(|channels| {
+    Ok(WAIT_CHANNELS.with_borrow_mut(|channels| {
         let wc = wait_channel_add(channels, name);
         if wc.locked != 0 {
-            let (waiter, retval) = context_wait(item);
+            let (waiter, wait) = Waiter::pair(owning_client);
             wc.lockers.push(waiter);
-            return retval;
+            return Some(wait);
         }
         wc.locked = 1 as ::core::ffi::c_int;
-        TaskOutcome::Normal
-    })
+        None
+    }))
 }
 
-pub fn wait_channel_unlock(item: &dyn ContextSource, name: &CStr) -> TaskOutcome {
+pub fn wait_channel_unlock(name: &CStr) -> Result<(), CString> {
     let unlocked = WAIT_CHANNELS.with_borrow_mut(|channels| {
         let wc = channels.entries.get_mut(name).filter(|wc| wc.locked != 0)?;
         wait_channel_prune_expired(wc);
@@ -370,21 +416,20 @@ pub fn wait_channel_unlock(item: &dyn ContextSource, name: &CStr) -> TaskOutcome
         Some(None)
     });
     let Some(next) = unlocked else {
-        report_error(item, |out| {
+        return Err(format_message_with(|out| {
             out.write_all(b"channel ")?;
             write_cstr(out, name)?;
             out.write_all(b" not locked")
-        });
-        return TaskOutcome::Error;
+        }));
     };
     if let Some(locker) = next {
         locker.resume();
     }
-    TaskOutcome::Normal
+    Ok(())
 }
 
 pub fn wait_for_client_lost(c: &ClientRef) {
-    let lost_waiter = |waiter: &Completion| {
+    let lost_waiter = |waiter: &Waiter| {
         waiter
             .client()
             .is_some_and(|owner| std::rc::Rc::ptr_eq(&owner, c))
@@ -440,6 +485,7 @@ pub fn wait_for_flush() {
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support {
+    pub use super::Waiter;
     use super::{
         CStr, EventSinkId, WAIT_CHANNELS, WAIT_EVENT_ITEMS, wait_channel, wait_channel_add,
     };

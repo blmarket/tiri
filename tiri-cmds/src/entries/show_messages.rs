@@ -1,16 +1,13 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item;
-use crate::cmd::queue::cmdq_print;
 use crate::shared::command::CMD_FIND_PANE;
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::target_client as cmdq_get_target_client;
 use tiri_core::arguments::{args_has, args_parse};
 use tiri_core::format::bytes::write_cstr;
-use tiri_core::format::{
-    format_add, format_add_time, format_create_from_target, format_expand_cstring,
-};
+use tiri_core::format::{format_add, format_add_time, format_expand_cstring};
 use tiri_core::job::job_print_summary;
 use tiri_core::server::message_log;
 use tiri_core::shared::abi::u_char;
@@ -44,12 +41,11 @@ pub static cmd_show_messages_entry: cmd_entry = {
 };
 fn cmd_show_messages_terminals(
     self_0: &cmd,
-    item_handle: &std::rc::Rc<cmdq_item>,
+    inv: &Invocation<'_>,
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let item = item_handle.borrow();
     let args = cmd_get_args(self_0);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let tc_owner = inv.target_client();
     let target = if args_has(args, b't') != 0 {
         tc_owner.as_ref()
     } else {
@@ -58,10 +54,10 @@ fn cmd_show_messages_terminals(
     let mut n = 0_u32;
     for term in tty_term_descriptions(target) {
         if blank != 0 {
-            cmdq_print(item_handle, |_| Ok(()));
+            inv.print( |_| Ok(()));
             blank = 0;
         }
-        cmdq_print(item_handle, |out| {
+        inv.print( |out| {
             write!(out, "Terminal {}: ", n)?;
             out.write_all(term.name.to_bytes())?;
             out.write_all(b" for ")?;
@@ -70,30 +66,35 @@ fn cmd_show_messages_terminals(
         });
         n = n.wrapping_add(1);
         for code in term.codes {
-            cmdq_print(item_handle, |out| out.write_all(code.as_bytes()));
+            inv.print( |out| out.write_all(code.as_bytes()));
         }
     }
     i32::from(n != 0)
 }
 
-fn cmd_show_messages_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_show_messages_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     blank = 0 as ::core::ffi::c_int;
     done = blank;
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        blank = cmd_show_messages_terminals(self_0, item_handle, blank);
+        blank = cmd_show_messages_terminals(self_0, inv, blank);
         done = 1 as ::core::ffi::c_int;
     }
     if args_has(args, 'J' as i32 as u_char) != 0 {
-        job_print_summary(item_handle, blank);
+        let queue_client = inv.client();
+        job_print_summary(queue_client.as_ref(), blank);
         done = 1 as ::core::ffi::c_int;
     }
     if done != 0 {
-        return CmdOutcome::Normal;
+        return ExecOutcome::ok();
     }
-    let mut ft_owner = format_create_from_target(item_handle);
+    let mut ft_owner = inv.format_from_target();
     let ft = &mut *ft_owner;
     let messages: Vec<_> = message_log.with_borrow(|log| {
         log.iter_rev()
@@ -105,8 +106,9 @@ fn cmd_show_messages_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) ->
         format_add(ft, c"message_number", |out| write!(out, "{}", number));
         format_add_time(ft, c"message_time", msg_time);
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE);
-        cmdq_print(item_handle, |out| write_cstr(out, &*s));
+        inv.print( |out| write_cstr(out, &*s));
     }
     drop(ft_owner);
-    CmdOutcome::Normal
+    ExecOutcome::ok()
+})
 }

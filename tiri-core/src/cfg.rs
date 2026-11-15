@@ -1,11 +1,6 @@
-use crate::actions::queue::{
-    callback, client as context_client, enqueue, new_state, print as context_print, program_task,
-    wait as context_wait,
-};
 use crate::actions::sources::compile_file;
-use crate::actions::{
-    Completion, ContextRef, ContextSource, PARSE_ONLY, PARSE_QUIET, TaskOutcome,
-};
+use crate::actions::{Context, PARSE_ONLY, PARSE_QUIET};
+use crate::reactor::{Lane, LaneTarget};
 use crate::control::control_notify_write;
 use crate::format::bytes::{format_message_with, write_cstr};
 use crate::log::{log_cstr, log_debug};
@@ -31,7 +26,8 @@ thread_local! {
     static CFG_CLIENT: std::cell::Cell<ClientWeak> = const { std::cell::Cell::new(std::rc::Weak::new()) };
     static CFG_FINISHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CFG_QUIET: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
-    static CFG_WAITER: std::cell::RefCell<Option<Completion>> = const { std::cell::RefCell::new(None) };
+    static CFG_WAITER: std::cell::RefCell<Option<crate::tiri_rt::oneshot::Sender<()>>> =
+        const { std::cell::RefCell::new(None) };
 }
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 static CFG_FILES: OnceLock<Vec<CString>> = OnceLock::new();
@@ -69,27 +65,28 @@ pub fn cfg_forget_client(client: &ClientRef) {
     }
 }
 
-fn cfg_client_done(item: &ContextRef) -> TaskOutcome {
+async fn cfg_client_wait(target: LaneTarget) {
     if !cfg_finished() {
-        let (waiter, retval) = context_wait(item);
-        drop(CFG_WAITER.replace(Some(waiter)));
-        return retval;
+        let (done, receiver) = crate::tiri_rt::oneshot::channel();
+        drop(CFG_WAITER.replace(Some(done)));
+        if receiver.await.is_none() {
+            std::future::pending::<()>().await;
+        }
+        target.yield_to_drive().await;
     }
-    TaskOutcome::Normal
 }
 
-fn cfg_done() -> TaskOutcome {
+fn cfg_done() {
     if cfg_finished() {
-        return TaskOutcome::Normal;
+        return;
     }
     CFG_FINISHED.set(true);
     cfg_show_causes(None);
     let waiter = CFG_WAITER.take();
     if let Some(waiter) = waiter {
-        waiter.resume();
+        let _ = waiter.send(());
     }
     prompt_load_history();
-    TaskOutcome::Normal
 }
 
 pub fn start_cfg() {
@@ -99,17 +96,17 @@ pub fn start_cfg() {
             .as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
-    if registry_c_owner.is_some() {
-        enqueue(
-            registry_c_owner.as_ref(),
-            callback(c"cfg_client_done", Some(Box::new(cfg_client_done))),
-        );
+    if let Some(owner) = registry_c_owner.as_ref() {
+        let target = LaneTarget::for_client(Some(owner));
+        Lane::push(Some(owner), cfg_client_wait(target));
     }
     let flags = if CFG_QUIET.get() { PARSE_QUIET } else { 0 };
     for path in cfg_files() {
         load_cfg(path, registry_c_owner.as_ref(), flags);
     }
-    enqueue(None, callback(c"cfg_done", Some(Box::new(|_| cfg_done()))));
+    Lane::push(None, async {
+        cfg_done();
+    });
 }
 
 pub fn load_cfg(
@@ -146,11 +143,11 @@ pub fn load_cfg(
         drop(commands);
         return 0;
     }
-    let state = new_state(None, None, 0);
-    state.add_format(c"current_file", path);
-    let task = program_task(&commands, Some(&state));
-    enqueue(None, task);
-    drop(commands);
+    let mut context = Context::new(std::rc::Weak::new(), None, None, 0);
+    context.add_format(c"current_file", path);
+    Lane::push(None, async move {
+        let _ = crate::actions::run(commands, context).await;
+    });
     0
 }
 
@@ -167,19 +164,15 @@ fn cfg_drain_causes(mut deliver: impl FnMut(&CStr)) {
     }
 }
 
-pub fn cfg_print_causes(item: &dyn ContextSource) {
-    let c = context_client(Some(&*item.borrow()));
+pub fn cfg_print_causes(c: Option<&ClientRef>) {
     cfg_drain_causes(|cause| {
-        if let Some(client) = c
-            .as_ref()
-            .filter(|client| client.flags() & CLIENT_CONTROL as uint64_t != 0)
-        {
+        if let Some(client) = c.filter(|client| client.flags() & CLIENT_CONTROL as uint64_t != 0) {
             control_notify_write(client, |out| {
                 out.write_all(b"%config-error ")?;
                 write_cstr(out, &*cause)
             });
         } else {
-            context_print(item, |out| write_cstr(out, &*cause));
+            ClientRef::print_line(c, |out| write_cstr(out, &*cause));
         }
     });
 }
@@ -216,7 +209,7 @@ pub fn cfg_show_causes(s_owner: Option<&SessionRef>) {
             .upgrade()
             .expect("view-mode pane");
         if !pane_owner.is_mode(&window_view_mode) {
-            pane_owner.set_mode(None, &window_view_mode, None, None, None);
+            pane_owner.set_mode(None, &window_view_mode, None, None);
         }
         cfg_drain_causes(|cause| {
             window_copy_add(&pane_owner, 0, |out| write_cstr(out, &*cause));
@@ -227,17 +220,15 @@ pub fn cfg_show_causes(s_owner: Option<&SessionRef>) {
 #[cfg(any(test, feature = "test-support"))]
 pub mod cfg_wait_tests {
     use super::{
-        CFG_FINISHED, CFG_WAITER, ClientRef, Completion, TaskOutcome, callback, cfg_client_done,
-        cfg_done, cfg_finished, enqueue,
+        CFG_FINISHED, CFG_WAITER, ClientRef, Lane, LaneTarget, cfg_client_wait, cfg_done,
+        cfg_finished,
     };
-    use crate::actions::ContextWeak;
-    use crate::actions::queue::drive;
     use crate::options::{OptionsScope, options_table};
     use crate::server_client::Client as _;
     use crate::server_client::queue_test_clients;
     use crate::shared::client::CLIENT_DEAD;
     use std::cell::Cell;
-    use std::rc::Rc;
+    use std::rc::{Rc, Weak};
 
     struct Options;
     impl Options {
@@ -268,23 +259,19 @@ pub mod cfg_wait_tests {
         owner: &ClientRef,
         ran: &Rc<Cell<bool>>,
         released: &Rc<Cell<bool>>,
-    ) -> ContextWeak {
-        let head = enqueue(
-            Some(owner),
-            callback(c"cfg_client_done", Some(Box::new(cfg_client_done))),
-        );
+    ) -> Weak<()> {
+        let guard = Rc::new(());
+        let head = Rc::downgrade(&guard);
+        let target = LaneTarget::for_client(Some(owner));
+        Lane::push(Some(owner), async move {
+            let _guard = guard;
+            cfg_client_wait(target).await;
+        });
         let (ran, capture) = (ran.clone(), SetOnDrop(released.clone()));
-        enqueue(
-            Some(owner),
-            callback(
-                c"after config",
-                Some(Box::new(move |_| {
-                    let _capture = &capture;
-                    ran.set(true);
-                    TaskOutcome::Normal
-                })),
-            ),
-        );
+        Lane::push(Some(owner), async move {
+            let _capture = &capture;
+            ran.set(true);
+        });
         head
     }
 
@@ -293,17 +280,15 @@ pub mod cfg_wait_tests {
         let owner = queue_test_clients::with_queue();
         let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
         let head = startup_queue(&owner, &ran, &released);
-        assert_eq!(drive(Some(&owner)), 0);
-        assert!(
-            CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_cancelled()))
-        );
+        assert_eq!(Lane::drive(Some(&owner)), 0);
+        assert!(CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_closed())));
         assert!(!ran.get());
 
-        assert!(matches!(cfg_done(), TaskOutcome::Normal));
+        cfg_done();
         assert!(cfg_finished());
         assert!(CFG_WAITER.with_borrow(Option::is_none));
         assert!(!ran.get());
-        assert_eq!(drive(Some(&owner)), 2);
+        assert_eq!(Lane::drive(Some(&owner)), 2);
         assert!(head.upgrade().is_none());
         assert!(ran.get());
     }
@@ -314,7 +299,7 @@ pub mod cfg_wait_tests {
         let owner = queue_test_clients::with_queue();
         let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
         startup_queue(&owner, &ran, &released);
-        assert_eq!(drive(Some(&owner)), 2);
+        assert_eq!(Lane::drive(Some(&owner)), 2);
         assert!(ran.get());
         assert!(CFG_WAITER.with_borrow(Option::is_none));
     }
@@ -324,20 +309,18 @@ pub mod cfg_wait_tests {
         let owner = queue_test_clients::with_queue();
         let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
         let head = startup_queue(&owner, &ran, &released);
-        assert_eq!(drive(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
         owner.update_flags(CLIENT_DEAD as u64, 0);
-        assert_eq!(drive(Some(&owner)), 0);
+        assert_eq!(Lane::drive(Some(&owner)), 0);
 
         let client = Rc::downgrade(&owner);
         drop(owner);
         assert!(client.upgrade().is_none());
         assert!(head.upgrade().is_none());
         assert!(released.get());
-        assert!(
-            CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(Completion::is_cancelled))
-        );
+        assert!(CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| w.is_closed())));
 
-        let _ = cfg_done();
+        cfg_done();
         assert!(CFG_WAITER.with_borrow(Option::is_none));
         assert!(!ran.get());
     }

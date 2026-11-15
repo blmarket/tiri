@@ -1,9 +1,7 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_error, cmdq_print};
-use tiri_core::actions::TaskOutcome as CmdOutcome;
-use tiri_core::actions::queue::{
-    execution_state as cmdq_get_state_owned, target_client as cmdq_get_target_client,
-};
 use tiri_core::arguments::{args_get, args_has, args_parse};
 use tiri_core::events::events_fire_window;
 use tiri_core::format::bytes::write_cstr;
@@ -21,7 +19,6 @@ use tiri_core::server_fn::{
 };
 use tiri_core::session::Session;
 
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::shared::command::{CMD_FIND_PANE, CMD_FIND_WINDOW};
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag};
@@ -63,13 +60,15 @@ pub static cmd_break_pane_entry: cmd_entry = {
         exec: Some(cmd_break_pane_exec),
     }
 };
-fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
-    let item = item_handle.borrow();
+fn cmd_break_pane_exec<'a, 'ctx>(
+    self_0: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     let args = cmd_get_args(self_0);
-    let current = cmdq_get_state_owned(&(item));
-    let target = tiri_core::actions::queue::target(&item);
-    let source = tiri_core::actions::queue::source(&item);
-    let tc_owner = cmdq_get_target_client(Some(&*item));
+    let target = inv.target().clone();
+    let source = inv.source().clone();
+    let tc_owner = inv.target_client();
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut wl: tiri_core::refbox::Weak<winlink> = source.winlink_handle();
     let mut src_s: Option<SessionRef> = source.session_handle();
@@ -82,11 +81,11 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         let mut old_idx: ::core::ffi::c_int = wl.try_borrow().expect("live winlink").idx;
         let mut name: Option<&CStr> = args_get(args, 'n' as i32 as u_char);
         if name.is_some_and(|name| !check_name(name)) {
-            cmdq_error(item_handle, |out| {
+            inv.error( |out| {
                 out.write_all(b"invalid window name: ")?;
                 write_cstr(out, name)
             });
-            return CmdOutcome::Error;
+            return ExecOutcome::err();
         }
         before = args_has(args, 'b' as i32 as u_char);
         if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
@@ -104,7 +103,7 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 );
             }
             if idx == -(1 as ::core::ffi::c_int) {
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
         }
         server_unzoom_window(&source_window);
@@ -117,8 +116,8 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 0 as ::core::ffi::c_int,
                 (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
             ) {
-                cmdq_error(item_handle, |out| write_cstr(out, &*link_error));
-                return CmdOutcome::Error;
+                inv.error( |out| write_cstr(out, &*link_error));
+                return ExecOutcome::err();
             }
             if let Some(name) = name {
                 source_window.rename(name, false);
@@ -134,7 +133,7 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                 .expect("live session")
                 .with_winlinks(|links| winlink_find_by_window(links, &source_window));
             if !wl.is_alive() {
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
             let new_idx = wl.try_borrow().expect("live winlink").idx;
             pane_owner.notify_moved(&source_window, old_idx, &source_window, new_idx);
@@ -146,10 +145,10 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
                     .with_winlinks(|links| winlink_find_by_index(links, idx))
                     .is_alive()
             {
-                cmdq_error(item_handle, |out| {
+                inv.error( |out| {
                     write!(out, "index in use: {}", (idx) as i32)
                 });
-                return CmdOutcome::Error;
+                return ExecOutcome::err();
             }
             ClientRef::forget_pane(&pane_owner);
             let rest = source_window
@@ -195,9 +194,9 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             ) {
                 Ok(wl) => wl,
                 Err(error) => {
-                    cmdq_error(item_handle, |out| write_cstr(out, &*error));
+                    inv.error( |out| write_cstr(out, &*error));
                     drop(window);
-                    return CmdOutcome::Error;
+                    return ExecOutcome::err();
                 }
             };
             pane_owner.mark_changed();
@@ -216,7 +215,7 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
             );
             if args_has(args, 'd' as i32 as u_char) == 0 {
                 (dst_s.as_ref().expect("live session")).select_index(new_idx);
-                *current.current.borrow_mut() = cmd_find_state::from_session(
+                inv.context_mut().current = cmd_find_state::from_session(
                     dst_s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,
                 );
@@ -232,18 +231,20 @@ fn cmd_break_pane_exec(self_0: &cmd, item_handle: &std::rc::Rc<cmdq_item>) -> Cm
         }
         if args_has(args, 'P' as i32 as u_char) != 0 {
             let template = args_get(args, 'F' as i32 as u_char).unwrap_or(BREAK_PANE_TEMPLATE);
+            let cf = inv.format();
             let cp = format_single_cstring(
-                Some(item_handle),
+                Some(&cf),
                 template,
                 tc.as_ref(),
                 dst_s.as_ref(),
                 wl.clone(),
                 Some(&pane_owner),
             );
-            cmdq_print(item_handle, |out| write_cstr(out, &*cp));
+            inv.print( |out| write_cstr(out, &*cp));
         }
-        CmdOutcome::Normal
+        ExecOutcome::ok()
     })();
     drop(source_window);
     result
+})
 }

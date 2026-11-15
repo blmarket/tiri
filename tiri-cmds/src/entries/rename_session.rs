@@ -1,12 +1,11 @@
+use crate::cmd::invocation::{ExecOutcome, Invocation};
+use std::future::Future;
+use std::pin::Pin;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::queue::cmdq_item;
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_SESSION, cmd, cmd_entry, cmd_entry_flag,
 };
-use tiri_core::actions::TaskOutcome as CmdOutcome;
 use tiri_core::arguments::{args_parse, args_string};
-use tiri_core::format::format_single_from_target_cstring;
 
 pub static cmd_rename_session_entry: cmd_entry = {
     cmd_entry {
@@ -33,18 +32,23 @@ pub static cmd_rename_session_entry: cmd_entry = {
         exec: Some(cmd_rename_session_exec),
     }
 };
-fn cmd_rename_session_exec(command: &cmd, item: &std::rc::Rc<cmdq_item>) -> CmdOutcome {
+fn cmd_rename_session_exec<'a, 'ctx>(
+    command: &'a cmd,
+    inv: &'a mut Invocation<'ctx>,
+) -> Pin<Box<dyn Future<Output = ExecOutcome> + 'a>> {
+    Box::pin(async move {
     use tiri_core::session::Session;
     let arguments = cmd_get_args(command);
     let name = args_string(arguments, 0).expect("rename-session argument");
-    let expanded = format_single_from_target_cstring(item, name);
-    let target = tiri_core::actions::queue::target(&item.borrow()).clone();
+    let expanded = inv.format_single( name);
+    let target = inv.target().clone();
     let owner = target.session_handle().expect("rename-session target");
     match owner.rename(&expanded) {
-        Ok(()) => CmdOutcome::Normal,
+        Ok(()) => ExecOutcome::ok(),
         Err(cause) => {
-            cmdq_error(item, |out| out.write_all(cause.as_bytes()));
-            CmdOutcome::Error
+            inv.error( |out| out.write_all(cause.as_bytes()));
+            ExecOutcome::err()
         }
     }
+})
 }

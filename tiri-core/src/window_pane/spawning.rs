@@ -1,7 +1,6 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::pty::PanePty;
 use super::{window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event};
-use crate::actions::queue::client;
 use crate::actions::{log_argv, stringify_argv};
 use crate::compat::fdforkpty::fdforkpty;
 #[cfg(target_os = "linux")]
@@ -185,7 +184,6 @@ pub(super) fn spawn_pane(
 ) -> Result<std::rc::Rc<std::cell::RefCell<window_pane>>, CString> {
     {
         let source_pane_owner = sc.wp0.upgrade();
-        let item_owner = sc.item.upgrade();
         let mut c: Option<ClientRef> = None;
         let mut loop_0: Option<ClientRef> = None;
         let session_owner = sc.s.upgrade().expect("spawn context session");
@@ -221,10 +219,9 @@ pub(super) fn spawn_pane(
             };
             let mut key: key_code = 0;
             let c_owner;
-            if let Some(item_owner) = item_owner.as_ref() {
-                let item = item_owner.borrow();
-                target_session_owner = crate::actions::queue::target(&item).session_handle();
-                c_owner = client(Some(&*item));
+            if let Some(cf) = sc.format.as_ref() {
+                target_session_owner = sc.target_session.upgrade();
+                c_owner = cf.client.upgrade();
                 c = c_owner.clone();
             } else {
                 target_session_owner = Some(session_owner.clone());
@@ -233,11 +230,9 @@ pub(super) fn spawn_pane(
             }
             spawn_log(c"spawn_pane", sc);
             if let Some(requested_cwd) = sc.cwd.as_ref() {
-                if item_owner.is_some() {
+                if let Some(cf) = sc.format.as_ref() {
                     cwd = Some(format_single_cstring(
-                        item_owner
-                            .as_ref()
-                            .map(|item| item as &dyn crate::actions::ContextSource),
+                        Some(cf),
                         requested_cwd,
                         c.as_ref(),
                         target_session_owner.as_ref(),
