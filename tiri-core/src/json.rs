@@ -1,9 +1,8 @@
 #![forbid(unsafe_code)]
 
-use crate::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
 use crate::shared::json::{json_node, JsonValue};
 use std::ffi::{CStr, CString};
-use tiri_buffer::BufMut;
+use std::io::Write as _;
 use tiri_buffer::SegmentedBuf;
 
 pub const ERROR_CTX_LEN: usize = 8;
@@ -384,48 +383,46 @@ fn json_parse_boolean(
 fn json_string_append(buffer: &mut SegmentedBuf, node: &json_node) {
     match &node.value {
         JsonValue::String(string) => {
-            buffer.put_slice(b"\"");
-            buffer.put_slice(string.to_bytes());
-            buffer.put_slice(b"\"");
+            buffer.extend_from_slice(b"\"");
+            buffer.extend_from_slice(string.to_bytes());
+            buffer.extend_from_slice(b"\"");
         }
         JsonValue::Number(number) => {
-            evbuffer_add_formatted(buffer, |out| write!(out, "{number}"));
+            let _ = write!(buffer, "{number}");
         }
         JsonValue::Boolean(boolean) => {
-            buffer.put_slice(if *boolean != 0 { b"true" } else { b"false" })
+            buffer.extend_from_slice(if *boolean != 0 { b"true" } else { b"false" })
         }
         JsonValue::Object(fields) => {
-            buffer.put_slice(b"{");
+            buffer.extend_from_slice(b"{");
             for (index, (key, field)) in fields.entries.iter().enumerate() {
                 if index != 0 {
-                    buffer.put_slice(b",");
+                    buffer.extend_from_slice(b",");
                 }
-                buffer.put_slice(b"\"");
-                buffer.put_slice(key.to_bytes());
-                buffer.put_slice(b"\":");
+                buffer.extend_from_slice(b"\"");
+                buffer.extend_from_slice(key.to_bytes());
+                buffer.extend_from_slice(b"\":");
                 json_string_append(buffer, field);
             }
-            buffer.put_slice(b"}");
+            buffer.extend_from_slice(b"}");
         }
         JsonValue::Array(members) => {
-            buffer.put_slice(b"[");
+            buffer.extend_from_slice(b"[");
             for (index, member) in members.members.iter().enumerate() {
                 if index != 0 {
-                    buffer.put_slice(b",");
+                    buffer.extend_from_slice(b",");
                 }
                 json_string_append(buffer, member);
             }
-            buffer.put_slice(b"]");
+            buffer.extend_from_slice(b"]");
         }
     }
 }
 
 pub fn json_to_string(node: &json_node) -> CString {
-    let mut buffer = evbuffer_new();
+    let mut buffer = SegmentedBuf::default();
     json_string_append(&mut buffer, node);
-    let bytes = evbuffer_pullup(&mut buffer, -1)
-        .unwrap_or_default()
-        .to_vec();
+    let bytes = buffer.make_contiguous().to_vec();
     CString::new(bytes).expect("serialized JSON contains no NUL")
 }
 

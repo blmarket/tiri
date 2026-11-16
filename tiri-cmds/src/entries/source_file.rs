@@ -17,7 +17,7 @@ use tiri_core::file::{FileOutcome, FileWait, file_read_wait};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::libc::{EINVAL, ENOENT, ENOMEM, GLOB_NOMATCH, GLOB_NOSPACE};
 use tiri_core::log::{log_cstr, log_debug};
-use tiri_core::reactor::{LaneTarget, evbuffer_pullup};
+use tiri_core::reactor::LaneTarget;
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::CLIENT_CONTROL;
@@ -119,7 +119,7 @@ async fn cmd_source_file_chain<'a, 'ctx>(
         };
         let path = read.path.as_deref();
         let error = read.error;
-        let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
+        let bdata: &[u8] = read.buffer.make_contiguous();
         let target_state = inv.target().clone();
         if error != 0 {
             inv.error(|out| {

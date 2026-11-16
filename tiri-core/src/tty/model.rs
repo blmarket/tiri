@@ -5,7 +5,7 @@ use crate::shared::event::Timer;
 use crate::shared::grid::grid_cell;
 use crate::shared::key::key_code;
 use crate::shared::terminal::TerminalAttributes;
-use tiri_buffer::{Buf as _, SegmentedBuf};
+use tiri_buffer::SegmentedBuf;
 
 pub const TERM_256COLOURS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const TERM_RGBCOLOURS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
@@ -91,7 +91,7 @@ pub struct tty {
     /// The writer's waker while it is parked on an empty output buffer.
     pub(super) write_wake: Option<std::task::LocalWaker>,
     pub(super) io_fd: Option<std::os::fd::OwnedFd>,
-    pub(super) out: Option<Box<SegmentedBuf>>,
+    pub(super) out: Option<SegmentedBuf>,
     pub(super) timer: Option<Timer>,
     pub(super) discarded: size_t,
     pub(super) tio: TerminalAttributes,
@@ -144,7 +144,7 @@ impl tty {
         self.flags & TTY_BLOCK != 0
     }
     pub fn pending_output(&self) -> usize {
-        self.out.as_deref().expect("open TTY buffer").remaining()
+        self.out.as_ref().expect("open TTY buffer").len()
     }
     /// A frozen terminal ignores pane output until unfrozen.
     pub fn set_frozen(&mut self, frozen: bool) {

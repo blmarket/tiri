@@ -50,9 +50,7 @@ use crate::names::check_window_name;
 use crate::options::{options_get_command, options_get_number, options_get_string};
 use crate::proc::{bytes_of, imsg_string, proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::prompt::prompt_free;
-use crate::reactor::{
-    bufferevent_enable, defer, evbuffer_add, evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
-};
+use crate::reactor::{bufferevent_enable, defer};
 use crate::resize::{recalculate_size, recalculate_sizes};
 use crate::screen::screen_mode_display;
 use crate::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
@@ -159,7 +157,7 @@ use crate::window_copy::{window_copy_add, window_view_mode};
 use crate::window_visible::{window_position_is_visible, window_visible_ranges};
 use libc::EINTR;
 use std::ffi::{CStr, CString};
-use tiri_buffer::SegmentedBuf;
+use tiri_buffer::{LineEnding, SegmentedBuf};
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 
@@ -3590,18 +3588,18 @@ fn server_client_print(
 ) {
     let escaped;
     let msg: &CStr = if parse == 0 {
-        let input = evbuffer_pullup(evb, -1).map_or(&[][..], |bytes| &*bytes);
+        let input = evb.make_contiguous();
         let mut bytes = utf8_stravisx_bytes(input, VIS_OCTAL | VIS_CSTYLE | VIS_NOSLASH);
         bytes.push(0);
         escaped = bytes;
         CStr::from_bytes_until_nul(&escaped).expect("escaped message is NUL-terminated")
+    } else if evb.is_empty() {
+        c""
     } else {
-        if evbuffer_pullup(evb, -1).is_some_and(|bytes| bytes.last() != Some(&0)) {
-            evbuffer_add(evb, b"\0");
+        if evb.make_contiguous().last() != Some(&0) {
+            evb.extend_from_slice(b"\0");
         }
-        evbuffer_pullup(evb, -1).map_or(c"", |bytes| {
-            CStr::from_bytes_until_nul(bytes).expect("print buffer is NUL-terminated")
-        })
+        CStr::from_bytes_until_nul(evb.make_contiguous()).expect("print buffer is NUL-terminated")
     };
     log_debug(format_args!("{}: {}", "server_client_print", log_cstr(msg)));
     if let Some(client) = client_owner {
@@ -3625,7 +3623,8 @@ fn server_client_print(
                 pane_owner.set_mode(None, &window_view_mode, None, None);
             }
             if parse != 0 {
-                while let Some(line) = evbuffer_readln(evb) {
+                while let Some(mut line) = evb.read_line(LineEnding::Lf) {
+                    line.push(0);
                     window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
                         write_cstr(
                             out,
@@ -3633,9 +3632,8 @@ fn server_client_print(
                         )
                     });
                 }
-                let size = evbuffer_get_length(&*(evb));
-                if size != 0 as size_t {
-                    let rest = evbuffer_pullup(evb, -1).expect("nonempty buffer");
+                if !evb.is_empty() {
+                    let rest = evb.make_contiguous();
                     window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
                         out.write_all(rest)
                     });

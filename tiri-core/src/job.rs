@@ -11,9 +11,7 @@ use crate::options::options_get_string;
 use crate::options::OptionsScope;
 use crate::proc::proc_clear_signals;
 use crate::reactor::BufferEvent;
-use crate::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_new, evbuffer_get_length, evbuffer_pullup,
-};
+use crate::reactor::{bufferevent_disable, bufferevent_enable, bufferevent_new};
 use crate::server::server_proc;
 use crate::session::Session as _;
 use crate::shared::abi::{pid_t, u_int};
@@ -49,11 +47,7 @@ pub const JOB_RUNNING: job_state = 0;
 fn job_completion(job: &job) -> JobCompletion {
     let output = job
         .event
-        .with_stream(|stream| {
-            evbuffer_pullup(&mut stream.input, -1)
-                .unwrap_or_default()
-                .to_vec()
-        })
+        .with_stream(|stream| stream.input.make_contiguous().to_vec())
         .unwrap_or_default();
     JobCompletion {
         status: job.status,
@@ -376,10 +370,7 @@ fn job_write_callback(handle: &Weak<job>) {
     let Some(job) = job_borrow_live(handle) else {
         return;
     };
-    let Some(len) = job
-        .event
-        .with_stream(|stream| evbuffer_get_length(&stream.output))
-    else {
+    let Some(len) = job.event.with_stream(|stream| stream.output.len()) else {
         return;
     };
     job_log("write", &job);
@@ -594,7 +585,7 @@ mod job_stream_tests {
             for eof_first in [false, true] {
                 let stream = bufferevent_new(None, None, None, None).unwrap();
                 stream.with_stream(|stream| {
-                    crate::reactor::evbuffer_add(&mut stream.input, b"remaining")
+                    stream.input.extend_from_slice(b"remaining");
                 });
                 let handle = jobs::insert(RefBox::new(job {
                     pid: 1234567,
@@ -638,7 +629,7 @@ mod job_stream_tests {
         });
         let handle = owner.downgrade();
         assert!(job_get_event(&handle) == stream);
-        stream.with_stream(|stream| crate::reactor::evbuffer_add(&mut stream.input, b"output"));
+        stream.with_stream(|stream| stream.input.extend_from_slice(b"output"));
         assert_eq!(
             job_completion(&owner.try_borrow_mut().unwrap()).output,
             b"output"

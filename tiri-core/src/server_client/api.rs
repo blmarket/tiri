@@ -320,8 +320,8 @@ impl Client for ClientRef {
         client: Option<&Self>,
         write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     ) {
-        let mut evb = crate::reactor::evbuffer_new();
-        crate::reactor::evbuffer_add_formatted(&mut evb, write);
+        let mut evb = SegmentedBuf::default();
+        let _ = write(&mut evb);
         server_client_print(client, 1, &mut evb);
     }
 
@@ -681,7 +681,7 @@ impl Client for ClientRef {
         }
         let size = control
             .write_event
-            .with_stream(|stream| crate::reactor::evbuffer_get_length(&stream.output))
+            .with_stream(|stream| stream.output.len())
             .unwrap_or(0)
             .wrapping_add(control.queued_reply_bytes)
             .wrapping_add(added);

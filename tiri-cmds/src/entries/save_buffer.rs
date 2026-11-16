@@ -10,12 +10,12 @@ use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
 use tiri_core::file::{FileOutcome, file_write_wait};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::paste::{paste_buffer_data, paste_get_name, paste_get_top};
-use tiri_core::reactor::{evbuffer_add, evbuffer_new};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::CLIENT_CONTROL;
 use tiri_core::shared::errno::ErrorText;
 use tiri_core::shared::posix_io::{O_APPEND, O_TRUNC};
+use tiri_core::tiri_buffer::SegmentedBuf;
 
 pub static cmd_save_buffer_entry: cmd_entry = {
     cmd_entry {
@@ -113,11 +113,11 @@ fn cmd_save_buffer_exec<'a, 'ctx>(
             if c_ref.attached_session().upgrade().is_some()
                 || c_ref.flags() & CLIENT_CONTROL as uint64_t != 0
             {
-                let mut evb = evbuffer_new();
+                let mut evb = SegmentedBuf::default();
                 {
                     let buffer = pb.try_borrow().expect("live paste buffer");
                     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-                    evbuffer_add(&mut evb, bufdata);
+                    evb.extend_from_slice(bufdata);
                 }
                 inv.print_data(&mut evb);
                 return ExecOutcome::ok();

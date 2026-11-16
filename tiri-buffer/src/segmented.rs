@@ -1,7 +1,5 @@
-use bytes::{Buf, BufMut, buf::UninitSlice};
-use std::collections::{VecDeque, vec_deque};
-use std::io::IoSlice;
-use std::iter::FusedIterator;
+use std::collections::VecDeque;
+use std::io;
 
 use crate::LineEnding;
 
@@ -43,6 +41,17 @@ impl From<Vec<u8>> for SegmentedBuf {
     }
 }
 
+impl io::Write for SegmentedBuf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct Scan {
     ending: LineEnding,
@@ -62,51 +71,55 @@ impl Scan {
     }
 }
 
-/// Iterator over a buffer's nonempty borrowed chunks, without coalescing.
-#[derive(Clone, Debug)]
-pub struct Chunks<'a> {
-    inner: vec_deque::Iter<'a, Segment>,
-}
-
-impl<'a> Iterator for Chunks<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(Segment::as_slice)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-}
-
-impl DoubleEndedIterator for Chunks<'_> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.inner.next_back().map(Segment::as_slice)
-    }
-}
-
-impl ExactSizeIterator for Chunks<'_> {}
-impl FusedIterator for Chunks<'_> {}
-
-impl Buf for SegmentedBuf {
-    fn remaining(&self) -> usize {
+impl SegmentedBuf {
+    /// Total readable bytes stored across all segments.
+    pub fn len(&self) -> usize {
         self.len
     }
 
-    fn chunk(&self) -> &[u8] {
-        self.segments.front().map_or(&[], Segment::as_slice)
+    /// Return true when no readable bytes remain.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
-    fn chunks_vectored<'a>(&'a self, dst: &mut [IoSlice<'a>]) -> usize {
-        let count = dst.len().min(self.segments.len());
-        for (slot, segment) in dst.iter_mut().zip(&self.segments) {
-            *slot = IoSlice::new(segment.as_slice());
+    /// Borrow nonempty segments in order without coalescing.
+    pub fn chunks(&self) -> impl Iterator<Item = &[u8]> {
+        self.segments.iter().map(Segment::as_slice)
+    }
+
+    /// Append bytes to the tail, reusing spare segment capacity before allocating.
+    pub fn extend_from_slice(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            if let Some(tail) = self
+                .segments
+                .back_mut()
+                .filter(|tail| tail.bytes.len() < tail.bytes.capacity())
+            {
+                let take = bytes.len().min(tail.bytes.capacity() - tail.bytes.len());
+                let len = self.len.checked_add(take).expect("buffer too large");
+                tail.bytes.extend_from_slice(&bytes[..take]);
+                self.len = len;
+                bytes = &bytes[take..];
+            } else {
+                if self.spare.capacity() == 0 {
+                    self.spare.reserve(SEGMENT_CAPACITY);
+                }
+                let take = bytes.len().min(self.spare.capacity() - self.spare.len());
+                let len = self.len.checked_add(take).expect("buffer too large");
+                self.segments.reserve(1);
+                self.spare.extend_from_slice(&bytes[..take]);
+                self.segments.push_back(Segment {
+                    bytes: std::mem::take(&mut self.spare),
+                    start: 0,
+                });
+                self.len = len;
+                bytes = &bytes[take..];
+            }
         }
-        count
     }
 
-    fn advance(&mut self, count: usize) {
+    /// Consume `count` prefix bytes, panicking if `count` exceeds [`Self::len`].
+    pub fn advance(&mut self, count: usize) {
         assert!(count <= self.len, "advance exceeds remaining bytes");
         let mut remaining = count;
         if remaining == 0 {
@@ -126,81 +139,59 @@ impl Buf for SegmentedBuf {
             self.recycle(drained.bytes);
         }
     }
-}
 
-unsafe impl BufMut for SegmentedBuf {
-    fn remaining_mut(&self) -> usize {
-        usize::MAX - self.len
-    }
-
-    fn chunk_mut(&mut self) -> &mut UninitSlice {
-        let limit = self.remaining_mut();
-        let writable = if let Some(tail) = self
-            .segments
-            .back_mut()
-            .filter(|tail| tail.bytes.len() < tail.bytes.capacity())
-        {
-            &mut tail.bytes
-        } else {
-            if self.spare.capacity() == 0 {
-                self.spare.reserve(SEGMENT_CAPACITY);
-            }
-            &mut self.spare
-        };
-        let count = (writable.capacity() - writable.len()).min(limit);
-        &mut writable.chunk_mut()[..count]
-    }
-
-    unsafe fn advance_mut(&mut self, count: usize) {
-        if count == 0 {
-            return;
-        }
-        let len = self.len.checked_add(count).expect("buffer too large");
-        if let Some(tail) = self
-            .segments
-            .back_mut()
-            .filter(|tail| tail.bytes.len() < tail.bytes.capacity())
-        {
-            assert!(count <= tail.bytes.capacity() - tail.bytes.len());
-            unsafe { tail.bytes.advance_mut(count) };
-        } else {
-            assert!(count <= self.spare.capacity());
-            self.segments.reserve(1);
-            unsafe { self.spare.advance_mut(count) };
-            self.segments.push_back(Segment {
-                bytes: std::mem::take(&mut self.spare),
-                start: 0,
-            });
-        }
-        self.len = len;
-    }
-}
-
-impl SegmentedBuf {
-    /// Borrow storage for scanning or scatter/gather writes without pullup.
-    pub fn chunks(&self) -> Chunks<'_> {
-        Chunks {
-            inner: self.segments.iter(),
-        }
-    }
-
-    /// Expose exactly `count` prefix bytes, coalescing that prefix if necessary.
-    pub fn pullup(&mut self, count: usize) -> Option<&mut [u8]> {
-        if count > self.len {
-            return None;
-        }
-        if count == 0 {
-            return Some(&mut []);
-        }
+    /// Coalesce all readable bytes into a single contiguous slice.
+    pub fn make_contiguous(&mut self) -> &mut [u8] {
         self.scan = None;
-        if self.segments.front()?.as_slice().len() < count {
-            let bytes = self.copy_prefix(count);
-            self.advance(count);
-            self.segments.push_front(Segment { bytes, start: 0 });
-            self.len += count;
+        if self.segments.is_empty() {
+            return &mut [];
         }
-        let front = self.segments.front_mut()?;
-        Some(&mut front.bytes[front.start..front.start + count])
+        if self.segments.len() > 1 {
+            let len = self.len;
+            let bytes = self.copy_prefix(len);
+            self.advance(len);
+            self.segments.push_front(Segment { bytes, start: 0 });
+            self.len = len;
+        }
+        let front = self.segments.front_mut().expect("nonempty buffer");
+        &mut front.bytes[front.start..]
+    }
+
+    /// Copy up to `limit` prefix bytes into an owned vector without consuming them.
+    pub fn copy_prefix(&self, limit: usize) -> Vec<u8> {
+        let count = limit.min(self.len);
+        let mut bytes = Vec::with_capacity(count);
+        for chunk in self.chunks() {
+            let take = chunk.len().min(count - bytes.len());
+            bytes.extend_from_slice(&chunk[..take]);
+            if bytes.len() == count {
+                break;
+            }
+        }
+        bytes
+    }
+
+    /// Copy bytes starting at `offset` into `dst` without consuming them.
+    pub fn copy_slice(&self, mut offset: usize, dst: &mut [u8]) -> usize {
+        if offset >= self.len || dst.is_empty() {
+            return 0;
+        }
+        let mut copied = 0;
+        for chunk in self.chunks() {
+            if offset >= chunk.len() {
+                offset -= chunk.len();
+                continue;
+            }
+            let chunk = &chunk[offset..];
+            let count = chunk.len().min(dst.len() - copied);
+            dst[copied..copied + count].copy_from_slice(&chunk[..count]);
+            copied += count;
+            offset = 0;
+            if copied == dst.len() {
+                break;
+            }
+        }
+        copied
     }
 
     /// Extract the first complete line, consuming it and its delimiter.
@@ -213,10 +204,10 @@ impl SegmentedBuf {
 
     /// Move all source segments into this buffer without copying their payloads.
     pub fn append(&mut self, source: &mut Self) {
-        if !source.has_remaining() {
+        if source.is_empty() {
             return;
         }
-        if !self.has_remaining() {
+        if self.is_empty() {
             std::mem::swap(self, source);
             source.scan = None;
             return;
@@ -233,18 +224,6 @@ impl SegmentedBuf {
             bytes.clear();
             self.spare = bytes;
         }
-    }
-
-    fn copy_prefix(&self, count: usize) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(count);
-        for chunk in self.chunks() {
-            let take = chunk.len().min(count - bytes.len());
-            bytes.extend_from_slice(&chunk[..take]);
-            if bytes.len() == count {
-                break;
-            }
-        }
-        bytes
     }
 
     fn next_byte(&self, scan: &mut Scan) -> Option<u8> {

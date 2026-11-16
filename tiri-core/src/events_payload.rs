@@ -3,8 +3,7 @@ use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
 use crate::format::format_add;
 use crate::log::{log_cstr, log_cstr_n, log_debug};
-use crate::reactor::{evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup};
-use crate::shared::abi::{size_t, time_t, u_int};
+use crate::shared::abi::{time_t, u_int};
 use crate::shared::client::ClientRef;
 use crate::shared::events::{
     event_payload, event_payload_item, event_payload_tree, event_payload_type,
@@ -19,6 +18,7 @@ use crate::window::{winlink_find_by_index, Window};
 use crate::winlink::winlink_window;
 use crate::{server_client::Client, session::Session, window::WindowPane};
 use std::ffi::{CStr, CString};
+use std::io::Write as _;
 use tiri_buffer::SegmentedBuf;
 
 pub const EVENT_PAYLOAD_WINDOW: event_payload_type = 6;
@@ -266,44 +266,36 @@ pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
 fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBuf) {
     match epi.type_0() as ::core::ffi::c_uint {
         0 => {
-            evbuffer_add_formatted(evb, |out| out.write_all(epi.value.string().to_bytes()));
+            evb.extend_from_slice(epi.value.string().to_bytes());
         }
         1 => {
-            evbuffer_add_formatted(evb, |out| {
-                write!(out, "{}", { epi.value.time() as ::core::ffi::c_longlong })
-            });
+            let _ = write!(evb, "{}", epi.value.time() as ::core::ffi::c_longlong);
         }
         2 => {
-            evbuffer_add_formatted(evb, |out| write!(out, "{}", { epi.value.number() }));
+            let _ = write!(evb, "{}", epi.value.number());
         }
         3 => {
-            evbuffer_add_formatted(evb, |out| {
-                write!(out, "{}", { epi.value.unsigned_number() })
-            });
+            let _ = write!(evb, "{}", epi.value.unsigned_number());
         }
         4 => {
-            evbuffer_add_formatted(evb, |out| {
-                write_cstr(out, epi.value.client().name().as_deref())
-            });
+            let _ = write_cstr(evb, epi.value.client().name().as_deref());
         }
         5 => {
-            evbuffer_add_formatted(evb, |out| write!(out, "${}", { epi.value.session().id() }));
+            let _ = write!(evb, "${}", epi.value.session().id());
         }
         6 => {
-            evbuffer_add_formatted(evb, |out| write!(out, "@{}", { epi.value.window().id() }));
+            let _ = write!(evb, "@{}", epi.value.window().id());
         }
         7 => {
-            evbuffer_add_formatted(evb, |out| write!(out, "%{}", { epi.value.pane().id() }));
+            let _ = write!(evb, "%{}", epi.value.pane().id());
         }
         8 => {
-            evbuffer_add_formatted(evb, |out| {
-                let address = epi.value.identity().address();
-                if address == 0 {
-                    out.write_all(b"(nil)")
-                } else {
-                    write!(out, "{:p}", address as *const ())
-                }
-            });
+            let address = epi.value.identity().address();
+            if address == 0 {
+                evb.extend_from_slice(b"(nil)");
+            } else {
+                let _ = write!(evb, "{:p}", address as *const ());
+            }
         }
         _ => {}
     };
@@ -311,12 +303,10 @@ fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBuf) {
 /// Printed payload bytes with one trailing NUL for synchronous C consumers.
 /// The bytes before that terminator may themselves contain NULs.
 pub fn event_payload_item_print_owned(epi: &event_payload_item) -> Vec<u8> {
-    let mut size: size_t = 0;
-    let mut evb = evbuffer_new();
+    let mut evb = SegmentedBuf::default();
     event_payload_add_item(epi, &mut evb);
-    size = evbuffer_get_length(&evb);
-    let mut value = Vec::with_capacity(size + 1);
-    value.extend_from_slice(evbuffer_pullup(&mut evb, -1).unwrap_or_default());
+    let mut value = Vec::with_capacity(evb.len() + 1);
+    value.extend_from_slice(evb.make_contiguous());
     value.push(0);
     value
 }
@@ -369,22 +359,20 @@ pub fn event_payload_log(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let prefix = format_message_with(write);
-    let mut evb = evbuffer_new();
+    let mut evb = SegmentedBuf::default();
     for epi in event_payload_items(ep) {
-        if evbuffer_get_length(&evb) != 0 as size_t {
-            evbuffer_add_formatted(&mut evb, |out| out.write_all(b", "));
+        if !evb.is_empty() {
+            evb.extend_from_slice(b", ");
         }
-        evbuffer_add_formatted(&mut evb, |out| {
-            write_cstr(out, &*epi.name)?;
-            out.write_all(b"=")
-        });
+        let _ = write_cstr(&mut evb, &*epi.name);
+        evb.extend_from_slice(b"=");
         event_payload_add_item(epi, &mut evb);
     }
 
     log_debug(format_args!(
         "{}{}",
         log_cstr(&prefix),
-        log_cstr_n(evbuffer_pullup(&mut evb, -1).map_or(&[][..], |bytes| bytes))
+        log_cstr_n(evb.make_contiguous())
     ));
 }
 pub fn event_payload_get_client(ep: &event_payload) -> Option<&ClientRef> {

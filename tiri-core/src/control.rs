@@ -9,8 +9,7 @@ use crate::monitor::{
 };
 use crate::reactor::{
     Lane, bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write,
-    bufferevent_write_buffer, evbuffer_add, evbuffer_add_formatted, evbuffer_get_length,
-    evbuffer_new, evbuffer_pullup, evbuffer_readln,
+    bufferevent_write_buffer,
 };
 use crate::server_client::Client as _;
 use crate::session::Session;
@@ -36,8 +35,9 @@ use crate::window::{winlink_find_by_window, Window, WindowPane};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
+use std::io::Write as _;
 use std::rc::Rc;
-use tiri_buffer::SegmentedBuf;
+use tiri_buffer::{LineEnding, SegmentedBuf};
 
 pub const CONTROL_PANE_OFF: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const CONTROL_PANE_PAUSED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
@@ -233,7 +233,7 @@ pub fn control_pane_offset<'a>(
     }
     *off = (cs
         .write_event
-        .with_stream(|stream| evbuffer_get_length(&stream.output))
+        .with_stream(|stream| stream.output.len())
         .unwrap_or(0)
         >= CONTROL_BUFFER_LOW as size_t) as ::core::ffi::c_int;
     Some(&mut cp.offset)
@@ -611,12 +611,13 @@ fn control_read_callback(owner: &ClientRef) {
             };
             state.read_event.clone()
         };
-        let Some(line) = stream
-            .with_stream(|stream| evbuffer_readln(bufferevent_get_input(&mut *stream)))
+        let Some(mut line) = stream
+            .with_stream(|stream| bufferevent_get_input(&mut *stream).read_line(LineEnding::Lf))
             .flatten()
         else {
             break;
         };
+        line.push(0);
         log_debug(format_args!(
             "{}: {}: {}",
             "control_read_callback",
@@ -658,7 +659,7 @@ pub fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     (cs.write_event
-        .with_stream(|stream| evbuffer_get_length(&stream.output))
+        .with_stream(|stream| stream.output.len())
         .unwrap_or(0)
         == 0 as size_t) as ::core::ffi::c_int
 }
@@ -674,10 +675,10 @@ pub fn control_wait_exit() {
         let mut runtime = tiri_rt::mio::Runtime::new()?;
         let source = runtime.enter(|| tiri_rt::mio::Io::new(fd.try_clone_to_owned()?))?;
         runtime.block_on(async {
-            let mut buffer = evbuffer_new();
+            let mut buffer = SegmentedBuf::default();
             loop {
-                if let Some(line) = evbuffer_readln(&mut buffer) {
-                    if line[0] == 0 {
+                if let Some(line) = buffer.read_line(LineEnding::Lf) {
+                    if line.first().is_none_or(|&byte| byte == 0) {
                         return Ok(());
                     }
                 } else {
@@ -687,7 +688,7 @@ pub fn control_wait_exit() {
                         return Ok(());
                     }
                     bytes.truncate(received.bytes);
-                    buffer.append(&mut tiri_buffer::SegmentedBuf::from(bytes));
+                    buffer.append(&mut SegmentedBuf::from(bytes));
                 }
             }
         })?
@@ -731,27 +732,26 @@ fn control_append_data(
     c_owner: &ClientRef,
     offset: &mut window_pane_offset,
     mut age: uint64_t,
-    message: Option<Box<SegmentedBuf>>,
+    message: Option<SegmentedBuf>,
     wp_owner: &Rc<RefCell<window_pane>>,
     mut size: size_t,
-) -> Box<SegmentedBuf> {
+) -> SegmentedBuf {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
 
     let mut message = message.unwrap_or_else(|| {
-        let mut message = evbuffer_new();
+        let mut message = SegmentedBuf::default();
         if c.as_ref().expect("live client").flags() as ::core::ffi::c_ulonglong
             & CLIENT_CONTROL_PAUSEAFTER
             != 0
         {
-            evbuffer_add_formatted(&mut message, |out| {
-                write!(out, "%extended-output %{} {} : ", { wp_owner.id() }, {
-                    age as ::core::ffi::c_ulonglong
-                })
-            });
+            let _ = write!(
+                &mut message,
+                "%extended-output %{} {} : ",
+                wp_owner.id(),
+                age as ::core::ffi::c_ulonglong
+            );
         } else {
-            evbuffer_add_formatted(&mut message, |out| {
-                write!(out, "%output %{} ", { wp_owner.id() })
-            });
+            let _ = write!(&mut message, "%output %{} ", wp_owner.id());
         }
         message
     });
@@ -768,21 +768,21 @@ fn control_append_data(
     let mut i = 0;
     while i < size {
         if escaped(data[i]) {
-            evbuffer_add_formatted(&mut message, |out| write!(out, "\\{:03o}", data[i] as u32));
+            let _ = write!(&mut message, "\\{:03o}", data[i] as u32);
             i += 1;
         } else {
             let end = data[i..]
                 .iter()
                 .position(|&byte| escaped(byte))
                 .map_or(size, |run| i + run);
-            evbuffer_add(&mut message, &data[i..end]);
+            message.extend_from_slice(&data[i..end]);
             i = end;
         }
     }
     wp_owner.advance_output(offset, size);
     message
 }
-fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>) {
+fn control_write_data(c_owner: &ClientRef, mut message: SegmentedBuf) {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
 
     log_debug(format_args!(
@@ -793,9 +793,9 @@ fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>) {
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr_n(evbuffer_pullup(&mut message, -1).map_or(&[][..], |bytes| bytes))
+        log_cstr_n(message.make_contiguous())
     ));
-    evbuffer_add(&mut message, b"\n");
+    message.extend_from_slice(b"\n");
     let stream = {
         c_owner
             .borrow_control_mut()
@@ -923,10 +923,7 @@ fn control_write_callback(owner: &ClientRef) {
             let Some(state) = owner.borrow_control_mut() else {
                 return;
             };
-            let Some(buffered) = state
-                .write_event
-                .with_stream(|stream| evbuffer_get_length(&stream.output))
-            else {
+            let Some(buffered) = state.write_event.with_stream(|stream| stream.output.len()) else {
                 return;
             };
             if buffered >= CONTROL_BUFFER_HIGH as usize || state.pending_panes.is_empty() {
@@ -952,7 +949,7 @@ fn control_write_callback(owner: &ClientRef) {
                 };
                 let Some(buffered) = state
                     .write_event
-                    .with_stream(|stream| evbuffer_get_length(&stream.output))
+                    .with_stream(|stream| stream.output.len())
                 else {
                     return;
                 };
@@ -983,7 +980,7 @@ fn control_write_callback(owner: &ClientRef) {
         };
         state.write_event.clone()
     };
-    if stream.with_stream(|stream| evbuffer_get_length(&stream.output)) == Some(0) {
+    if stream.with_stream(|stream| stream.output.is_empty()) == Some(true) {
         let _ = stream.with_stream(|stream| bufferevent_disable(stream, EV_WRITE as i16));
     }
 }

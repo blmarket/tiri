@@ -10,7 +10,6 @@ use tiri_core::arguments::{args_get, args_has, args_parse, args_string};
 use tiri_core::file::{FileOutcome, file_read_wait};
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::paste::paste_set_owned;
-use tiri_core::reactor::evbuffer_pullup;
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int};
 use tiri_core::shared::client::ClientRef;
@@ -58,7 +57,7 @@ fn cmd_load_buffer_done(
     let path = outcome.path.as_deref();
     let error = outcome.error;
     let buffer = &mut outcome.buffer;
-    let bdata: &[u8] = evbuffer_pullup(buffer, -1).map_or(&[], |bytes| bytes);
+    let bdata: &[u8] = buffer.make_contiguous();
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         inv.error(|out| {

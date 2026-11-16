@@ -1689,13 +1689,12 @@ mod tests {
     };
 
     use crate::grid::grid_create;
-    use crate::reactor::evbuffer_add;
 
     fn buffered_pane(bytes: &[u8]) -> Rc<RefCell<window_pane>> {
         let pane = window_pane::new();
         pane.borrow_mut().fd = None;
         let stream = bufferevent_new(None, None, None, None).unwrap();
-        stream.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
+        stream.with_stream(|stream| stream.input.extend_from_slice(bytes));
         pane.borrow_mut().event = stream;
         pane
     }

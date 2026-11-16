@@ -11,8 +11,8 @@ use tiri_buffer::SegmentedBuf;
 pub struct bufferevent {
     pub(crate) state: std::rc::Rc<crate::reactor::StreamState>,
     pub fd: Option<std::os::fd::OwnedFd>,
-    pub input: Box<SegmentedBuf>,
-    pub output: Box<SegmentedBuf>,
+    pub input: SegmentedBuf,
+    pub output: SegmentedBuf,
     pub wm_read: event_watermark,
     pub wm_write: event_watermark,
     pub readcb: bufferevent_data_cb,

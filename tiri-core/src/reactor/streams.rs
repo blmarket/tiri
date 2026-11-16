@@ -10,7 +10,7 @@ use std::os::fd::AsFd as _;
 use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
-use tiri_buffer::{Buf, BufMut, SegmentedBuf};
+use tiri_buffer::SegmentedBuf;
 use tiri_rt::Handle as _;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
@@ -104,13 +104,13 @@ fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<(
                 } else {
                     b.wm_read
                         .high
-                        .saturating_sub(b.input.remaining())
+                        .saturating_sub(b.input.len())
                         .min(65536)
                 };
                 let write =
-                    b.enabled & 4 != 0 && (b.output.has_remaining() || s.write_requested.get());
+                    b.enabled & 4 != 0 && (!b.output.is_empty() || s.write_requested.get());
                 let output = if write {
-                    super::buffer_prefix(&b.output, 65536)
+                    b.output.copy_prefix(65536)
                 } else {
                     Vec::new()
                 };
@@ -149,9 +149,9 @@ fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<(
                 let (data, error) = match completion {
                     Completion::Changed => continue,
                     Completion::Read(Ok(received)) if received.bytes > 0 => {
-                        b.input.put_slice(&input[..received.bytes]);
+                        b.input.extend_from_slice(&input[..received.bytes]);
                         prefer_write = true;
-                        let cb = (b.input.remaining() >= b.wm_read.low)
+                        let cb = (b.input.len() >= b.wm_read.low)
                             .then(|| b.readcb.clone())
                             .flatten();
                         (cb, None)
@@ -168,7 +168,7 @@ fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<(
                         b.output.advance(n);
                         s.write_requested.set(false);
                         prefer_write = false;
-                        let cb = (b.output.remaining() <= b.wm_write.low)
+                        let cb = (b.output.len() <= b.wm_write.low)
                             .then(|| b.writecb.clone())
                             .flatten();
                         (cb, None)
@@ -296,7 +296,8 @@ pub fn bufferevent_disable(stream: &mut bufferevent, flags: c_short) -> c_int {
     0
 }
 pub fn bufferevent_write(stream: &mut bufferevent, data: &[u8]) -> c_int {
-    super::evbuffer_add(bufferevent_get_output(stream), data)
+    bufferevent_get_output(stream).extend_from_slice(data);
+    0
 }
 /// Move bytes into output. If the source belongs to another stream, obtain it
 /// through bufferevent_get_input/output so that stream also rechecks its I/O.
@@ -314,7 +315,7 @@ pub fn bufferevent_setwatermark(stream: &mut bufferevent) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Buf, BufferEvent, bufferevent_get_input, bufferevent_new, bufferevent_write, clear};
+    use super::{BufferEvent, bufferevent_get_input, bufferevent_new, bufferevent_write, clear};
 
     #[test]
     fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {
@@ -325,11 +326,11 @@ mod tests {
             let generation = state.generation.get();
             bufferevent_write(stream, b"abc");
             assert!(state.generation.get() > generation);
-            assert_eq!(stream.output.remaining(), 3);
+            assert_eq!(stream.output.len(), 3);
             let generation = state.generation.get();
-            super::super::evbuffer_add(&mut stream.input, b"x");
+            stream.input.extend_from_slice(b"x");
             assert_eq!(state.generation.get(), generation);
-            super::super::evbuffer_drain(bufferevent_get_input(stream), 1);
+            bufferevent_get_input(stream).advance(1);
             assert_eq!(state.generation.get(), generation + 1);
         });
         let state = handle.0.upgrade().unwrap();

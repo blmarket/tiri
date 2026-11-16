@@ -3103,7 +3103,7 @@ mod reply_parser_tests {
         {
             let mut terminal = owner.borrow_terminal_mut();
             terminal.term = Some(term);
-            terminal.out = Some(Box::default());
+            terminal.out = Some(Default::default());
         }
         owner
     }

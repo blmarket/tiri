@@ -6,7 +6,7 @@ use futures_core::Stream;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, LocalWaker, Poll, Waker};
-use tiri_buffer::{Buf, SegmentedBuf};
+use tiri_buffer::SegmentedBuf;
 
 #[derive(Default)]
 pub(super) struct ReadState {
@@ -34,10 +34,9 @@ impl Stream for client_file {
             read.exhausted = true;
             return Poll::Ready(Some(Err(io::ErrorKind::InvalidInput.into())));
         }
-        if read.input.has_remaining() {
-            let count = read.input.remaining().min(8192);
-            let mut bytes = vec![0; count];
-            read.input.copy_to_slice(&mut bytes);
+        if !read.input.is_empty() {
+            let bytes = read.input.copy_prefix(8192);
+            read.input.advance(bytes.len());
             return Poll::Ready(Some(Ok(bytes)));
         }
         if let Some(error) = read.error.take() {
@@ -86,12 +85,9 @@ pub(super) fn collect_for_callback(file: &mut client_file) {
 mod tests {
     use crate::file::EIO;
     use crate::file::Rc;
-    use super::{
-        Buf, Context, LocalWaker, Pin, Poll, Stream, Waker, client_file, finish, io, take_wake,
-    };
+    use super::{Context, LocalWaker, Pin, Poll, Stream, Waker, client_file, finish, io, take_wake};
     use std::cell::Cell;
     use std::task::{ContextBuilder, LocalWake};
-    use tiri_buffer::BufMut;
 
     fn read_file() -> client_file {
         let mut file = client_file::empty();
@@ -120,7 +116,7 @@ mod tests {
             .build();
         assert!(Pin::new(&mut file).poll_next(&mut old_cx).is_pending());
         assert!(Pin::new(&mut file).poll_next(&mut cx).is_pending());
-        file.read.input.put_slice(b"data");
+        file.read.input.extend_from_slice(b"data");
         let wake = take_wake(&mut file.read).unwrap();
         assert_eq!(
             current.0.get(),
@@ -148,8 +144,8 @@ mod tests {
     fn buffered_data_precedes_error_and_terminal_polls_stay_finished() {
         let mut file = read_file();
         let expected = (0..20000).map(|i| (i % 251) as u8).collect::<Vec<_>>();
-        file.read.input.put_slice(&expected[..10000]);
-        file.read.input.put_slice(&expected[10000..]);
+        file.read.input.extend_from_slice(&expected[..10000]);
+        file.read.input.extend_from_slice(&expected[10000..]);
         file.error = EIO;
         assert!(finish(&mut file).is_none());
         let mut received = Vec::new();
@@ -170,7 +166,7 @@ mod tests {
         assert_eq!(received, expected);
         file.read
             .input
-            .put_slice(b"late data must not restart the stream");
+            .extend_from_slice(b"late data must not restart the stream");
         assert!(matches!(
             Pin::new(&mut file).poll_next(&mut cx),
             Poll::Ready(None)
@@ -190,7 +186,7 @@ mod tests {
             let mut next = Box::pin(poll_fn(|cx| Pin::new(&mut file).poll_next(cx)));
             assert!(next.as_mut().poll(&mut cx).is_pending());
         }
-        file.read.input.put_slice(b"later");
+        file.read.input.extend_from_slice(b"later");
         let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut file).poll_next(&mut cx) else {
             panic!("data retained");
         };
@@ -202,7 +198,7 @@ mod tests {
     #[test]
     fn polling_a_write_reports_invalid_input_without_changing_write_state() {
         let mut file = client_file::empty();
-        file.buffer.put_slice(b"output");
+        file.buffer.extend_from_slice(b"output");
         let mut cx = Context::from_waker(Waker::noop());
         let Poll::Ready(Some(Err(error))) = Pin::new(&mut file).poll_next(&mut cx) else {
             panic!("not a reader");
@@ -212,7 +208,7 @@ mod tests {
             Pin::new(&mut file).poll_next(&mut cx),
             Poll::Ready(None)
         ));
-        assert_eq!(file.buffer.remaining(), 6);
+        assert_eq!(file.buffer.len(), 6);
         assert_eq!(file.closed, 0);
     }
 }

@@ -1,10 +1,9 @@
-//! Segmented byte storage implementing Buf and BufMut.
-#![deny(unsafe_op_in_unsafe_fn)]
+//! Segmented byte storage and line scanning for `tiri`.
+#![forbid(unsafe_code)]
 
 mod segmented;
 
-pub use bytes::{Buf, BufMut};
-pub use segmented::{Chunks, SegmentedBuf};
+pub use segmented::SegmentedBuf;
 
 /// Line termination policies used by tiri's buffer readers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

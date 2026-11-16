@@ -1,5 +1,5 @@
 //! Opaque stream operations. Destruction remains explicit, independent of Drop.
-use super::{Buf, BufMut, StreamHandle, bufferevent, bufferevent_disable, bufferevent_enable, c_short};
+use super::{StreamHandle, bufferevent, bufferevent_disable, bufferevent_enable, c_short};
 
 /// Read/write interests, distinct from EOF/error notification flags.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -96,36 +96,21 @@ impl BufferEvent for StreamHandle {
     }
 
     fn input_len(&self) -> StreamResult<usize> {
-        self.access(|stream| Ok(stream.input.remaining()))
+        self.access(|stream| Ok(stream.input.len()))
     }
 
-    fn copy_input(&self, mut offset: usize, dst: &mut [u8]) -> StreamResult<usize> {
+    fn copy_input(&self, offset: usize, dst: &mut [u8]) -> StreamResult<usize> {
         self.access(|stream| {
-            if offset > stream.input.remaining() {
+            if offset > stream.input.len() {
                 return Err(StreamError::InvalidRange);
             }
-            let mut copied = 0;
-            for chunk in stream.input.chunks() {
-                if offset >= chunk.len() {
-                    offset -= chunk.len();
-                    continue;
-                }
-                let chunk = &chunk[offset..];
-                let count = chunk.len().min(dst.len() - copied);
-                dst[copied..copied + count].copy_from_slice(&chunk[..count]);
-                copied += count;
-                offset = 0;
-                if copied == dst.len() {
-                    break;
-                }
-            }
-            Ok(copied)
+            Ok(stream.input.copy_slice(offset, dst))
         })
     }
 
     fn drain_input(&self, count: usize) -> StreamResult<usize> {
         self.access(|stream| {
-            let count = count.min(stream.input.remaining());
+            let count = count.min(stream.input.len());
             stream.input.advance(count);
             stream.state.wake();
             Ok(count)
@@ -140,7 +125,7 @@ impl BufferEvent for StreamHandle {
             let mut buffer = [0; 4096];
             match source.try_read(&mut buffer) {
                 Ok(received) => {
-                    stream.input.put_slice(&buffer[..received.bytes]);
+                    stream.input.extend_from_slice(&buffer[..received.bytes]);
                     Ok(received.bytes)
                 }
                 Err(_) => Ok(0),
@@ -150,7 +135,7 @@ impl BufferEvent for StreamHandle {
 
     fn write(&self, bytes: &[u8]) -> StreamResult<()> {
         self.access(|stream| {
-            stream.output.put_slice(bytes);
+            stream.output.extend_from_slice(bytes);
             stream.state.wake();
             Ok(())
         })

@@ -17,7 +17,6 @@ use crate::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
     paste_make_sample_cstring,
 };
-use crate::reactor::{evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline};
 use crate::regsub::regsub_cstring;
 use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;

@@ -6,7 +6,6 @@ use crate::events_payload::{
 use crate::format::bytes::{format_message_with, write_cstr};
 use crate::format::{format_create, format_expand_cstring, format_true};
 use crate::log::{log_cstr, log_debug, log_pointer};
-use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::server_client::Client as _;
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::events::{EventSinkId, event_payload, events_callback};
@@ -15,6 +14,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::future::Future;
+use tiri_buffer::SegmentedBuf;
 
 pub struct Waiter {
     client: ClientWeak,
@@ -150,15 +150,13 @@ fn wait_event_print(client: Option<&ClientRef>, ep: &event_payload) {
         let key = event_payload_item_name(epi);
         if key.to_bytes().first() != Some(&b'_') {
             let value = event_payload_item_print_owned(epi);
-            let mut evb = evbuffer_new();
-            evbuffer_add_formatted(&mut evb, |out| {
-                write_cstr(out, key)?;
-                out.write_all(b"=")?;
-                write_cstr(
-                    out,
-                    CStr::from_bytes_until_nul(&value).expect("payload value is NUL terminated"),
-                )
-            });
+            let mut evb = SegmentedBuf::default();
+            let _ = write_cstr(&mut evb, key);
+            evb.extend_from_slice(b"=");
+            let _ = write_cstr(
+                &mut evb,
+                CStr::from_bytes_until_nul(&value).expect("payload value is NUL terminated"),
+            );
             ClientRef::print_to(client, true, &mut evb);
         }
     }

@@ -49,10 +49,7 @@ use crate::prompt::{
     prompt_set_options, prompt_type_string, prompt_update,
 };
 use crate::reactor::BufferEvent;
-use crate::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup,
-};
+use crate::reactor::{bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write};
 use crate::screen::{
     screen_get_default_cursor, screen_init, screen_resize, screen_set_default_cursor,
     screen_set_title,
@@ -348,7 +345,7 @@ fn window_pane_destroy_ready(wp_owner: &Rc<std::cell::RefCell<window_pane>>) -> 
     if wp.pipe_event.is_alive()
         && wp
             .pipe_event
-            .with_stream(|event| evbuffer_get_length(&event.output) != 0 as size_t)
+            .with_stream(|event| !event.output.is_empty())
             .unwrap_or(false)
     {
         return 0 as ::core::ffi::c_int;
@@ -1546,7 +1543,7 @@ fn window_pane_full_size_offset(
 
 fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mut SegmentedBuf) {
     let client = cdata.client.as_ref().expect("pane input client");
-    let len = evbuffer_get_length(buffer);
+    let len = buffer.len();
     let lookup_wp_owner = window_pane_find_by_id(cdata.wp);
     let file = cdata.file.upgrade();
     if let Some(cancelled) = file
@@ -1558,10 +1555,10 @@ fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mut Segme
         }
         file_cancel(&mut cancelled.borrow_mut());
     } else {
-        let bytes: &[u8] = evbuffer_pullup(buffer, -1).map_or(&[], |bytes| bytes);
+        let bytes = buffer.make_contiguous();
         input_parse_buffer(lookup_wp_owner.as_ref().expect("live pane"), bytes);
     }
-    evbuffer_drain(buffer, len);
+    buffer.advance(len.min(buffer.len()));
 }
 
 /// Finish the command once client stdin ends. A dead file client never
@@ -1636,10 +1633,7 @@ fn window_pane_update_used_data(
 ) {
     let mut wp = wp_owner.borrow_mut();
     let used: size_t = offset(&mut wp).used.wrapping_sub(wp.base_offset);
-    let Some(available) = wp
-        .event
-        .with_stream(|event| evbuffer_get_length(&event.input))
-    else {
+    let Some(available) = wp.event.with_stream(|event| event.input.len()) else {
         return;
     };
     if size > available.saturating_sub(used) {

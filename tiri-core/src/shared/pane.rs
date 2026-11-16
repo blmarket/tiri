@@ -24,21 +24,13 @@ pub fn pane_output_data(
     base_offset: size_t,
     offset: &window_pane_offset,
 ) -> Vec<u8> {
-    let mut skip = offset.used.wrapping_sub(base_offset);
-    let remaining = tiri_buffer::Buf::remaining(input);
-    let mut data = Vec::with_capacity(
-        remaining
-            .checked_sub(skip)
-            .expect("pane offset is within input buffer"),
-    );
-    for chunk in input.chunks() {
-        if skip >= chunk.len() {
-            skip -= chunk.len();
-            continue;
-        }
-        data.extend_from_slice(&chunk[skip..]);
-        skip = 0;
-    }
+    let skip = offset.used.wrapping_sub(base_offset);
+    let len = input
+        .len()
+        .checked_sub(skip)
+        .expect("pane offset is within input buffer");
+    let mut data = vec![0; len];
+    input.copy_slice(skip, &mut data);
     data
 }
 

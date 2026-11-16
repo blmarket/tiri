@@ -2,14 +2,14 @@ use crate::format::expression::format_expand1_cstring;
 use crate::server_client::Client as _;
 use super::{
     FORMAT_EXPAND_NOCYCLE, FORMAT_EXPAND_NOJOBS, FORMAT_EXPAND_TIME, FORMAT_FORCE, FORMAT_STATUS,
-    JOB_NOWAIT, JobCompletion, evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline,
-    format_expand_state, format_job, format_job_tree, job, job_free, job_get_event, job_run,
-    job_update_callback, log_debug, server_status_client, time_t, u_int,
+    JOB_NOWAIT, JobCompletion, format_expand_state, format_job, format_job_tree, job, job_free,
+    job_get_event, job_run, job_update_callback, log_debug, server_status_client, time_t, u_int,
 };
 use crate::log::{log_cstr, log_pointer};
 use crate::server_client::ClientRegistry;
 use crate::shared::client::{ClientRef, ClientWeak};
 use std::ffi::{CStr, CString};
+use tiri_buffer::{LineEnding, SegmentedBuf};
 
 fn format_job_set_expanded(fj: &mut format_job, value: CString) {
     fj.expanded = Default::default();
@@ -120,7 +120,7 @@ fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
         .with_stream(|stream| {
             let buffer = crate::reactor::bufferevent_get_input(stream);
             let mut line = None;
-            while let Some(next) = evbuffer_readline(buffer) {
+            while let Some(next) = buffer.read_line(LineEnding::Legacy) {
                 line = Some(next);
             }
             line
@@ -150,24 +150,21 @@ fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
 }
 
 fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
-    let mut buffer = evbuffer_new();
-    if !completion.output.is_empty() {
-        evbuffer_add(&mut buffer, &completion.output);
-    }
+    let mut buffer = SegmentedBuf::from(completion.output);
     if entry
         .with_record(|record| record.job = refbox::Weak::new())
         .is_none()
     {
         return;
     }
-    let output = if let Some(line) = evbuffer_readline(&mut buffer) {
+    let output = if let Some(line) = buffer.read_line(LineEnding::Legacy) {
         let visible = line
             .iter()
             .position(|&byte| byte == 0)
             .unwrap_or(line.len());
         CString::new(&line[..visible]).expect("visible job output contains no NUL")
     } else {
-        let bytes = evbuffer_pullup(&mut buffer, -1).unwrap_or_default();
+        let bytes = buffer.make_contiguous();
         let visible = bytes
             .iter()
             .position(|&byte| byte == 0)

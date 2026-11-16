@@ -20,16 +20,13 @@ use tiri_core::compat::strtod::strtod;
 use tiri_core::format::bytes::{format_message_with, write_cstr};
 use tiri_core::format::{format_add, format_expand_cstring};
 use tiri_core::job::job_run;
-use tiri_core::reactor::{
-    evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_readln,
-};
 use tiri_core::server_client::Client as _;
 use tiri_core::session::Session;
-use tiri_core::shared::abi::{size_t, time_t, u_char, u_int};
+use tiri_core::shared::abi::{time_t, u_char, u_int};
 use tiri_core::shared::client::ClientRef;
 use tiri_core::shared::event::Timer;
 use tiri_core::shared::job::{JOB_NOWAIT, JOB_SHOWSTDERR, JobCompletion, job};
+use tiri_core::tiri_buffer::{LineEnding, SegmentedBuf};
 use tiri_core::shared::pane::window_pane;
 use tiri_core::shared::session::SessionRef;
 use tiri_core::shared::target::Target as cmd_find_state;
@@ -90,8 +87,7 @@ fn cmd_run_shell_print(cdata: &cmd_run_shell_data, inv: Option<&Invocation<'_>>,
     };
     if pane.is_none() {
         if let Some(inv) = inv {
-            let mut evb = evbuffer_new();
-            evbuffer_add_formatted(&mut evb, |out| write_cstr(out, msg));
+            let mut evb = SegmentedBuf::from(msg.to_bytes().to_vec());
             inv.print_data(&mut evb);
             return;
         }
@@ -394,10 +390,7 @@ fn cmd_run_shell_callback(
     cdata: &cmd_run_shell_data,
     inv: Option<&Invocation<'_>>,
 ) {
-    let mut event = evbuffer_new();
-    if !completion.output.is_empty() {
-        evbuffer_add(&mut event, &completion.output);
-    }
+    let mut event = SegmentedBuf::from(completion.output);
     let cmd = cdata
         .cmd
         .as_ref()
@@ -405,16 +398,16 @@ fn cmd_run_shell_callback(
         .as_c_str();
     let mut msg: Option<CString> = None;
     let mut retcode: ::core::ffi::c_int = 0;
-    while let Some(line) = evbuffer_readln(&mut event) {
+    while let Some(mut line) = event.read_line(LineEnding::Lf) {
+        line.push(0);
         cmd_run_shell_print(
             cdata,
             inv,
             CStr::from_bytes_until_nul(&line).expect("read line is NUL terminated"),
         );
     }
-    let size: size_t = evbuffer_get_length(&event);
-    if size != 0 as size_t {
-        let mut partial_line = evbuffer_pullup(&mut event, -1).unwrap_or_default().to_vec();
+    if !event.is_empty() {
+        let mut partial_line = event.make_contiguous().to_vec();
         partial_line.push(0);
         cmd_run_shell_print(
             cdata,

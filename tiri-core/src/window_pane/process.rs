@@ -7,10 +7,7 @@ use crate::format::{format_create, format_defaults, format_expand_time_cstring};
 use crate::log::{fatalx, log_debug};
 use crate::proc::proc_clear_signals;
 use crate::reactor::BufferEvent;
-use crate::reactor::{
-    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup,
-};
+use crate::reactor::{bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write};
 use crate::server::server_proc;
 use crate::server_fn::server_destroy_pane;
 use crate::shared::abi::{u_char, u_int};
@@ -186,11 +183,7 @@ fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<windo
         return;
     }
     let data = pipe
-        .with_stream(|event| {
-            let evb = &mut *event.input;
-            let available = evbuffer_get_length(evb);
-            evbuffer_pullup(evb, -1).map_or_else(Vec::new, |bytes| bytes[..available].to_vec())
-        })
+        .with_stream(|event| event.input.copy_prefix(event.input.len()))
         .unwrap_or_default();
     let available = data.len();
     log_debug(format_args!("%{} pipe read {}", id, { available }));
@@ -198,7 +191,8 @@ fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<windo
         bufferevent_write(event, &data[..available]);
     });
     let _ = pipe.with_stream(|event| {
-        evbuffer_drain(bufferevent_get_input(&mut *event), available);
+        let input = bufferevent_get_input(&mut *event);
+        input.advance(available.min(input.len()));
     });
     if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
@@ -226,9 +220,9 @@ fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<wind
 mod pipe_stream_tests {
     use super::{
         BufferEvent, bufferevent_new, cmd_pipe_pane_error_callback, cmd_pipe_pane_read_callback,
-        evbuffer_get_length, window_pane,
+        window_pane,
     };
-    use crate::reactor::{evbuffer_add, shutdown_runtime};
+    use crate::reactor::shutdown_runtime;
     use std::os::fd::AsRawFd;
 
     #[test]
@@ -270,7 +264,7 @@ mod pipe_stream_tests {
             wp.pipe_event.clone()
         };
         let bytes = b"pipe output";
-        stale.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
+        stale.with_stream(|stream| stream.input.extend_from_slice(bytes));
 
         cmd_pipe_pane_read_callback(&pane_owner);
 
@@ -278,11 +272,11 @@ mod pipe_stream_tests {
             pane_owner
                 .borrow()
                 .event
-                .with_stream(|event| evbuffer_get_length(&(*event).output)),
+                .with_stream(|event| event.output.len()),
             Some(bytes.len())
         );
         assert_eq!(
-            stale.with_stream(|stream| evbuffer_get_length(&stream.input)),
+            stale.with_stream(|stream| stream.input.len()),
             Some(0)
         );
         let pipe_event = std::mem::take(&mut pane_owner.borrow_mut().pipe_event);

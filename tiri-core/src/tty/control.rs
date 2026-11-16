@@ -27,7 +27,6 @@ use crate::grid::grid_default_cell;
 use crate::log::{fatalx, log_cstr, log_debug};
 use crate::options::options_get_number;
 use crate::reactor;
-use crate::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_new};
 use crate::server_client::Client as _;
 use crate::server_fn::server_redraw_client;
 use crate::session::Session;
@@ -224,13 +223,12 @@ fn tty_timer_callback(owner: &ClientRef) {
 }
 
 fn tty_block_maybe(terminal: &ClientRef) -> bool {
-    let size = evbuffer_get_length(
-        terminal
-            .borrow_terminal_mut()
-            .out
-            .as_deref()
-            .expect("open TTY buffer"),
-    );
+    let size = terminal
+        .borrow_terminal_mut()
+        .out
+        .as_ref()
+        .expect("open TTY buffer")
+        .len();
     if size == 0 {
         terminal_set!(terminal, flags, &=, !TTY_NOBLOCK);
     } else if terminal_value!(terminal, flags) & TTY_NOBLOCK != 0 {
@@ -254,14 +252,11 @@ fn tty_block_maybe(terminal: &ClientRef) -> bool {
         log_cstr(terminal.name().as_deref().unwrap_or(c"(null)")),
         size
     ));
-    evbuffer_drain(
-        terminal
-            .borrow_terminal_mut()
-            .out
-            .as_deref_mut()
-            .expect("open TTY buffer"),
-        size,
-    );
+    {
+        let mut term = terminal.borrow_terminal_mut();
+        let out = term.out.as_mut().expect("open TTY buffer");
+        out.advance(size.min(out.len()));
+    }
     terminal.record_terminal_discard(size);
     terminal_set!(terminal, discarded, =, 0);
     let timeout = Duration::from_micros(TTY_BLOCK_INTERVAL as u64);
@@ -277,22 +272,18 @@ fn tty_block_maybe(terminal: &ClientRef) -> bool {
 
 fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
     (|terminal: &ClientRef| {
-        let size = evbuffer_get_length(
-            terminal
-                .borrow_terminal_mut()
-                .out
-                .as_deref()
-                .expect("open TTY buffer"),
-        );
+        let size = terminal
+            .borrow_terminal_mut()
+            .out
+            .as_ref()
+            .expect("open TTY buffer")
+            .len();
         let Ok(written) = result else { return };
-        evbuffer_drain(
-            terminal
-                .borrow_terminal_mut()
-                .out
-                .as_deref_mut()
-                .expect("open TTY buffer"),
-            written,
-        );
+        {
+            let mut term = terminal.borrow_terminal_mut();
+            let out = term.out.as_mut().expect("open TTY buffer");
+            out.advance(written.min(out.len()));
+        }
         log_debug(format_args!(
             "{}: wrote {} bytes (of {})",
             log_cstr(terminal.name().as_deref().unwrap_or(c"(null)")),
@@ -308,13 +299,12 @@ fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
         } else if tty_block_maybe(terminal) {
             return;
         }
-        if evbuffer_get_length(
-            terminal
-                .borrow_terminal_mut()
-                .out
-                .as_deref()
-                .expect("open TTY buffer"),
-        ) != 0
+        if !terminal
+            .borrow_terminal_mut()
+            .out
+            .as_ref()
+            .expect("open TTY buffer")
+            .is_empty()
         {
             tty_start_write(
                 &mut terminal.borrow_terminal_mut(),
@@ -382,11 +372,9 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
                             return std::task::Poll::Ready(None);
                         };
                         let mut terminal = owner.borrow_terminal_mut();
-                        let out = terminal.out.as_deref().expect("open TTY buffer");
-                        if evbuffer_get_length(out) != 0 {
-                            return std::task::Poll::Ready(Some(reactor::buffer_prefix(
-                                out, 65536,
-                            )));
+                        let out = terminal.out.as_ref().expect("open TTY buffer");
+                        if !out.is_empty() {
+                            return std::task::Poll::Ready(Some(out.copy_prefix(65536)));
                         }
                         terminal.write_wake = Some(cx.local_waker().clone());
                         std::task::Poll::Pending
@@ -444,7 +432,7 @@ pub fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
         let fd = terminal.terminal_fd();
         terminal_set!(terminal, io_fd, =, fd);
         terminal_set!(terminal, in_0, =, Some(Box::new(TerminalInput::default())));
-        terminal_set!(terminal, out, =, Some(evbuffer_new()));
+        terminal_set!(terminal, out, =, Some(Default::default()));
     };
     tty_start_tty(owner);
     tty_keys_build(&mut owner.borrow_terminal_mut());

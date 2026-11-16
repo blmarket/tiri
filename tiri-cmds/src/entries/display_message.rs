@@ -14,7 +14,6 @@ use tiri_core::arguments::{
 use tiri_core::format::bytes::write_cstr;
 use tiri_core::format::{format_create, format_defaults, format_each, format_expand_time_cstring};
 use tiri_core::json::{json_parse, json_to_string};
-use tiri_core::reactor::{evbuffer_add_formatted, evbuffer_new};
 use tiri_core::server_client::Client as _;
 use tiri_core::shared::abi::{u_char, u_int, uint64_t};
 use tiri_core::shared::client::CLIENT_CONTROL;
@@ -24,6 +23,7 @@ use tiri_core::shared::limits::UINT_MAX;
 use tiri_core::shared::target::best_client as cmd_find_best_client;
 use tiri_core::shared::window::winlink;
 use tiri_core::status::status_message_set;
+use tiri_core::tiri_buffer::SegmentedBuf;
 use tiri_core::window_pane::WindowPane as _;
 
 pub const DISPLAY_MESSAGE_TEMPLATE: &std::ffi::CStr =
@@ -181,11 +181,9 @@ fn cmd_display_message_exec<'a, 'ctx>(
             .as_ref()
             .is_some_and(|tc_ref| tc_ref.flags() & CLIENT_CONTROL as uint64_t != 0)
         {
-            let mut evb = evbuffer_new();
-            evbuffer_add_formatted(&mut evb, |out| {
-                out.write_all(b"%message ")?;
-                write_cstr(out, &*msg)
-            });
+            let mut evb = SegmentedBuf::default();
+            evb.extend_from_slice(b"%message ");
+            evb.extend_from_slice(msg.to_bytes());
             ClientRef::print_to(tc_owner.as_ref(), false, &mut evb);
         } else if tc.is_some() {
             status_message_set(

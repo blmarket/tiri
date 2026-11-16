@@ -6,16 +6,10 @@
 //! The client and server create their runtimes and move them into the process
 //! loop. Scheduling helpers use the current handle without creating a runtime.
 #![allow(clippy::missing_safety_doc)]
-mod buffer;
 mod lane;
 mod streams;
 mod tasks;
 mod timers;
-pub use buffer::{
-    evbuffer_add, evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_new,
-    evbuffer_pullup, evbuffer_readline, evbuffer_readln,
-};
-pub(crate) use buffer::{buffer_prefix};
 pub use lane::{Lane, LaneTarget};
 use std::os::fd::BorrowedFd;
 pub use streams::{

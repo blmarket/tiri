@@ -14,13 +14,9 @@ use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::log::{fatalx, log_cstr, log_debug};
 use crate::proc::{bytes_of, int_message, proc_send, read_plain};
 use crate::reactor::BufferEvent;
-use crate::reactor::{
-    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
-};
+use crate::reactor::{bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write};
 
 use crate::server_client::Client as _;
-use crate::shared::abi::ssize_t;
 use crate::shared::abi::{size_t, u_int, uint64_t};
 use crate::shared::client::ClientRef;
 use crate::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
@@ -29,7 +25,7 @@ use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::posix_io::{O_APPEND, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use crate::shared::process::tmuxpeer;
 use crate::tmux::find_home_cstr;
-use libc::{E2BIG, EINVAL, ENOMEM};
+use libc::{E2BIG, EINVAL};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
@@ -373,14 +369,14 @@ pub fn file_print(
                 file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
             let mut cf = transfer_owner.borrow_mut();
             file_set_path(&mut cf, CString::new("-").unwrap());
-            evbuffer_add_formatted(&mut cf.buffer, write);
+            let _ = write(&mut cf.buffer);
             msg.stream = 1 as ::core::ffi::c_int;
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
             client_owner.send_message(MSG_WRITE_OPEN, None, &bytes_of(&msg));
         }
         Some(file_owner) => {
-            evbuffer_add_formatted(&mut file_owner.borrow_mut().buffer, write);
+            let _ = write(&mut file_owner.borrow_mut().buffer);
             file_push(&file_owner);
         }
     }
@@ -406,14 +402,14 @@ pub fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
                 file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
             let mut cf = transfer_owner.borrow_mut();
             file_set_path(&mut cf, CString::new("-").unwrap());
-            evbuffer_add(&mut cf.buffer, data);
+            cf.buffer.extend_from_slice(data);
             msg.stream = 1 as ::core::ffi::c_int;
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
             client_owner.send_message(MSG_WRITE_OPEN, None, &bytes_of(&msg));
         }
         Some(file_owner) => {
-            evbuffer_add(&mut file_owner.borrow_mut().buffer, data);
+            file_owner.borrow_mut().buffer.extend_from_slice(data);
             file_push(&file_owner);
         }
     }
@@ -442,14 +438,14 @@ pub fn file_error(
                 file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
             let mut cf = transfer_owner.borrow_mut();
             file_set_path(&mut cf, CString::new("-").unwrap());
-            evbuffer_add_formatted(&mut cf.buffer, write);
+            let _ = write(&mut cf.buffer);
             msg.stream = 2 as ::core::ffi::c_int;
             msg.fd = STDERR_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
             client_owner.send_message(MSG_WRITE_OPEN, None, &bytes_of(&msg));
         }
         Some(file_owner) => {
-            evbuffer_add_formatted(&mut file_owner.borrow_mut().buffer, write);
+            let _ = write(&mut file_owner.borrow_mut().buffer);
             file_push(&file_owner);
         }
     }
@@ -528,7 +524,7 @@ fn file_write_impl(
         }
     }
     if current_block == 8821498768635335055 {
-        evbuffer_add(&mut cf.buffer, bdata);
+        cf.buffer.extend_from_slice(bdata);
         msglen = cf
             .path
             .as_deref()
@@ -610,7 +606,7 @@ fn file_read_impl(
             match std::fs::read(file_os_path(cf)) {
                 Err(error) => cf.error = error.raw_os_error().unwrap_or(EIO),
                 Ok(bytes) => {
-                    evbuffer_add(&mut cf.read.input, &bytes);
+                    cf.read.input.extend_from_slice(&bytes);
                 }
             }
             current_block = 17369485759464587280;
@@ -673,7 +669,7 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
     let mut sent: size_t = 0;
     let mut left: size_t = 0;
     let mut close_0: msg_write_close = msg_write_close { stream: 0 };
-    left = evbuffer_get_length(&cf.buffer);
+    left = cf.buffer.len();
     while left != 0 as size_t {
         sent = left;
         if sent
@@ -690,15 +686,12 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
         msg.resize(msglen, 0);
         let header = msg_write_data { stream: cf.stream };
         msg[..header_len].copy_from_slice(&bytes_of(&header));
-        msg[header_len..].copy_from_slice(
-            evbuffer_pullup(&mut cf.buffer, sent as ssize_t)
-                .map_or(&[][..], |bytes| &bytes[..sent]),
-        );
+        cf.buffer.copy_slice(0, &mut msg[header_len..msglen]);
         if file_send(cf, MSG_WRITE, None, &msg[..msglen]) != 0 as ::core::ffi::c_int {
             break;
         }
-        evbuffer_drain(&mut cf.buffer, sent);
-        left = evbuffer_get_length(&cf.buffer);
+        cf.buffer.advance(sent);
+        left = cf.buffer.len();
         log_debug(format_args!(
             "file {} sent {}, left {}",
             { cf.stream },
@@ -737,10 +730,7 @@ pub fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     for file in client_files_iter(files).filter_map(|file| file.upgrade()) {
         let cf = file.borrow();
-        if let Some(remaining) = cf
-            .event
-            .with_stream(|stream| evbuffer_get_length(&stream.output))
-        {
+        if let Some(remaining) = cf.event.with_stream(|stream| stream.output.len()) {
             left = remaining;
             if left != 0 as size_t {
                 waiting += 1;
@@ -809,7 +799,7 @@ fn file_write_callback(owner: &Rc<RefCell<client_file>>) {
         log_debug(format_args!("write check file {}", { cf.stream }));
         let remaining = cf
             .event
-            .with_stream(|stream| evbuffer_get_length(&stream.output))
+            .with_stream(|stream| stream.output.len())
             .unwrap_or(0);
         cf.closed != 0 && remaining == 0 as size_t
     };
@@ -953,7 +943,7 @@ pub fn file_write_close(imsg: &imsg) {
         log_debug(format_args!("close file {}", { cf.stream }));
         cf.closed = 1 as ::core::ffi::c_int;
         cf.event
-            .with_stream(|stream| evbuffer_get_length(&stream.output))
+            .with_stream(|stream| stream.output.len())
             .unwrap_or(0)
     };
     if remaining == 0 as size_t {
@@ -983,14 +973,12 @@ fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_read_data>();
     while let Some(chunk) = cf.event.with_stream(|stream| {
-        let input = &mut *stream.input;
-        let bsize = evbuffer_get_length(input).min(
+        let bsize = stream.input.len().min(
             (MAX_IMSGSIZE as usize)
                 .wrapping_sub(IMSG_HEADER_SIZE)
                 .wrapping_sub(header_len),
         );
-        evbuffer_pullup(input, bsize as ssize_t)
-            .map_or_else(Vec::new, |bytes| bytes[..bsize].to_vec())
+        stream.input.copy_prefix(bsize)
     }) {
         let bsize = chunk.len();
         if bsize == 0 {
@@ -1005,9 +993,10 @@ fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
         msg[..header_len].copy_from_slice(&bytes_of(&header));
         msg[header_len..].copy_from_slice(&chunk);
         file_send(&cf, MSG_READ, None, &msg[..msglen]);
-        let _ = cf
-            .event
-            .with_stream(|stream| evbuffer_drain(bufferevent_get_input(&mut *stream), bsize));
+        let _ = cf.event.with_stream(|stream| {
+            let input = bufferevent_get_input(&mut *stream);
+            input.advance(bsize.min(input.len()));
+        });
     }
 }
 pub fn file_read_open(
@@ -1182,18 +1171,13 @@ pub fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
         (bsize) as usize
     ));
     if cf.error == 0 as ::core::ffi::c_int && cf.closed == 0 {
-        if evbuffer_add(&mut cf.read.input, bdata) != 0 as ::core::ffi::c_int {
-            cf.error = ENOMEM;
-            drop(cf);
-            file_fire_done(&file_owner);
-        } else {
-            let wake = stream::take_wake(&mut cf.read);
-            drop(cf);
-            if let Some(wake) = wake {
-                wake.wake();
-            }
-            file_fire_read(&file_owner);
+        cf.read.input.extend_from_slice(bdata);
+        let wake = stream::take_wake(&mut cf.read);
+        drop(cf);
+        if let Some(wake) = wake {
+            wake.wake();
         }
+        file_fire_read(&file_owner);
     }
     0 as ::core::ffi::c_int
 }
@@ -1289,7 +1273,7 @@ pub(crate) fn client_files_has_pending_data(files: &client_files) -> bool {
     client_files_iter(files).any(|owner| {
         let owner = owner.upgrade().expect("indexed file is live");
         let file = owner.borrow();
-        evbuffer_get_length(&file.buffer) != 0 || evbuffer_get_length(&file.read.input) != 0
+        !file.buffer.is_empty() || !file.read.input.is_empty()
     })
 }
 

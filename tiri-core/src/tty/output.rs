@@ -13,7 +13,6 @@ use crate::grid::{grid_cells_equal, grid_default_cell};
 use crate::hyperlinks::hyperlinks_get;
 use crate::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::options::options_get_string;
-use crate::reactor::evbuffer_add;
 use crate::screen::screen_mode_display;
 use crate::server_client::Client as _;
 use crate::shared::abi::{size_t, u_char, u_int, u_short};
@@ -154,10 +153,10 @@ pub(crate) fn tty_enqueue_bytes(
         tty.discarded = tty.discarded.wrapping_add(len);
         return;
     }
-    evbuffer_add(
-        tty.out.as_deref_mut().expect("open TTY buffer"),
-        &buf[..len],
-    );
+    tty.out
+        .as_mut()
+        .expect("open TTY buffer")
+        .extend_from_slice(&buf[..len]);
     log_debug(format_args!(
         "{}: {}",
         log_cstr(name.unwrap_or(c"(null)")),
@@ -1518,7 +1517,7 @@ mod xtermjs_wide_tests {
         {
             let mut terminal = owner.borrow_terminal_mut();
             terminal.term = Some(term);
-            terminal.out = Some(Box::default());
+            terminal.out = Some(Default::default());
             terminal.sx = 80;
             terminal.sy = 24;
             terminal.cx = 0;
@@ -1534,12 +1533,10 @@ mod xtermjs_wide_tests {
     }
 
     fn take_output(owner: &ClientRef) -> Vec<u8> {
-        use tiri_buffer::Buf as _;
         let mut terminal = owner.borrow_terminal_mut();
-        let out = terminal.out.as_deref_mut().unwrap();
-        let len = out.remaining();
-        let mut bytes = vec![0u8; len];
-        out.copy_to_slice(&mut bytes);
+        let out = terminal.out.as_mut().unwrap();
+        let bytes = out.copy_prefix(out.len());
+        out.advance(bytes.len());
         bytes
     }
 
