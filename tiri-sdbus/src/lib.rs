@@ -192,12 +192,12 @@ impl Message {
         self.append_basic(b's', value.as_ptr() as *const c_void)
     }
 
-    pub fn append_bool(&mut self, value: bool) -> io::Result<()> {
+    fn append_bool(&mut self, value: bool) -> io::Result<()> {
         let value = value as c_int;
         self.append_basic(b'b', &raw const value as *const c_void)
     }
 
-    pub fn append_u32(&mut self, value: u32) -> io::Result<()> {
+    fn append_u32(&mut self, value: u32) -> io::Result<()> {
         self.append_basic(b'u', &raw const value as *const c_void)
     }
 

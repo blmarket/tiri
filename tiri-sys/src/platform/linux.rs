@@ -1,13 +1,12 @@
 //! Linux implementation of the operating-system boundary.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs;
 use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use super::{Platform, ProcessInfo};
+use super::Platform;
 
 /// The Linux platform implementation selected by the native server.
 pub struct Linux;
@@ -30,41 +29,6 @@ impl Platform for Linux {
         (!name.is_empty()).then(|| OsString::from_vec(name.to_vec()))
     }
 
-    fn process_table() -> Option<Vec<ProcessInfo>> {
-        let entries = fs::read_dir("/proc").ok()?;
-        let mut table = Vec::new();
-        for entry in entries.flatten() {
-            let Some(pid) = entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            if let Some(ppid) = read_ppid(pid) {
-                table.push(ProcessInfo { pid, ppid });
-            }
-        }
-        Some(table)
-    }
-
-    fn process_programs(pid: u32) -> Vec<OsString> {
-        let mut programs = Vec::new();
-
-        if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
-            let comm = comm.trim();
-            if !comm.is_empty() {
-                programs.push(OsString::from(comm));
-            }
-        }
-
-        if let Some(program) = Self::process_arguments(pid).first() {
-            programs.push(program.clone());
-        }
-
-        programs
-    }
-
     fn process_arguments(pid: u32) -> Vec<OsString> {
         fs::read(format!("/proc/{pid}/cmdline"))
             .map(|cmdline| {
@@ -75,43 +39,6 @@ impl Platform for Linux {
                     .collect()
             })
             .unwrap_or_default()
-    }
-
-    fn process_cwd(pid: u32) -> Option<PathBuf> {
-        fs::read_link(format!("/proc/{pid}/cwd")).ok()
-    }
-
-    fn process_open_files(pid: u32) -> Vec<PathBuf> {
-        let Ok(entries) = fs::read_dir(format!("/proc/{pid}/fd")) else {
-            return Vec::new();
-        };
-        entries
-            .flatten()
-            .filter_map(|entry| fs::read_link(entry.path()).ok())
-            .collect()
-    }
-
-    fn process_start_time(pid: u32) -> Option<SystemTime> {
-        let since_boot = read_start_ticks(pid)? as f64 / clock_ticks_per_second()? as f64;
-        boot_time()?.checked_add(Duration::from_secs_f64(since_boot))
-    }
-
-    fn process_environ(pid: u32) -> Vec<(OsString, OsString)> {
-        use std::os::unix::ffi::OsStrExt;
-        let Ok(environ) = fs::read(format!("/proc/{pid}/environ")) else {
-            return Vec::new();
-        };
-        environ
-            .split(|byte| *byte == 0)
-            .filter(|entry| !entry.is_empty())
-            .filter_map(|entry| {
-                let split = entry.iter().position(|byte| *byte == b'=')?;
-                Some((
-                    OsStr::from_bytes(&entry[..split]).to_owned(),
-                    OsStr::from_bytes(&entry[split + 1..]).to_owned(),
-                ))
-            })
-            .collect()
     }
 
     fn process_waiting_for_tty(pid: u32) -> Option<bool> {
@@ -142,69 +69,13 @@ impl Platform for Linux {
 /// functions are what older ones reported directly.
 const TTY_READ_WCHAN: [&str; 3] = ["wait_woken", "n_tty_read", "tty_read"];
 
-/// Seconds since the epoch at which the kernel booted, from `/proc/stat`'s
-/// `btime` line. Process start times are recorded relative to this instant.
-fn boot_time() -> Option<SystemTime> {
-    let stat = fs::read_to_string("/proc/stat").ok()?;
-    let seconds: u64 = stat
-        .lines()
-        .find_map(|line| line.strip_prefix("btime "))?
-        .trim()
-        .parse()
-        .ok()?;
-    UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
-}
-
-/// Parse the start time from `/proc/<pid>/stat`, in clock ticks since boot.
-/// The `comm` field can contain spaces and parentheses, so fields are read
-/// after the final `)`: the tokens there begin at `state`, making `starttime`
-/// (field 22 overall) the twentieth.
-fn read_start_ticks(pid: u32) -> Option<u64> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let after_comm = &stat[stat.rfind(')')? + 1..];
-    after_comm.split_whitespace().nth(19)?.parse().ok()
-}
-
-fn clock_ticks_per_second() -> Option<u64> {
-    let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-    (ticks > 0).then_some(ticks as u64)
-}
-
-/// Parse the parent pid from `/proc/<pid>/stat`. The `comm` field can contain
-/// spaces and parentheses, so fields are read after the final `)`: the tokens
-/// there are `state ppid ...`, making ppid the second one.
-fn read_ppid(pid: u32) -> Option<u32> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let after_comm = &stat[stat.rfind(')')? + 1..];
-    after_comm.split_whitespace().nth(1)?.parse().ok()
-}
-
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::fs::File;
     use std::io;
     use std::ptr;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
-    use super::{Duration, Linux, Platform};
-
-    #[test]
-    fn process_open_files_reports_current_process_file() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("tiri-open-file-{}-{nonce}", std::process::id()));
-        let file = File::create(&path).expect("create temporary file");
-
-        let open_files = Linux::process_open_files(std::process::id());
-        assert!(open_files.contains(&path), "open files: {open_files:?}");
-
-        drop(file);
-        fs::remove_file(path).expect("remove temporary file");
-    }
+    use super::{Linux, Platform};
 
     /// Fork a child onto the slave end of a fresh pty and run `probe` against
     /// it once it has had a moment to reach its steady state. `body` runs in

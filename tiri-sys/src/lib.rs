@@ -13,10 +13,8 @@ use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
-mod notification;
 pub mod platform;
 pub mod regex;
-pub use notification::{Notification, Notify};
 
 fn check(result: libc::c_int) -> io::Result<libc::c_int> {
     if result < 0 {
@@ -113,7 +111,7 @@ fn thread_count() -> io::Result<usize> {
 /// Fail unless the calling process has a single thread, as a fork requires:
 /// a forked child keeps only the calling thread, and anything another thread
 /// was doing would be left half done in the child.
-pub fn ensure_single_threaded() -> io::Result<()> {
+fn ensure_single_threaded() -> io::Result<()> {
     match thread_count()? {
         1 => Ok(()),
         _ => Err(io::Error::other("process has more than one thread")),
@@ -352,7 +350,7 @@ pub fn set_terminal_size(fd: BorrowedFd<'_>, size: &libc::winsize) -> io::Result
     check(unsafe { libc::ioctl(fd.as_raw_fd(), libc::TIOCSWINSZ, size) }).map(|_| ())
 }
 
-pub fn terminal_session(fd: BorrowedFd<'_>) -> io::Result<libc::pid_t> {
+pub(crate) fn terminal_session(fd: BorrowedFd<'_>) -> io::Result<libc::pid_t> {
     check(unsafe { libc::tcgetsid(fd.as_raw_fd()) })
 }
 

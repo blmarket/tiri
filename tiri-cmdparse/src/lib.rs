@@ -94,14 +94,13 @@ pub struct ParseCommand {
     pub arguments: Vec<ParseArgument>,
 }
 impl ParseCommand {
-    /// The `command : assignment` case, which carries no arguments.
-    pub fn empty(line: u32) -> ParseCommand {
+    pub(crate) fn empty(line: u32) -> ParseCommand {
         ParseCommand {
             line,
             arguments: Vec::new(),
         }
     }
-    pub fn new(line: u32, name: TokenText, arguments: Vec<ParseArgument>) -> ParseCommand {
+    pub(crate) fn new(line: u32, name: TokenText, arguments: Vec<ParseArgument>) -> ParseCommand {
         let mut arguments = arguments;
         arguments.insert(0, ParseArgument::String(name));
         ParseCommand { line, arguments }

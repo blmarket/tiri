@@ -10,11 +10,6 @@ use crate::shared::command::{cmd, cmd_entry, cmd_list};
 use std::ffi::{CStr, CString};
 use tiri_core::shared::abi::u_int;
 
-pub const DQ: C2RustUnnamed_38 = 2;
-pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
-pub const SQ: C2RustUnnamed_38 = 1;
-pub const NQ: C2RustUnnamed_38 = 0;
-
 pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
     cmd.entry
 }
@@ -273,7 +268,4 @@ pub(crate) fn cmd_list_print_cstring(
     flags: i32,
 ) -> CString {
     program.text(flags & !tiri_core::actions::PROGRAM_ARGUMENT)
-}
-pub fn cmd_list_any_have(program: &dyn tiri_core::actions::Program) -> i32 {
-    program.starts_server() as i32
 }

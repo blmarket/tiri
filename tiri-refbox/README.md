@@ -23,28 +23,23 @@ assert!(observer.is_empty());
 ```
 
 `Weak::new()` is const and allocation-free; `Default` has no `T: Default` bound.
-Empty handles have zero weak count, are neither alive nor borrowed, and borrowing
-returns `BorrowError::Dropped`. Cloning and dropping them require no allocation
-or reference counting. Two empty handles compare equal. `is_empty()` distinguishes
-an absent observer from an expired observer, which still retains its identity.
-Existing nonempty behavior and the `cyclic` / `cyclic_stable` features are preserved.
+Empty handles are not alive, and borrowing returns `BorrowError::Dropped`.
+Cloning and dropping them require no allocation or reference counting. Two empty
+handles compare equal. `is_empty()` distinguishes an absent observer from an
+expired observer, which still retains its identity.
 
 The representation follows [std::rc::Weak](https://doc.rust-lang.org/src/alloc/rc.rs.html):
 a `NonNull` pointer with address `usize::MAX` reserved for emptiness. The control
 block's u32 counter guarantees alignment of at least four, so this address cannot
 be an allocated control block. Sized handles remain one pointer wide, including
 `Option<Weak<T>>`. Empty pointers must be checked before any dereference or field
-projection, including when coerced to trait objects or slices.
+projection.
 
 As with std, empty `as_ptr()` returns a dangling sentinel, **not null**. Use
-`is_empty()` or the checked borrowing API. `into_raw()` / `from_raw()` preserve
-empty handles; unlike std, these existing refbox APIs use control-block pointers,
-not payload pointers. Never pass null to `from_raw()`.
+`is_empty()` or the checked borrowing API.
 
 Validation:
 
 ```sh
 cargo test -p tiri-refbox
-cargo test -p tiri-refbox --features cyclic_stable
-cargo test -p tiri-refbox --features cyclic # nightly
 ```

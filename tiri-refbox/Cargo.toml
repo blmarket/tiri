@@ -8,7 +8,3 @@ description = "Local refbox fork with allocation-free empty weak references"
 
 [lib]
 name = "refbox"
-
-[features]
-cyclic = []
-cyclic_stable = []

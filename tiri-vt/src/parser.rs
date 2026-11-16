@@ -8,9 +8,9 @@ pub const INPUT_END_ST: InputEndType = 0;
 pub const INPUT_END_BEL: InputEndType = 1;
 
 pub const INPUT_BUF_DEFAULT_SIZE: i32 = 1048576;
-pub const INPUT_BUF_START: usize = 32;
-pub const INPUT_DISCARD: i32 = 0x1;
-pub const INPUT_LAST: i32 = 0x2;
+const INPUT_BUF_START: usize = 32;
+const INPUT_DISCARD: i32 = 0x1;
+const INPUT_LAST: i32 = 0x2;
 
 const SINCE_GROUND_KEEP: usize = 4096;
 
@@ -167,7 +167,7 @@ pub trait VtHost {
 }
 
 #[derive(Default)]
-pub enum InputParam {
+enum InputParam {
     #[default]
     Missing,
     Number(i32),
@@ -319,19 +319,19 @@ static INPUT_CSI_TABLE: [TableEntry; 43] = [
 ];
 
 pub struct Parser {
-    pub interm_buf: [u8; 4],
-    pub interm_len: usize,
-    pub param_buf: [u8; 64],
-    pub param_len: usize,
-    pub input_buf: Vec<u8>,
-    pub input_len: usize,
+    interm_buf: [u8; 4],
+    interm_len: usize,
+    param_buf: [u8; 64],
+    param_len: usize,
+    input_buf: Vec<u8>,
+    input_len: usize,
     pub input_end: InputEndType,
-    pub param_list: [InputParam; 24],
-    pub param_list_len: u32,
-    pub ch: i32,
+    param_list: [InputParam; 24],
+    param_list_len: u32,
+    ch: i32,
     state: &'static InputState,
-    pub flags: i32,
-    pub since_ground: Vec<u8>,
+    flags: i32,
+    since_ground: Vec<u8>,
 }
 
 impl Default for Parser {
@@ -373,14 +373,14 @@ impl Parser {
         self.flags = 0;
     }
 
-    pub fn shrink_buffer(&mut self) {
+    fn shrink_buffer(&mut self) {
         if self.input_buf.len() > INPUT_BUF_START {
             self.input_buf.truncate(INPUT_BUF_START);
             self.input_buf.shrink_to_fit();
         }
     }
 
-    pub fn clear_params(&mut self) {
+    fn clear_params(&mut self) {
         for param in &mut self.param_list[..self.param_list_len as usize] {
             *param = InputParam::Missing;
         }
@@ -576,7 +576,7 @@ fn split_fields(buf: &mut [u8], delim: u8) -> impl Iterator<Item = &CStr> {
         .map(|field| CStr::from_bytes_with_nul(field).expect("field is terminated"))
 }
 
-pub fn input_split(parser: &mut Parser) -> i32 {
+fn input_split(parser: &mut Parser) -> i32 {
     parser.clear_params();
     parser.param_list_len = 0;
     if parser.param_len == 0 {
@@ -603,7 +603,7 @@ pub fn input_split(parser: &mut Parser) -> i32 {
     0
 }
 
-pub fn input_get(parser: &Parser, validx: u32, minval: i32, defval: i32) -> i32 {
+fn input_get(parser: &Parser, validx: u32, minval: i32, defval: i32) -> i32 {
     if validx >= parser.param_list_len {
         return defval;
     }
@@ -660,7 +660,7 @@ fn input_parameter(parser: &mut Parser, _host: &mut dyn VtHost) -> i32 {
     0
 }
 
-pub fn input_input(parser: &mut Parser, _host: &mut dyn VtHost) -> i32 {
+fn input_input(parser: &mut Parser, _host: &mut dyn VtHost) -> i32 {
     let mut available = parser.input_buf.len();
     while parser.input_len.wrapping_add(1) >= available {
         available = available.wrapping_mul(2);
@@ -1050,7 +1050,7 @@ fn sgr_rgb_do(host: &mut dyn VtHost, fgbg: i32, r: i32, g: i32, b: i32) -> bool 
     true
 }
 
-pub fn dispatch_sgr_colon(parser: &Parser, host: &mut dyn VtHost, mut i: u32) {
+fn dispatch_sgr_colon(parser: &Parser, host: &mut dyn VtHost, mut i: u32) {
     let s = match &parser.param_list[i as usize] {
         InputParam::String(value) => value.as_c_str(),
         _ => panic!("SGR colon parser requires a string parameter"),
@@ -1443,7 +1443,7 @@ fn dispatch_osc_104(host: &mut dyn VtHost, p: &CStr) {
     }
 }
 
-pub fn osc_133_exit_status(p: &CStr) -> i32 {
+fn osc_133_exit_status(p: &CStr) -> i32 {
     let bytes = p.to_bytes();
     if bytes.get(1) != Some(&b';') || bytes.get(2).is_none_or(|&byte| byte == b'=') {
         return 0;
