@@ -1,4 +1,4 @@
-use tiri::tty::{tty_get_features, tty_parse_features};
+use tiri_core::tty::{tty_get_features, tty_parse_features};
 
 fn feature_names(bits: i32) -> String {
     tty_get_features(bits).to_str().unwrap().to_owned()

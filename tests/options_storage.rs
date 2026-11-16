@@ -1,9 +1,9 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
 use std::ffi::{CStr, CString};
-use tiri::format::bytes::write_cstr;
-use tiri::options::options_entry;
-use tiri::options::{
-    options_create, options_default, options_empty, options_set_string, options_to_cstring,
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::options::{
+    options_create, options_default, options_empty, options_entry, options_local_entry,
+    options_set_string, options_table, options_table_entry, options_to_cstring,
 };
 
 #[test]
@@ -65,7 +65,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             c""
         );
 
-        let table = &raw const tiri::options::options_table;
+        let table = &raw const options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"status-left"))
@@ -80,7 +80,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             ),
             definition.default_str.unwrap()
         );
-        match tiri::options::options_local_entry(&mut *(oo), definition.name.unwrap()) {
+        match options_local_entry(&mut *(oo), definition.name.unwrap()) {
             std::collections::btree_map::Entry::Occupied(entry) => {
                 assert_eq!(&mut **entry.into_mut() as *mut _, default)
             }
@@ -118,7 +118,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut oo_owner;
-        let table = &raw const tiri::options::options_table;
+        let table = &raw const options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"update-environment"))
@@ -191,8 +191,8 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     }
 }
 
-fn table_entry(name: &CStr) -> &'static tiri::options::options_table_entry {
-    tiri::options::options_table
+fn table_entry(name: &CStr) -> &'static options_table_entry {
+    options_table
         .iter()
         .find(|oe| oe.name == Some(name))
         .unwrap()

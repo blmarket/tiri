@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use tiri::names::parse_window_name_cstring;
+use tiri_core::names::parse_window_name_cstring;
 
 fn parsed(input: &[u8]) -> Vec<u8> {
     let end = input.iter().position(|&byte| byte == 0).unwrap();

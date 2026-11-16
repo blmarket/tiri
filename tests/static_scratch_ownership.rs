@@ -1,4 +1,4 @@
-use tiri::{
+use tiri_core::{
     grid::{grid_create, grid_default_cell, grid_set_cell, grid_string_cells_bytes},
     input_keys::input_key_get_mouse,
     shared::{

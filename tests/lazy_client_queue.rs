@@ -1,8 +1,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
-use tiri::actions::sources::compile;
-use tiri::actions::{Context, run};
-use tiri::reactor::Lane;
+use tiri_core::actions::sources::compile;
+use tiri_core::actions::{Context, run};
+use tiri_core::reactor::Lane;
 
 #[test]
 fn scripting_attaches_to_a_client_created_by_core_before_initialization() {

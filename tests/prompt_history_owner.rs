@@ -2,15 +2,13 @@
 
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
-use tiri::format::bytes::write_cstr;
-use tiri::options::options_table;
-use tiri::options::OptionsScope;
-use tiri::options::{options_set_number, options_set_string};
-use tiri::prompt_history::{
+use tiri_core::format::bytes::write_cstr;
+use tiri_core::options::{OptionsScope, options_set_number, options_set_string, options_table};
+use tiri_core::prompt_history::{
     prompt_add_history, prompt_down_history, prompt_history_clear, prompt_history_get,
     prompt_history_size, prompt_load_history, prompt_save_history, prompt_up_history,
 };
-use tiri::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
+use tiri_core::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
 
 #[test]
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {

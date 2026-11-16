@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use tiri::tmux::clean_name_cstring;
+use tiri_core::tmux::clean_name_cstring;
 
 fn cleaned(input: &[u8], untrusted: bool) -> Option<Vec<u8>> {
     let end = input.iter().position(|&byte| byte == 0).unwrap();

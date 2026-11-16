@@ -1,6 +1,6 @@
 //! Compatibility observations recorded before replacing the text APIs.
-use tiri::shared::colour::COLOUR_FLAG_256;
-use tiri::{
+use tiri_core::{
+    shared::colour::COLOUR_FLAG_256,
     shared::grid::{GRID_ATTR_BRIGHT, GRID_ATTR_DIM},
     style::attributes::{attributes_format, attributes_parse_cstr},
     style::colour::{colour_format, colour_join_rgb, colour_parse_cstr},

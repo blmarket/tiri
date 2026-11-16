@@ -35,17 +35,10 @@ tiri-cmds = { path = "tiri-cmds" }
 [dev-dependencies]
 tiri-core = { path = "tiri-core", features = ["test-support"] }
 tiri-cmds = { path = "tiri-cmds", features = ["test-support"] }
-tiri-vt = { path = "tiri-vt" }
-futures-core = "0.3"
-tiri-cmdparse = { path = "tiri-cmdparse" }
-tiri-rt = { path = "tiri-rt" }
 tiri-sys = { path = "tiri-sys" }
-tiri-buffer = { path = "tiri-buffer" }
 libc = "0.2"
-refbox = { package = "tiri-refbox", path = "tiri-refbox" }
 
 syn = { version = "2", features = ["full", "visit"] }
-quote = "1"
 
 [lints.clippy]
 missing_safety_doc = "allow"

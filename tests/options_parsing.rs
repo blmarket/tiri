@@ -1,7 +1,7 @@
 //! Isolated option-name regressions for set-option/show-options parsing.
 
 use std::ffi::CString;
-use tiri::options::{options_match_owned, options_parse_owned, OptionMatchFailure};
+use tiri_core::options::{options_match_owned, options_parse_owned, OptionMatchFailure};
 
 #[derive(Debug, PartialEq, Eq)]
 struct MatchOutcome {

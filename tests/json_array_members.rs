@@ -1,4 +1,4 @@
-use tiri::json::json_parse;
+use tiri_core::json::json_parse;
 
 #[test]
 fn malformed_array_drops_already_parsed_members() {

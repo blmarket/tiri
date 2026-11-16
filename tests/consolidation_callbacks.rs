@@ -1,5 +1,5 @@
 //! Function assignments check argument types and return types.
-use tiri::shared::prompt::{PROMPT_CLOSE, PROMPT_KEY_CLOSE, prompt_free_cb, prompt_input_cb};
+use tiri_core::shared::prompt::{PROMPT_CLOSE, PROMPT_KEY_CLOSE, prompt_free_cb, prompt_input_cb};
 
 /// Invokes each callback through its declared `Option` slot type.
 fn invoke_assigned(free: prompt_free_cb, callback: prompt_input_cb) {

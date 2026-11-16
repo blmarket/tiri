@@ -1,10 +1,10 @@
 #[test]
 fn repeated_initialization_preserves_the_scripting_catalog() {
     tiri::initialize();
-    let names = tiri::actions::command_names();
+    let names = tiri_core::actions::command_names();
     assert_eq!(names.len(), 89);
     tiri::initialize();
-    assert_eq!(names, tiri::actions::command_names());
+    assert_eq!(names, tiri_core::actions::command_names());
 }
 
 #[test]

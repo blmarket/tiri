@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use tiri::shared::display::visible_range;
-use tiri::shared::pane::window_pane;
-use tiri::window_visible::{window_position_is_visible, window_visible_ranges};
+use tiri_core::shared::display::visible_range;
+use tiri_core::shared::pane::window_pane;
+use tiri_core::window_visible::{window_position_is_visible, window_visible_ranges};
 
 fn segments(ranges: &[visible_range]) -> Vec<(u32, u32)> {
     ranges.iter().map(|range| (range.px, range.nx)).collect()

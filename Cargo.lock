@@ -553,18 +553,11 @@ dependencies = [
 name = "tiri"
 version = "0.0.0"
 dependencies = [
- "futures-core",
  "libc",
- "quote",
  "syn 2.0.106",
- "tiri-buffer",
- "tiri-cmdparse",
  "tiri-cmds",
  "tiri-core",
- "tiri-refbox",
- "tiri-rt",
  "tiri-sys",
- "tiri-vt",
 ]
 
 [[package]]
