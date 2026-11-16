@@ -2133,10 +2133,9 @@ mod print_run_tests {
     use super::{grid_default_cell, input_init, input_parse_screen, screen};
     use crate::grid::{grid_cells_equal, grid_get_cell, grid_get_line};
     use crate::screen::screen_init;
-    use tiri_rt::Runtime as _;
 
     fn parsed(chunks: &[&[u8]]) -> screen {
-        let _rt = tiri_rt::mio::Runtime::new().unwrap();
+        let _rt = tiri_rt::Runtime::new().unwrap();
         crate::options::OptionsScope::GlobalServer.reset_default(
             crate::options::options_table
                 .iter()

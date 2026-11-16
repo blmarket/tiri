@@ -665,15 +665,14 @@ pub fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
 }
 pub fn control_wait_exit() {
     use std::os::fd::AsFd;
-    use tiri_rt::{AsyncRead as _, Runtime as _};
     let stdin = std::io::stdin();
     let fd = stdin.as_fd();
     let Ok(was_nonblocking) = tiri_sys::set_nonblocking(fd, true) else {
         return;
     };
     let result = (|| -> std::io::Result<()> {
-        let mut runtime = tiri_rt::mio::Runtime::new()?;
-        let source = runtime.enter(|| tiri_rt::mio::Io::new(fd.try_clone_to_owned()?))?;
+        let mut runtime = tiri_rt::Runtime::new()?;
+        let source = runtime.enter(|| tiri_rt::Io::new(fd.try_clone_to_owned()?))?;
         runtime.block_on(async {
             let mut buffer = SegmentedBuf::default();
             loop {

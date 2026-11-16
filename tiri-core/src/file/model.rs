@@ -30,8 +30,8 @@ pub struct client_file {
     /// The waiting command's end of a `FileWait`, sent the terminal event.
     pub(super) wait: Option<tiri_rt::oneshot::Sender<super::FileOutcome>>,
     pub(super) completed: bool,
-    pub(super) done_task: Option<tiri_rt::mio::Task>,
-    pub(super) push_task: Option<tiri_rt::mio::Task>,
+    pub(super) done_task: Option<tiri_rt::Task>,
+    pub(super) push_task: Option<tiri_rt::Task>,
     pub(super) read: super::stream::ReadState,
 }
 

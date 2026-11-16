@@ -7,7 +7,7 @@ use std::pin::pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
-use tiri_rt::{AsyncAccept, AsyncRead, Runtime, mio};
+use tiri_rt::{Io, Listener, Runtime};
 
 struct SocketPath(PathBuf);
 
@@ -30,7 +30,7 @@ impl Drop for SocketPath {
     }
 }
 
-fn complete<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T {
+fn complete<T>(runtime: &mut Runtime, future: impl Future<Output = T>) -> T {
     let mut future = pin!(future);
     for _ in 0..100 {
         runtime.poll(Some(Duration::ZERO)).unwrap();
@@ -46,10 +46,10 @@ fn complete<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T
 
 #[test]
 fn cancelled_accept_preserves_connections_and_accepts_configure_owned_sockets() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (path, socket) = SocketPath::bind();
     socket.set_nonblocking(true).unwrap();
-    let listener = mio::Listener::new(socket).unwrap();
+    let listener = Listener::new(socket).unwrap();
     let mut pending = Box::pin(listener.accept());
     assert!(
         pending
@@ -73,7 +73,7 @@ fn cancelled_accept_preserves_connections_and_accepts_configure_owned_sockets() 
             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
             0
         );
-        let source = mio::Io::new(fd).unwrap();
+        let source = Io::new(fd).unwrap();
         let mut byte = [0];
         assert_eq!(
             complete(&mut runtime, source.read(&mut byte))
@@ -87,11 +87,11 @@ fn cancelled_accept_preserves_connections_and_accepts_configure_owned_sockets() 
 
 #[test]
 fn accepts_have_one_waiter_and_runtime_shutdown_closes_the_listener() {
-    let runtime = mio::Runtime::new().unwrap();
+    let runtime = Runtime::new().unwrap();
     let (_path, socket) = SocketPath::bind();
     socket.set_nonblocking(true).unwrap();
     let raw = socket.as_raw_fd();
-    let listener = mio::Listener::new(socket).unwrap();
+    let listener = Listener::new(socket).unwrap();
     let mut first = Box::pin(listener.accept());
     let mut cx = Context::from_waker(Waker::noop());
     assert!(first.as_mut().poll(&mut cx).is_pending());
@@ -105,10 +105,10 @@ fn accepts_have_one_waiter_and_runtime_shutdown_closes_the_listener() {
 
 #[test]
 fn blocking_listener_is_rejected_and_closed() {
-    let _runtime = mio::Runtime::new().unwrap();
+    let _runtime = Runtime::new().unwrap();
     let (_path, socket) = SocketPath::bind();
     let raw = socket.as_raw_fd();
-    assert!(matches!(mio::Listener::new(socket),
+    assert!(matches!(Listener::new(socket),
         Err(e) if e.kind() == io::ErrorKind::InvalidInput));
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
 }

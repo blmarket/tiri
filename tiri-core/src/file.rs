@@ -132,7 +132,7 @@ pub struct FileWait {
     done: tiri_rt::oneshot::Receiver<FileOutcome>,
     file: Weak<RefCell<client_file>>,
     /// A local transfer's deferred completion, which retains the file.
-    local: Option<tiri_rt::mio::Task>,
+    local: Option<tiri_rt::Task>,
 }
 
 impl std::future::Future for FileWait {

@@ -470,7 +470,6 @@ pub mod run_shell_tests {
     use tiri_core::server_client::queue_test_clients as clients;
     use tiri_core::server_client::queue_test_clients::return_value;
     use tiri_core::shared::client::CLIENT_DEAD;
-    use tiri_core::tiri_rt::Runtime as _;
 
     fn data(client: Option<ClientRef>, cmd: Option<&CStr>) -> Box<cmd_run_shell_data> {
         Box::new(cmd_run_shell_data {
@@ -525,7 +524,7 @@ pub mod run_shell_tests {
     }
 
     pub fn a_zero_delay_runs_the_timer_body_one_runtime_turn_later() {
-        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::Runtime::new().unwrap();
         {
             let head = spawn_invocation(None, |cmd_ref, inv| {
                 Box::pin(cmd_run_shell_wait(
@@ -550,7 +549,7 @@ pub mod run_shell_tests {
     }
 
     pub fn a_delay_resumes_at_its_deadline() {
-        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::Runtime::new().unwrap();
         {
             let delay = Duration::from_millis(50);
             let start = Instant::now();
@@ -574,7 +573,7 @@ pub mod run_shell_tests {
     }
 
     pub fn dropping_the_item_during_the_delay_cancels_the_timer() {
-        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::Runtime::new().unwrap();
         {
             let owner = clients::with_queue();
             let other = clients::with_queue();

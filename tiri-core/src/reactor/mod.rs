@@ -22,13 +22,13 @@ pub use tasks::{defer, task_start};
 pub use timers::{Timer, background_timer, cancel_background_timers};
 
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
-pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::mio::Io> {
+pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::Io> {
     let lease = fd.try_clone_to_owned()?;
-    tiri_rt::mio::Io::new(lease)
+    tiri_rt::Io::new(lease)
 }
 /// Free compatibility streams before dropping the runtime that drives them.
 /// Taking ownership keeps shutdown outside an active runtime poll.
-pub fn shutdown_runtime(runtime: tiri_rt::mio::Runtime) {
+pub fn shutdown_runtime(runtime: tiri_rt::Runtime) {
     streams::clear();
     drop(runtime);
 }

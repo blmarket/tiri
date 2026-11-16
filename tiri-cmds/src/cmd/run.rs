@@ -598,8 +598,7 @@ mod suspend_tests {
 
     #[test]
     fn send_after_runtime_shutdown_runs_the_body_and_leaves_dispatch_pending() {
-        use tiri_core::tiri_rt::Runtime as _;
-        let runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_core::tiri_rt::Runtime::new().unwrap();
         {
             let trace: Trace = Default::default();
             let (tx, rx) = channel::<()>();

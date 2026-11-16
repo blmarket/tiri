@@ -10,10 +10,9 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
-use tiri_rt::mio;
-use tiri_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime};
+use tiri_rt::{Handle, Io, Received, Runtime, Sleep, Task};
 
-fn tick(runtime: &mut mio::Runtime) {
+fn tick(runtime: &mut Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap()
 }
 fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
@@ -34,11 +33,11 @@ impl Drop for Dropped {
 
 #[test]
 fn tasks_release_completed_work_and_own_pending_work_after_runtime_shutdown() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let calls = Rc::new(Cell::new(0));
     let observed = calls.clone();
-    let task = runtime
-        .handle()
+    let task = handle
         .spawn(async move { observed.set(observed.get() + 1) })
         .unwrap();
     assert_eq!(calls.get(), 0);
@@ -49,8 +48,7 @@ fn tasks_release_completed_work_and_own_pending_work_after_runtime_shutdown() {
 
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
-    let pending = runtime
-        .handle()
+    let pending = handle
         .spawn(async move {
             let _spy = spy;
             std::future::pending::<()>().await;
@@ -67,9 +65,9 @@ fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
     use std::task::{ContextBuilder, LocalWake, LocalWaker};
 
     struct Wake {
-        handle: mio::Handle,
+        handle: Handle,
         calls: Rc<Cell<usize>>,
-        tasks: Rc<RefCell<Vec<mio::Task>>>,
+        tasks: Rc<RefCell<Vec<Task>>>,
     }
     impl LocalWake for Wake {
         fn wake(self: Rc<Self>) {
@@ -82,10 +80,10 @@ fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
         }
     }
 
-    let runtime = Rc::new(RefCell::new(mio::Runtime::new().unwrap()));
+    let runtime = Rc::new(RefCell::new(Runtime::new().unwrap()));
     let calls = Rc::new(Cell::new(0));
     let wake = LocalWaker::from(Rc::new(Wake {
-        handle: runtime.borrow().handle(),
+        handle: Handle::current(),
         calls: calls.clone(),
         tasks: Rc::new(RefCell::new(Vec::new())),
     }));
@@ -93,7 +91,7 @@ fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
         .local_waker(&wake)
         .build();
     let (mut writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let mut bytes = [0; 1];
     let mut read = std::pin::pin!(source.read(&mut bytes));
     assert!(read.as_mut().poll(&mut context).is_pending());
@@ -108,8 +106,8 @@ fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
 
 #[test]
 fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
-    let runtime = Rc::new(RefCell::new(Some(mio::Runtime::new().unwrap())));
-    let handle = runtime.borrow().as_ref().unwrap().handle();
+    let runtime = Rc::new(RefCell::new(Some(Runtime::new().unwrap())));
+    let handle = Handle::current();
     let owner = runtime.clone();
     let tasks = Rc::new(RefCell::new(Vec::new()));
     let retained = tasks.clone();
@@ -119,7 +117,7 @@ fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
         .spawn(async move {
             assert!(owner.try_borrow_mut().is_err());
             retained.borrow_mut().push(
-                mio::Handle::current()
+                Handle::current()
                     .spawn(async move {
                         observed.set(1);
                     })
@@ -137,23 +135,23 @@ fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
     assert_eq!(calls.get(), 1);
     let owner = runtime.borrow_mut().take();
     drop(owner);
-    assert!(!mio::Runtime::is_initialized());
+    assert!(!Runtime::is_initialized());
     assert!(handle.spawn(async {}).is_err());
 }
 
 #[test]
 fn deferred_callbacks_run_or_release_captures_on_runtime_shutdown() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
-    runtime.handle().defer(move || drop(spy)).unwrap();
+    handle.defer(move || drop(spy)).unwrap();
     assert_eq!(count.get(), 0);
     tick(&mut runtime);
     assert_eq!(count.get(), 1);
 
     let spy = Dropped(count.clone());
-    runtime
-        .handle()
+    handle
         .defer(move || {
             let _spy = spy;
             panic!("shutdown must not dispatch callbacks");
@@ -166,7 +164,7 @@ fn deferred_callbacks_run_or_release_captures_on_runtime_shutdown() {
 #[test]
 fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
     struct EnqueueOnDrop {
-        handle: mio::Handle,
+        handle: Handle,
         dropped: Rc<Cell<usize>>,
     }
     impl Drop for EnqueueOnDrop {
@@ -179,8 +177,8 @@ fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
         }
     }
 
-    let runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
+    let runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let count = Rc::new(Cell::new(0));
     let enqueue = EnqueueOnDrop {
         handle: handle.clone(),
@@ -201,8 +199,8 @@ fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
 
 #[test]
 fn ready_queue_orders_tasks_and_deferred_callbacks_without_inline_dispatch() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let order = Rc::new(RefCell::new(Vec::new()));
     let observed = order.clone();
     handle.defer(move || observed.borrow_mut().push(1)).unwrap();
@@ -229,8 +227,8 @@ fn ready_queue_orders_tasks_and_deferred_callbacks_without_inline_dispatch() {
 
 #[test]
 fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
     let task = handle
@@ -245,7 +243,7 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
 
     let (mut writer, fd) = pair();
     writer.set_nonblocking(true).unwrap();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let spy = Dropped(count.clone());
     let task = handle
         .spawn(async move {
@@ -262,11 +260,11 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
 
 #[test]
 fn dropping_io_deregisters_before_closing_the_fd() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (mut writer, fd) = pair();
     let raw = fd.as_raw_fd();
     let retained = fd.try_clone().unwrap();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     drop(source);
     assert!(!tiri_sys::is_open(raw));
     tick(&mut runtime);
@@ -281,7 +279,7 @@ fn dropping_io_deregisters_before_closing_the_fd() {
         }
     };
     drop(lower);
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     writer.write_all(b"new").unwrap();
     tick(&mut runtime);
     assert!(matches!(poll(&mut read_bytes(&source, 3)), Poll::Ready(Ok(bytes)) if bytes == b"new"));
@@ -289,13 +287,13 @@ fn dropping_io_deregisters_before_closing_the_fd() {
 
 #[test]
 fn self_waking_work_returns_control_and_cancelled_wakes_are_inert() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let polls = Rc::new(Cell::new(0));
     let saved = Rc::new(RefCell::new(None));
     let count = polls.clone();
     let wake = saved.clone();
-    let task = runtime
-        .handle()
+    let task = handle
         .spawn(poll_fn(move |cx| {
             count.set(count.get() + 1);
             *wake.borrow_mut() = Some(cx.local_waker().clone());
@@ -316,11 +314,11 @@ fn self_waking_work_returns_control_and_cancelled_wakes_are_inert() {
 
 #[test]
 fn ordinary_waker_is_deliberately_inert() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let polls = Rc::new(Cell::new(0));
     let count = polls.clone();
-    let _task = runtime
-        .handle()
+    let _task = handle
         .spawn(poll_fn(move |cx| {
             count.set(count.get() + 1);
             cx.waker().wake_by_ref();
@@ -334,15 +332,15 @@ fn ordinary_waker_is_deliberately_inert() {
 
 #[test]
 fn self_cancellation_finishes_current_poll_then_drops_resources() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let owner = Rc::new(RefCell::new(None));
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
     let slot = owner.clone();
     let observed = count.clone();
     *owner.borrow_mut() = Some(
-        runtime
-            .handle()
+        handle
             .spawn(poll_fn(move |cx| {
                 let _keep = &spy;
                 slot.borrow_mut().take();
@@ -360,8 +358,8 @@ fn self_cancellation_finishes_current_poll_then_drops_resources() {
 #[test]
 fn future_destructors_can_cancel_other_tasks_and_spawn() {
     struct Cascade {
-        child: Option<mio::Task>,
-        handle: mio::Handle,
+        child: Option<Task>,
+        handle: Handle,
     }
     impl Drop for Cascade {
         fn drop(&mut self) {
@@ -370,21 +368,20 @@ fn future_destructors_can_cancel_other_tasks_and_spawn() {
             drop(transient);
         }
     }
-    let runtime = mio::Runtime::new().unwrap();
+    let _runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
-    let child = runtime
-        .handle()
+    let child = handle
         .spawn(async move {
             let _spy = spy;
         })
         .unwrap();
     let cascade = Cascade {
         child: Some(child),
-        handle: runtime.handle(),
+        handle: handle.clone(),
     };
-    let parent = runtime
-        .handle()
+    let parent = handle
         .spawn(async move {
             let _cascade = cascade;
         })
@@ -395,16 +392,16 @@ fn future_destructors_can_cancel_other_tasks_and_spawn() {
 
 #[test]
 fn timers_wake_in_deadline_and_insertion_order() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let seen = Rc::new(RefCell::new(Vec::new()));
     let deadline = Instant::now() + Duration::from_millis(15);
     let mut tasks = Vec::new();
     for i in 0..4 {
-        let wait = mio::Sleep::new(deadline);
+        let wait = Sleep::new(deadline);
         let seen = seen.clone();
         tasks.push(
-            runtime
-                .handle()
+            handle
                 .spawn(async move {
                     wait.await.unwrap();
                     seen.borrow_mut().push(i);
@@ -418,7 +415,7 @@ fn timers_wake_in_deadline_and_insertion_order() {
 }
 
 fn read_bytes(
-    source: &impl AsyncRead,
+    source: &Io,
     limit: usize,
 ) -> Pin<Box<impl Future<Output = io::Result<Vec<u8>>> + '_>> {
     Box::pin(async move {
@@ -432,9 +429,9 @@ fn read_bytes(
 
 #[test]
 fn partial_reads_retain_readiness_across_a_pause() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let mut wait = read_bytes(&source, 2);
     assert!(poll(&mut wait).is_pending());
     writer.write_all(b"first").unwrap();
@@ -454,9 +451,9 @@ fn partial_reads_retain_readiness_across_a_pause() {
 
 #[test]
 fn directional_waiter_conflicts_cancellation_and_wouldblock() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let mut first = read_bytes(&source, 1);
     assert!(poll(&mut first).is_pending());
     assert!(
@@ -482,20 +479,19 @@ fn directional_waiter_conflicts_cancellation_and_wouldblock() {
 
 #[test]
 fn kernel_readiness_is_serviced_despite_a_self_waking_task() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    let spinner = runtime
-        .handle()
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
+    let spinner = handle
         .spawn(poll_fn(|cx| {
             cx.local_waker().wake_by_ref();
             Poll::Pending
         }))
         .unwrap();
     let (mut writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let done = Rc::new(Cell::new(false));
     let mark = done.clone();
-    let _reader = runtime
-        .handle()
+    let _reader = handle
         .spawn(async move {
             source.read(&mut [0; 1]).await.unwrap();
             mark.set(true);
@@ -512,14 +508,14 @@ fn kernel_readiness_is_serviced_despite_a_self_waking_task() {
 
 #[test]
 fn runtime_drop_releases_resources_and_invalidates_old_leaves() {
-    let runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
+    let runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let (mut writer, fd) = pair();
     writer.set_nonblocking(true).unwrap();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let mut read = read_bytes(&source, 1);
     assert!(poll(&mut read).is_pending());
-    let mut sleep = mio::Sleep::new(Instant::now());
+    let mut sleep = Sleep::new(Instant::now());
     drop(runtime);
     assert_eq!(writer.read(&mut [0; 1]).unwrap(), 0);
     assert!(
@@ -533,23 +529,23 @@ fn runtime_drop_releases_resources_and_invalidates_old_leaves() {
 
 #[test]
 fn panic_poisons_runtime_and_resets_drive_state() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    let _task = runtime
-        .handle()
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
+    let _task = handle
         .spawn(async {
             panic!("probe");
         })
         .unwrap();
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tick(&mut runtime))).is_err());
-    assert!(runtime.handle().spawn(async {}).is_err());
+    assert!(handle.spawn(async {}).is_err());
     assert!(runtime.poll(Some(Duration::ZERO)).is_err());
 }
 
 #[test]
 fn descriptor_eof_is_explicit() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     drop(writer);
     tick(&mut runtime);
     assert!(matches!(
@@ -560,11 +556,12 @@ fn descriptor_eof_is_explicit() {
 
 #[test]
 fn a_forked_child_cannot_schedule_on_the_parents_runtime() {
-    let runtime = mio::Runtime::new().unwrap();
-    runtime.handle().defer(|| ()).unwrap();
+    let _runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
+    handle.defer(|| ()).unwrap();
     match unsafe { libc::fork() } {
         0 => {
-            let refused = runtime.handle().defer(|| ()).is_err();
+            let refused = handle.defer(|| ()).is_err();
             unsafe { libc::_exit(if refused { 0 } else { 1 }) }
         }
         child => {
@@ -573,16 +570,16 @@ fn a_forked_child_cannot_schedule_on_the_parents_runtime() {
             assert_eq!(unsafe { libc::waitpid(child, &mut status, 0) }, child);
             assert!(libc::WIFEXITED(status));
             assert_eq!(libc::WEXITSTATUS(status), 0);
-            runtime.handle().defer(|| ()).unwrap();
+            handle.defer(|| ()).unwrap();
         }
     }
 }
 
 #[test]
 fn a_short_read_waits_for_the_next_edge_but_keeps_a_hangup() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     writer.write_all(b"ab").unwrap();
     tick(&mut runtime);
     assert!(matches!(poll(&mut read_bytes(&source, 8)), Poll::Ready(Ok(bytes)) if bytes == b"ab"));
@@ -596,14 +593,16 @@ fn a_short_read_waits_for_the_next_edge_but_keeps_a_hangup() {
     drop(writer);
     tick(&mut runtime);
     assert!(matches!(poll(&mut read_bytes(&source, 8)), Poll::Ready(Ok(bytes)) if bytes == b"de"));
-    assert!(matches!(poll(&mut read_bytes(&source, 8)), Poll::Ready(Ok(bytes)) if bytes.is_empty()));
+    assert!(
+        matches!(poll(&mut read_bytes(&source, 8)), Poll::Ready(Ok(bytes)) if bytes.is_empty())
+    );
 }
 
 #[test]
 fn try_read_takes_queued_bytes_after_a_short_read_without_an_edge() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = mio::Io::new(fd).unwrap();
+    let source = Io::new(fd).unwrap();
     let mut buffer = [0; 8];
     assert!(
         matches!(source.try_read(&mut buffer), Err(e) if e.kind() == io::ErrorKind::WouldBlock)
@@ -626,12 +625,12 @@ fn try_read_takes_queued_bytes_after_a_short_read_without_an_edge() {
 
 #[test]
 fn readiness_no_operation_waits_for_does_not_end_a_wait() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let (mut peer, fd) = pair();
     let raw = fd.as_raw_fd();
-    let source = mio::Io::new(fd).unwrap();
-    let task = runtime
-        .handle()
+    let source = Io::new(fd).unwrap();
+    let task = handle
         .spawn(async move {
             let _ = source.read(&mut [0; 1]).await;
         })

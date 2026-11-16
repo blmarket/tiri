@@ -11,8 +11,6 @@ use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
 use tiri_buffer::SegmentedBuf;
-use tiri_rt::Handle as _;
-use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
     /// Present until free; observers treat None as released.
     stream: RefCell<Option<Box<bufferevent>>>,
@@ -21,9 +19,9 @@ pub(crate) struct StreamState {
     generation: Cell<u64>,
     write_requested: Cell<bool>,
     wake: RefCell<Option<LocalWaker>>,
-    task: RefCell<Option<tiri_rt::mio::Task>>,
+    task: RefCell<Option<tiri_rt::Task>>,
     /// The descriptor the task reads, for reads that do not wait.
-    source: RefCell<Weak<tiri_rt::mio::Io>>,
+    source: RefCell<Weak<tiri_rt::Io>>,
 }
 
 /// Observe a runtime-owned stream without extending its allocation lifetime.
@@ -80,11 +78,11 @@ pub(super) fn clear() {
     LIVE_STREAMS.with(|streams| streams.borrow_mut().clear());
 }
 
-fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<()> {
+fn start(state: &Rc<StreamState>, source: tiri_rt::Io) -> std::io::Result<()> {
     let s = state.clone();
     let source = Rc::new(source);
     *state.source.borrow_mut() = Rc::downgrade(&source);
-    let handle = tiri_rt::mio::Handle::current();
+    let handle = tiri_rt::Handle::current();
     let task = handle.spawn(async move {
         enum Completion {
             Changed,

@@ -5,8 +5,7 @@ use crate::server_client::Client as _;
 use std::cell::Cell;
 
 pub fn local_completion_can_be_cancelled_after_runtime_shutdown() {
-    use tiri_rt::Runtime as _;
-    let runtime = tiri_rt::mio::Runtime::new().unwrap();
+    let runtime = tiri_rt::Runtime::new().unwrap();
     {
         let data = Rc::new(());
         let retained = data.clone();
@@ -39,8 +38,7 @@ pub fn local_completion_can_be_cancelled_after_runtime_shutdown() {
 }
 
 pub fn dropping_a_lost_client_cancels_its_local_write() {
-    use tiri_rt::Runtime as _;
-    let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+    let mut runtime = tiri_rt::Runtime::new().unwrap();
     {
         let owner = crate::server_client::queue_test_clients::with_queue();
         let observed = Rc::new(Cell::new(false));
@@ -75,8 +73,7 @@ pub fn dropping_a_lost_client_cancels_its_local_write() {
 }
 
 pub fn a_dead_file_client_leaves_its_command_blocked() {
-    use tiri_rt::Runtime as _;
-    let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+    let mut runtime = tiri_rt::Runtime::new().unwrap();
     {
         let owner = crate::server_client::queue_test_clients::with_queue();
         let client = crate::server_client::queue_test_clients::with_queue();

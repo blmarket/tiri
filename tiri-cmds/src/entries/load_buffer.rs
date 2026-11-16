@@ -174,8 +174,7 @@ pub mod load_buffer_tests {
     }
 
     pub fn a_local_file_is_stored_one_runtime_turn_later() {
-        use tiri_core::tiri_rt::Runtime as _;
-        let mut runtime = tiri_core::tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_core::tiri_rt::Runtime::new().unwrap();
         {
             let path = std::env::temp_dir().join(format!("tiri-load-{}", std::process::id()));
             std::fs::write(&path, b"local").unwrap();

@@ -1,12 +1,11 @@
 //! Timer work is a future owned by the caller's task handle.
 use std::io;
 use std::time::{Duration, Instant};
-use tiri_rt::Handle as _;
 
 /// Owns one scheduled future. Dropping it cancels the work.
 /// Owners that track active work clear their timer from the callback.
 pub struct Timer {
-    _task: tiri_rt::mio::Task,
+    _task: tiri_rt::Task,
 }
 
 impl Timer {
@@ -14,8 +13,8 @@ impl Timer {
     pub fn new(delay: Duration, callback: impl FnOnce() + 'static) -> io::Result<Self> {
         let now = Instant::now();
         let deadline = now.checked_add(delay).unwrap_or(now);
-        let handle = tiri_rt::mio::Handle::current();
-        let sleep = tiri_rt::mio::Sleep::new(deadline);
+        let handle = tiri_rt::Handle::current();
+        let sleep = tiri_rt::Sleep::new(deadline);
         let task = handle.spawn(async move {
             sleep.await.expect("timer wait failed");
             callback();

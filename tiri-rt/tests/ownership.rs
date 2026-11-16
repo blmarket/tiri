@@ -8,7 +8,7 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
-use tiri_rt::{AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio};
+use tiri_rt::{Handle, Io, Received, Runtime};
 
 fn assert_closed(raw: RawFd) {
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
@@ -17,13 +17,13 @@ fn assert_closed(raw: RawFd) {
 
 #[test]
 fn cancelled_reads_preserve_input_and_partial_reads_need_no_new_edge() {
-    let mut rt = mio::Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
+    let handle = Handle::current();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = Rc::new(mio::Io::new(fd.into()).unwrap());
+    let source = Rc::new(Io::new(fd.into()).unwrap());
     let s = source.clone();
-    let cancelled = rt
-        .handle()
+    let cancelled = handle
         .spawn(async move {
             s.read(&mut [0; 1]).await.unwrap();
         })
@@ -33,8 +33,7 @@ fn cancelled_reads_preserve_input_and_partial_reads_need_no_new_edge() {
     peer.write_all(b"still present").unwrap();
     let calls = Rc::new(Cell::new(0));
     let observed = calls.clone();
-    let task = rt
-        .handle()
+    let task = handle
         .spawn(async move {
             for expected in b"st" {
                 let mut byte = [0; 1];
@@ -51,10 +50,10 @@ fn cancelled_reads_preserve_input_and_partial_reads_need_no_new_edge() {
 
 #[test]
 fn concurrent_reads_share_one_waiter_and_cancellation_releases_it() {
-    let mut rt = mio::Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = mio::Io::new(fd.into()).unwrap();
+    let source = Io::new(fd.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     let mut first_buffer = [0; 1];
     let mut wait = Box::pin(source.read(&mut first_buffer));
@@ -76,24 +75,24 @@ fn concurrent_reads_share_one_waiter_and_cancellation_releases_it() {
 
 #[test]
 fn io_after_runtime_shutdown_panics_and_closes_fd() {
-    let rt = mio::Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
     let raw = fd.as_raw_fd();
     drop(rt);
-    assert!(std::panic::catch_unwind(|| mio::Io::new(fd.into())).is_err());
+    assert!(std::panic::catch_unwind(|| Io::new(fd.into())).is_err());
     assert_closed(raw);
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
 }
 
 #[test]
 fn registered_descriptor_closes_on_runtime_shutdown_and_invalidates_pending_waits() {
-    let rt = mio::Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = mio::Io::new(fd.into()).unwrap();
+    let source = Io::new(fd.into()).unwrap();
     let mut bytes = [0; 1];
     let mut wait = pin!(source.read(&mut bytes));
     assert!(
@@ -111,11 +110,11 @@ fn registered_descriptor_closes_on_runtime_shutdown_and_invalidates_pending_wait
 
 #[test]
 fn registered_descriptor_closes_on_drop() {
-    let mut rt = mio::Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = mio::Io::new(fd.into()).unwrap();
+    let source = Io::new(fd.into()).unwrap();
     drop(source);
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
     rt.poll(Some(Duration::ZERO)).unwrap();
@@ -123,10 +122,10 @@ fn registered_descriptor_closes_on_drop() {
 
 #[test]
 fn rejected_descriptor_is_closed() {
-    let _rt = mio::Runtime::new().unwrap();
+    let _rt = Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
-    assert!(matches!(mio::Io::new(fd.into()), Err(e) if e.kind() == io::ErrorKind::InvalidInput));
+    assert!(matches!(Io::new(fd.into()), Err(e) if e.kind() == io::ErrorKind::InvalidInput));
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
 }
 
@@ -134,7 +133,7 @@ fn rejected_descriptor_is_closed() {
 fn immediate_device_supports_io_and_closes() {
     use std::os::unix::fs::OpenOptionsExt;
 
-    let mut rt = mio::Runtime::new().unwrap();
+    let mut rt = Runtime::new().unwrap();
     let fd = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -142,7 +141,7 @@ fn immediate_device_supports_io_and_closes() {
         .open("/dev/null")
         .unwrap();
     let raw = fd.as_raw_fd();
-    let source = mio::Io::new(fd.into()).unwrap();
+    let source = Io::new(fd.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     assert!(matches!(
         pin!(source.write(&[IoSlice::new(b"discard")], None)).poll(&mut context),
@@ -173,8 +172,8 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     file.seek(SeekFrom::Start(0)).unwrap();
     let mut observer = file.try_clone().unwrap();
     let raw = file.as_raw_fd();
-    let rt = mio::Runtime::new().unwrap();
-    let source = mio::Io::new(file.into()).unwrap();
+    let rt = Runtime::new().unwrap();
+    let source = Io::new(file.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     let fd = std::fs::File::open("/dev/null").unwrap();
     for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {

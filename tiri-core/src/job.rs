@@ -529,8 +529,7 @@ mod job_stream_tests {
 
     #[test]
     fn registry_cleanup_reentrancy_and_both_completion_orders() {
-        use tiri_rt::Runtime as _;
-        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_rt::Runtime::new().unwrap();
         {
             assert!(jobs::snapshot().is_empty());
             let calls = Rc::new(Cell::new(0));

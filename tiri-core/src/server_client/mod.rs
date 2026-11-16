@@ -3923,8 +3923,7 @@ pub mod lost_queue_tests {
     }
 
     pub fn dropping_a_lost_client_cancels_a_file_backed_wait() {
-        use tiri_rt::Runtime as _;
-        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_rt::Runtime::new().unwrap();
         {
             let owner = queue_test_clients::with_queue();
             let cancelled = Rc::new(Cell::new(false));
@@ -3980,15 +3979,13 @@ pub mod lost_queue_tests {
     }
 
     pub fn a_client_retired_inside_a_callback_is_freed_from_dispatch() {
-        use tiri_rt::{Handle as _, Runtime as _};
-        let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_rt::Runtime::new().unwrap();
         let owner = queue_test_clients::with_queue();
         let client = Rc::downgrade(&owner);
         let inside = client.clone();
         let returned = Rc::new(Cell::new(false));
         let mark = returned.clone();
-        let _task = runtime
-            .handle()
+        let _task = tiri_rt::Handle::current()
             .spawn(async move {
                 server_client_retire(owner);
                 assert!(inside.upgrade().is_some(), "freed inside the callback");
@@ -4001,8 +3998,7 @@ pub mod lost_queue_tests {
     }
 
     pub fn retiring_a_lost_client_cancels_its_suspended_item_from_dispatch() {
-        use tiri_rt::Runtime as _;
-        let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let mut runtime = tiri_rt::Runtime::new().unwrap();
         {
             let owner = queue_test_clients::with_queue();
             let (head, released) = lose_with_suspended_head(&owner);
@@ -4019,8 +4015,7 @@ pub mod lost_queue_tests {
     }
 
     pub fn runtime_shutdown_releases_a_pending_retirement() {
-        use tiri_rt::Runtime as _;
-        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_rt::Runtime::new().unwrap();
         {
             let owner = queue_test_clients::with_queue();
             let (head, released) = lose_with_suspended_head(&owner);

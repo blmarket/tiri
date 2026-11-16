@@ -796,11 +796,10 @@ mod ownership_tests {
         monitor_get_fire_time, monitor_item, monitor_items, monitor_items_insert, monitor_remove,
         monitor_set, monitor_visit, monitor_with_item,
     };
-    use tiri_rt::Runtime as _;
 
     #[test]
     fn traversal_preserves_prefetched_successor_order_and_resolves_live_names() {
-        let _runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let _runtime = tiri_rt::Runtime::new().unwrap();
         {
             let owner = monitor_create(Rc::new(|_| {}));
             for name in [c"a", c"c", c"e"] {
@@ -832,7 +831,7 @@ mod ownership_tests {
     #[test]
     fn notify_true_updates_last_without_firing_until_truth_changes() {
         use std::cell::RefCell;
-        let _runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let _runtime = tiri_rt::Runtime::new().unwrap();
         {
             let changes = Rc::new(RefCell::new(Vec::new()));
             let callback_changes = changes.clone();
@@ -887,7 +886,7 @@ mod ownership_tests {
 
     #[test]
     fn changed_value_survives_reentrant_item_removal() {
-        let _runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let _runtime = tiri_rt::Runtime::new().unwrap();
         {
             let capture = std::rc::Rc::new(std::cell::RefCell::new(Capture {
                 set: refbox::Weak::new(),

@@ -45,7 +45,6 @@ use crate::tmux::{get_timer, set_start_time, socket_path_cstr};
 use crate::window::windows;
 use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
-use tiri_rt::{AsyncAccept as _, Runtime as _};
 
 use std::ffi::{CString, OsStr};
 use std::io;
@@ -83,7 +82,7 @@ thread_local! {
     static SERVER_FD: std::cell::RefCell<Option<UnixListener>> = const { std::cell::RefCell::new(None) };
     static SERVER_CLIENT_FLAGS: std::cell::Cell<uint64_t> = const { std::cell::Cell::new(0) };
     static SERVER_EXIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static SERVER_ACCEPT_TASK: std::cell::RefCell<Option<tiri_rt::mio::Task>> = const {
+    static SERVER_ACCEPT_TASK: std::cell::RefCell<Option<tiri_rt::Task>> = const {
         std::cell::RefCell::new(None)
     };
     static SERVER_EV_TIDY: std::cell::RefCell<Option<Timer>> = const { std::cell::RefCell::new(None) };
@@ -209,7 +208,7 @@ pub(crate) fn server_start(
         fd = Some(socket);
     }
     SERVER_CLIENT_FLAGS.set(flags);
-    let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
+    let runtime = tiri_rt::Runtime::new().expect("tiri-rt initialization");
     let mut process_owner = proc_start(c"server");
     SERVER_PROC.set(process_owner.downgrade());
     proc_set_signals(&server_proc(), Some(Box::new(server_signal)));
@@ -441,7 +440,7 @@ pub fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         if timeout == 0 as ::core::ffi::c_int {
             *task = Some(
                 crate::reactor::task_start(move || {
-                    let source = tiri_rt::mio::Listener::new(socket?)?;
+                    let source = tiri_rt::Listener::new(socket?)?;
                     Ok(async move {
                         let accepted = source.accept().await;
                         server_accept(accepted);
@@ -454,7 +453,7 @@ pub fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             let deadline = now.checked_add(tv).unwrap_or(now);
             *task = Some(
                 crate::reactor::task_start(move || {
-                    let wait = tiri_rt::mio::Sleep::new(deadline);
+                    let wait = tiri_rt::Sleep::new(deadline);
                     Ok(async move {
                         wait.await.expect("accept backoff wait");
                         server_add_accept(0);

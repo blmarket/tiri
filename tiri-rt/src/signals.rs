@@ -162,11 +162,10 @@ impl Signals {
         core.signals.borrow_mut().insert(id, Rc::downgrade(&state));
         Ok(Self { state })
     }
-}
 
-impl crate::Signals for Signals {
-    type Recv<'a> = Recv<'a>;
-    fn recv(&mut self) -> Recv<'_> {
+    /// Wait for a subscribed signal. The mutable borrow permits one receiver,
+    /// and dropping the returned future cannot consume an undelivered signal.
+    pub fn recv(&mut self) -> impl Future<Output = io::Result<c_int>> + '_ {
         Recv {
             signals: self,
             waiter: None,
@@ -174,8 +173,7 @@ impl crate::Signals for Signals {
     }
 }
 
-/// A cancellation-safe signal receive using the runtime's local waker.
-pub struct Recv<'a> {
+struct Recv<'a> {
     signals: &'a mut Signals,
     waiter: Option<usize>,
 }

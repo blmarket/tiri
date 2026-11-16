@@ -23,7 +23,6 @@ use refbox::RefBox;
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use tiri_sys::{set_signal_disposition, SignalDisposition};
-use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 
 pub use ::libc::{SIGPIPE, SIGQUIT};
 
@@ -131,7 +130,7 @@ fn proc_update_io(peer: &refbox::Weak<tmuxpeer>) {
     });
 }
 /// Owned by the peer's `io_task`, so it is cancelled when the peer is removed.
-async fn proc_peer_io(peer: refbox::Weak<tmuxpeer>, source: tiri_rt::mio::Io) {
+async fn proc_peer_io(peer: refbox::Weak<tmuxpeer>, source: tiri_rt::Io) {
     use std::future::{poll_fn, Future};
     use std::pin::pin;
     use std::task::Poll;
@@ -188,7 +187,7 @@ async fn proc_peer_io(peer: refbox::Weak<tmuxpeer>, source: tiri_rt::mio::Io) {
                 with_peer(&peer, |peer| imsgbuf_written(&mut peer.ibuf, n));
             }
             Completion::Write(Err(error)) if error.raw_os_error() == Some(libc::ENOBUFS) => {
-                tiri_rt::mio::Sleep::new(
+                tiri_rt::Sleep::new(
                     std::time::Instant::now() + std::time::Duration::from_millis(1),
                 )
                 .await
@@ -374,7 +373,7 @@ impl Drop for tmuxproc {
 /// Drive the process until exit, then release streams and the runtime owner.
 pub fn proc_loop(
     tp: &refbox::Weak<tmuxproc>,
-    mut runtime: tiri_rt::mio::Runtime,
+    mut runtime: tiri_rt::Runtime,
     mut loopcb: Option<&mut dyn FnMut() -> bool>,
 ) {
     log_debug(format_args!(
@@ -421,7 +420,7 @@ pub fn proc_set_signals(
     let tp = tp.clone();
     process.signal_task = Some(
         crate::reactor::task_start(move || {
-            let mut signals = tiri_rt::mio::Signals::new(&[
+            let mut signals = tiri_rt::Signals::new(&[
                 SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
             ])?;
             Ok(async move {
@@ -513,7 +512,7 @@ pub fn proc_toggle_log(tp: &refbox::Weak<tmuxproc>) {
 /// Fork the server and detach it; the server child gets pid 0.
 pub fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
-        !tiri_rt::mio::Runtime::is_initialized(),
+        !tiri_rt::Runtime::is_initialized(),
         "daemonize before initializing the runtime"
     );
     let (parent, child) = tiri_sys::socket_pair()

@@ -16,7 +16,7 @@ pub type peer_dispatch_cb = Box<dyn for<'a> FnMut(PeerMessage<'a>)>;
 pub struct tmuxpeer {
     pub parent: refbox::Weak<tmuxproc>,
     /// Declared before `ibuf` so the task is cancelled before the socket closes.
-    pub io_task: Option<tiri_rt::mio::Task>,
+    pub io_task: Option<tiri_rt::Task>,
     pub(crate) ibuf: imsgbuf,
     pub io_writable: bool,
     pub uid: uid_t,
@@ -45,7 +45,7 @@ pub struct tmuxproc {
     pub name: std::ffi::CString,
     pub exit: ::core::ffi::c_int,
     pub signalcb: Option<Box<dyn FnMut(super::signal::ProcessSignal)>>,
-    pub signal_task: Option<tiri_rt::mio::Task>,
+    pub signal_task: Option<tiri_rt::Task>,
     /// Owns each peer until `proc_remove_peer` removes it.
     pub peers: Vec<refbox::RefBox<tmuxpeer>>,
 }

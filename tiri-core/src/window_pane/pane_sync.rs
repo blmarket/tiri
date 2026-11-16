@@ -143,8 +143,7 @@ mod tests {
 
     #[test]
     fn stopping_and_destroying_sync_cancel_the_timer_without_retaining_the_pane() {
-        use tiri_rt::Runtime as _;
-        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_rt::Runtime::new().unwrap();
         {
             let pane = window_pane::new();
             {

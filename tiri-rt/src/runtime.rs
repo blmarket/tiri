@@ -248,12 +248,11 @@ impl Handle {
                 .clone()
         })
     }
-}
 
-impl crate::Handle for Handle {
-    type Task = Task;
-
-    fn spawn<F>(&self, future: F) -> io::Result<Task>
+    /// Schedule a local-waker future, without polling it inline. Ordinary Waker
+    /// notifications are inert. The returned task owns the future and must be
+    /// retained until completion or cancellation.
+    pub fn spawn<F>(&self, future: F) -> io::Result<Task>
     where
         F: Future<Output = ()> + 'static,
     {
@@ -276,7 +275,12 @@ impl crate::Handle for Handle {
         Ok(Task { state })
     }
 
-    fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()> {
+    /// Run `callback` once on a later turn, never inline, in ready-queue order
+    /// with spawned tasks. If the runtime closes first, the callback is dropped
+    /// without running, releasing its captures, just as pending tasks are.
+    /// Fails (and releases the captures before returning) once the runtime is
+    /// closed, poisoned, or in a forked child.
+    pub fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()> {
         self.core.check()?;
         self.core
             .ready
@@ -298,10 +302,9 @@ pub struct Runtime {
     events: mio::Events,
 }
 
-impl crate::Runtime for Runtime {
-    type Handle = Handle;
-
-    fn new() -> io::Result<Self> {
+impl Runtime {
+    /// Create an independent executor and poller on the calling thread.
+    pub fn new() -> io::Result<Self> {
         let poller = mio::Poll::new()?;
         let registry = poller.registry().try_clone()?;
         let runtime = Self {
@@ -325,25 +328,23 @@ impl crate::Runtime for Runtime {
         HANDLE.with(|handle| {
             let mut handle = handle.borrow_mut();
             if handle.is_none() {
-                *handle = Some(runtime.handle());
+                *handle = Some(Handle {
+                    core: runtime.core.clone(),
+                });
             }
         });
         Ok(runtime)
     }
 
-    fn handle(&self) -> Handle {
-        Handle {
-            core: self.core.clone(),
-        }
-    }
-
-    fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
+    /// Poll tasks, waiting at most `max_wait` for readiness. Callbacks schedule
+    /// through [`Handle::current`], without borrowing the runtime again. The
+    /// owner remains exclusively borrowed until all callbacks in this turn have
+    /// returned.
+    pub fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
         self.prepare_poll(max_wait)?;
         self.core.dispatch()
     }
-}
 
-impl Runtime {
     /// Run a closure with this runtime's handle as [`Handle::current`].
     /// Use this to construct resources for an independent synchronous driver.
     /// The previous handle is restored when the closure returns or unwinds.
@@ -421,7 +422,7 @@ impl Runtime {
                     }
                 }
             }
-            crate::Runtime::poll(self, wake.0.get().then_some(Duration::ZERO))?;
+            self.poll(wake.0.get().then_some(Duration::ZERO))?;
         }
     }
 
@@ -596,17 +597,17 @@ impl Drop for Runtime {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cell, Duration, Future, Instant, Pin, Rc, RefCell, Runtime, Waker};
-    use crate::{Handle as _, Runtime as _};
+    use super::{Cell, Duration, Future, Handle, Instant, Pin, Rc, RefCell, Runtime, Waker};
+    use crate::Sleep;
     use std::task::{Context, Poll};
 
     #[test]
     fn cancellation_storage_is_bounded_without_a_driver_turn() {
         let runtime = Runtime::new().unwrap();
-        let handle = runtime.handle();
+        let handle = Handle::current();
         for _ in 0..10_000 {
             drop(handle.spawn(async {}).unwrap());
-            let mut sleep = crate::mio::Sleep::new(Instant::now() + Duration::from_secs(3600));
+            let mut sleep = Sleep::new(Instant::now() + Duration::from_secs(3600));
             assert!(
                 Pin::new(&mut sleep)
                     .poll(&mut Context::from_waker(Waker::noop()))
@@ -622,9 +623,9 @@ mod tests {
     #[test]
     fn moving_a_pending_timer_refreshes_its_task_waker() {
         let mut runtime = Runtime::new().unwrap();
-        let handle = runtime.handle();
+        let handle = Handle::current();
         let deadline = Instant::now() + Duration::from_millis(10);
-        let timer = Rc::new(RefCell::new(crate::mio::Sleep::new(deadline)));
+        let timer = Rc::new(RefCell::new(Sleep::new(deadline)));
         let first_timer = timer.clone();
         let first = handle
             .spawn(std::future::poll_fn(move |context| {

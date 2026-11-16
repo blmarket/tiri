@@ -4,7 +4,7 @@
 //! Nothing here depends on a runtime, and nothing exposes readiness, so these
 //! operations can be used before one is created (in particular, before
 //! daemonization). Byte I/O on registered descriptors belongs to tiri-rt's
-//! AsyncRead/AsyncWrite; creating/opening files can still block.
+//! `Io`; creating/opening files can still block.
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::{CStr, CString};
@@ -230,7 +230,7 @@ pub fn connect(path: &Path) -> io::Result<OwnedFd> {
 
 /// Create a nonblocking listener with an explicit backlog. Path permissions and
 /// stale-path removal are application policy; inherited listeners can be imported
-/// directly through `tiri_rt::mio::Listener::new` instead.
+/// directly through `tiri_rt::Listener::new` instead.
 pub fn listen(path: &Path, backlog: libc::c_int) -> io::Result<UnixListener> {
     let listener = UnixListener::bind(path)?;
     check(unsafe { libc::listen(listener.as_raw_fd(), backlog) })?;

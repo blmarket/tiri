@@ -228,9 +228,8 @@ mod pipe_stream_tests {
     #[test]
     fn pipe_error_closes_descriptor_while_pane_remains_alive() {
         use std::os::unix::net::UnixStream;
-        use tiri_rt::Runtime as _;
 
-        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_rt::Runtime::new().unwrap();
         {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();

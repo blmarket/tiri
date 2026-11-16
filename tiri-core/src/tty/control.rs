@@ -17,7 +17,6 @@ use crate::options::OptionsScope;
 use crate::reactor::Timer;
 use crate::server_client::ClientRegistry;
 use crate::winlink::winlink_window;
-use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 
 use super::acs::{tty_acs_needed, tty_acs_reverse_get};
 use super::draw::tty_draw_line;
@@ -323,7 +322,7 @@ fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
     drop(terminal.read_task.take());
     terminal.read_task = Some(
         crate::reactor::task_start(move || {
-            let source = tiri_rt::mio::Io::new(lease?)?;
+            let source = tiri_rt::Io::new(lease?)?;
             Ok(async move {
                 loop {
                     let mut bytes = vec![0; 65536];
@@ -364,7 +363,7 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
         .try_clone();
     terminal.write_task = Some(
         crate::reactor::task_start(move || {
-            let source = tiri_rt::mio::Io::new(lease?)?;
+            let source = tiri_rt::Io::new(lease?)?;
             Ok(async move {
                 loop {
                     let bytes = std::future::poll_fn(|cx| {
@@ -786,18 +785,17 @@ fn tty_raw(fd: std::os::fd::BorrowedFd<'_>, text: &CStr) {
     use std::future::{poll_fn, Future};
     use std::pin::pin;
     use std::task::Poll;
-    use tiri_rt::Runtime as _;
     let bytes = text.to_bytes();
     let borrowed = fd;
     let Ok(was_nonblocking) = tiri_sys::set_nonblocking(borrowed, true) else {
         return;
     };
     let _ = (|| -> std::io::Result<()> {
-        let mut runtime = tiri_rt::mio::Runtime::new()?;
+        let mut runtime = tiri_rt::Runtime::new()?;
         let (source, stop) = runtime.enter(|| -> std::io::Result<_> {
-            let source = tiri_rt::mio::Io::new(borrowed.try_clone_to_owned()?)?;
+            let source = tiri_rt::Io::new(borrowed.try_clone_to_owned()?)?;
             let stop =
-                tiri_rt::mio::Sleep::new(std::time::Instant::now() + Duration::from_micros(500));
+                tiri_rt::Sleep::new(std::time::Instant::now() + Duration::from_micros(500));
             Ok((source, stop))
         })?;
         runtime.block_on(async {

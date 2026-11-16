@@ -85,9 +85,9 @@ pub struct tty {
     pub(super) rupper: u_int,
     pub(super) rleft: u_int,
     pub(super) rright: u_int,
-    pub(super) read_task: Option<tiri_rt::mio::Task>,
+    pub(super) read_task: Option<tiri_rt::Task>,
     pub(super) in_0: Option<Box<super::input::TerminalInput>>,
-    pub(super) write_task: Option<tiri_rt::mio::Task>,
+    pub(super) write_task: Option<tiri_rt::Task>,
     /// The writer's waker while it is parked on an empty output buffer.
     pub(super) write_wake: Option<std::task::LocalWaker>,
     pub(super) io_fd: Option<std::os::fd::OwnedFd>,

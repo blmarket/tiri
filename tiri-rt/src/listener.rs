@@ -21,10 +21,13 @@ impl Listener {
             source: Io::new(listener.into())?,
         })
     }
-}
 
-impl crate::AsyncAccept for Listener {
-    async fn accept(&self) -> io::Result<OwnedFd> {
+    /// Accept one nonblocking, close-on-exec connection.
+    ///
+    /// Only one pending accept is supported. Dropping a pending accept consumes no
+    /// connection. Dropping the listener or its runtime closes the listening socket;
+    /// already accepted sockets remain owned by their callers.
+    pub async fn accept(&self) -> io::Result<OwnedFd> {
         self.source
             .read_with(|| {
                 #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]

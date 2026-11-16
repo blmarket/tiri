@@ -204,8 +204,8 @@ impl Drop for IoState {
     }
 }
 
-/// An owned descriptor with [`crate::AsyncRead`]/[`crate::AsyncWrite`] byte-stream
-/// operations. The runtime owns readiness, syscall retries, and cancellation.
+/// An owned descriptor with async byte-stream operations.
+/// The runtime owns readiness, syscall retries, and cancellation.
 /// Unix stream sockets pass one optional FD per operation and suppress SIGPIPE.
 /// Files, pipes, and PTYs return no FDs and reject attached FDs before writing.
 /// For other descriptors the host retains SIGPIPE policy.
@@ -216,7 +216,7 @@ impl Drop for IoState {
 ///
 /// Readiness is not a public operation:
 /// ```compile_fail
-/// use tiri_rt::mio::Io;
+/// use tiri_rt::Io;
 /// fn readiness(io: &Io) {
 ///     let _ = io.ready(true, false);
 /// }
@@ -224,13 +224,13 @@ impl Drop for IoState {
 ///
 /// Custom operations are not part of the public byte-stream API:
 /// ```compile_fail
-/// use tiri_rt::mio::Io;
+/// use tiri_rt::Io;
 /// fn custom(io: &Io) {
 ///     let _ = io.read_with(|| Ok(()));
 /// }
 /// ```
 /// ```compile_fail
-/// use tiri_rt::mio::Io;
+/// use tiri_rt::Io;
 /// fn custom(io: &Io) {
 ///     let _ = io.write_with(|| Ok(()));
 /// }
@@ -312,8 +312,17 @@ impl Io {
     }
 }
 
-impl crate::AsyncRead for Io {
-    async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
+impl Io {
+    /// Read available bytes and at most one accompanying owned FD.
+    ///
+    /// An empty buffer consumes nothing and returns zero bytes and no FDs.
+    /// Dropping a pending read consumes no input. Receiving multiple FDs or
+    /// truncated ancillary data returns `InvalidData` and closes all FDs
+    /// received by that operation. Input has been consumed in that case, so
+    /// treat it as a fatal transport error.
+    /// Only one pending reader is supported per registration. Avoid reading
+    /// through other aliases, which could discard FDs.
+    pub async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
         if buffer.is_empty() {
             return Ok(Received { bytes: 0, fd: None });
         }
@@ -324,12 +333,10 @@ impl crate::AsyncRead for Io {
         }
         Ok(received)
     }
-}
 
-impl Io {
     /// Read bytes already available without waiting for readiness, as after
     /// a read that may have left more queued. `WouldBlock` means none were,
-    /// and the next [`crate::AsyncRead::read`] waits for a new edge.
+    /// and the next [`Self::read`] waits for a new edge.
     pub fn try_read(&self, buffer: &mut [u8]) -> io::Result<Received> {
         if self.state.fd.borrow().is_none() {
             return Err(invalid());
@@ -360,10 +367,19 @@ impl Io {
             fd: None,
         })
     }
-}
 
-impl crate::AsyncWrite for Io {
-    async fn write(
+    /// Write some bytes from the buffers in order, optionally attaching one FD.
+    ///
+    /// Unsupported FD passing returns `Unsupported` before writing bytes,
+    /// even with empty buffers. An FD requires at least one byte. Empty buffers
+    /// without an FD return zero.
+    ///
+    /// A positive result transfers the attached FD, even on a partial write.
+    /// Retry remaining bytes with `None`. Errors, zero, and cancellation
+    /// of a pending write transfer neither bytes nor the FD. The FD remains owned by
+    /// the caller. Only one pending writer is supported per registration;
+    /// serialize submissions to avoid interleaving partial writes.
+    pub async fn write(
         &self,
         buffers: &[IoSlice<'_>],
         fd: Option<BorrowedFd<'_>>,
@@ -508,7 +524,7 @@ impl<F> Drop for Operation<'_, F> {
 #[cfg(test)]
 mod tests {
     use super::{Cell, Context, Direction, Future, OwnedFd, Pin, Poll};
-    use crate::Runtime as _;
+    use crate::Runtime;
     use std::io::{self, Write};
     use std::os::unix::net::UnixStream;
     use std::task::Waker;
@@ -516,7 +532,7 @@ mod tests {
 
     #[test]
     fn unregistered_operation_cannot_wait_and_releases_its_waiter() {
-        let mut runtime = super::super::Runtime::new().unwrap();
+        let mut runtime = Runtime::new().unwrap();
         let file = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
         let source = super::Io::new(file.into()).unwrap();
         let mut operation = source.read_with(|| Err::<(), _>(io::ErrorKind::WouldBlock.into()));
@@ -534,7 +550,7 @@ mod tests {
 
     #[test]
     fn acknowledging_an_old_generation_preserves_a_new_notification() {
-        let mut runtime = super::super::Runtime::new().unwrap();
+        let mut runtime = Runtime::new().unwrap();
         let (mut writer, reader) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
         let source = super::Io::new(reader.into()).unwrap();
@@ -557,7 +573,7 @@ mod tests {
         ));
     }
 
-    fn tick(runtime: &mut super::super::Runtime) {
+    fn tick(runtime: &mut Runtime) {
         runtime.poll(Some(Duration::ZERO)).unwrap();
     }
     fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
@@ -570,7 +586,7 @@ mod tests {
     }
     #[test]
     fn interrupted_operations_yield_keep_the_waiter_and_return_errors() {
-        let mut runtime = super::super::Runtime::new().unwrap();
+        let mut runtime = Runtime::new().unwrap();
         let (_writer, fd) = pair();
         let source = super::Io::new(fd).unwrap();
         tick(&mut runtime);

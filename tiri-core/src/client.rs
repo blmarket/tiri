@@ -54,7 +54,6 @@ use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use tiri_rt::Runtime as _;
 use tiri_sys::{
     copy_speeds, exec, make_raw, send_signal, set_signal_disposition, signal_description, system,
     wait_child, Program, SignalDisposition,
@@ -297,7 +296,7 @@ pub fn client_main(
                 return 1;
             }
         };
-        let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
+        let runtime = tiri_rt::Runtime::new().expect("tiri-rt initialization");
         proc_set_signals(&client_proc(), Some(Box::new(client_signal)));
         client_signal(ProcessSignal::Child);
         let peer = proc_add_peer(&client_proc(), fd, Box::new(client_dispatch));

@@ -1,65 +1,22 @@
-//! library entrypoint
+//! Single-threaded local-waker async runtime for `tiri`.
 #![feature(local_waker)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-pub mod channel;
-pub mod mio;
+mod fd_passing;
+mod listener;
 pub mod oneshot;
-pub mod stream;
+mod readiness;
+mod runtime;
+mod signals;
+mod waits;
 
-use std::ffi::c_int;
-use std::future::Future;
-use std::io::{self, IoSlice};
-use std::os::fd::{BorrowedFd, OwnedFd};
-use std::time::Duration;
+use std::os::fd::OwnedFd;
 
-/// Owns and drives the runtime. Polling borrows the owner through callback
-/// execution, so the owner cannot be dropped until polling returns.
-pub trait Runtime: Sized + 'static {
-    /// The capability for creating work on this runtime instance.
-    type Handle: Handle;
-
-    /// Create an independent executor and poller on the calling thread.
-    fn new() -> io::Result<Self>;
-
-    /// Obtain a capability bound to this instance and process generation.
-    fn handle(&self) -> Self::Handle;
-
-    /// Poll tasks, waiting at most max_wait for readiness. Callbacks schedule
-    /// through handles, without borrowing the runtime again. The owner remains
-    /// exclusively borrowed until all callbacks in this turn have returned.
-    fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()>;
-}
-
-/// A cloneable, thread-local capability to schedule work.
-/// A handle does not keep its runtime owner alive.
-pub trait Handle: Clone + 'static {
-    /// Owns a spawned future; dropping it cancels the work.
-    type Task: 'static;
-
-    /// Schedule a local-waker future, without polling it inline. Ordinary Waker
-    /// notifications are inert. The returned task
-    /// owns the future and must be retained until completion or cancellation.
-    fn spawn<F>(&self, future: F) -> io::Result<Self::Task>
-    where
-        F: Future<Output = ()> + 'static;
-
-    /// Run `callback` once on a later turn, never inline, in ready-queue order
-    /// with spawned tasks. If the runtime closes first, the callback is dropped
-    /// without running, releasing its captures, just as pending tasks are.
-    /// Fails (and releases the captures before returning) once the runtime is
-    /// closed, poisoned, or in a forked child.
-    fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()>;
-}
-
-/// A listener whose operations return owned, nonblocking, close-on-exec sockets.
-///
-/// Only one pending accept is supported. Dropping a pending accept consumes no
-/// connection. Dropping the listener or its runtime closes the listening socket;
-/// already accepted sockets remain owned by their callers.
-pub trait AsyncAccept {
-    fn accept(&self) -> impl Future<Output = io::Result<OwnedFd>> + '_;
-}
+pub use listener::Listener;
+pub use readiness::Io;
+pub use runtime::{Handle, Runtime, Task};
+pub use signals::Signals;
+pub use waits::Sleep;
 
 /// Bytes and an optional owned file descriptor from one read operation.
 ///
@@ -74,49 +31,4 @@ pub struct Received {
     /// Received descriptor with close-on-exec set. `None` for descriptors
     /// without FD-passing support. Drop closes the received FD.
     pub fd: Option<OwnedFd>,
-}
-
-/// A local async byte reader with optional FD passing.
-pub trait AsyncRead {
-    /// Read available bytes and at most one accompanying owned FD.
-    ///
-    /// An empty buffer consumes nothing and returns zero bytes and no FDs.
-    /// Dropping a pending read consumes no input. Receiving multiple FDs or
-    /// truncated ancillary data returns `InvalidData` and closes all FDs
-    /// received by that operation. Input has been consumed in that case, so
-    /// treat it as a fatal transport error.
-    /// Only one pending reader is supported per registration. Avoid reading
-    /// through other aliases, which could discard FDs.
-    fn read<'a>(&'a self, buffer: &'a mut [u8]) -> impl Future<Output = io::Result<Received>> + 'a;
-}
-
-/// A local async byte writer with optional FD passing.
-pub trait AsyncWrite {
-    /// Write some bytes from the buffers in order, optionally attaching one FD.
-    ///
-    /// Unsupported FD passing must return `Unsupported` before writing bytes,
-    /// even with empty buffers. An FD requires at least one byte. Empty buffers
-    /// without an FD return zero.
-    ///
-    /// A positive result transfers the attached FD, even on a partial write.
-    /// Retry remaining bytes with `None`. Errors, zero, and cancellation
-    /// of a pending write transfer neither bytes nor the FD. The FD remains owned by
-    /// the caller. Only one pending writer is supported per registration;
-    /// serialize submissions to avoid interleaving partial writes.
-    fn write<'a>(
-        &'a self,
-        buffers: &'a [IoSlice<'a>],
-        fd: Option<BorrowedFd<'a>>,
-    ) -> impl Future<Output = io::Result<usize>> + 'a;
-}
-
-/// A local signal subscription
-pub trait Signals {
-    /// Cancellation-safe wait: dropping it cannot consume an undelivered signal.
-    type Recv<'a>: Future<Output = io::Result<c_int>> + 'a
-    where
-        Self: 'a;
-
-    /// Wait for a subscribed signal. The mutable borrow permits one receiver.
-    fn recv(&mut self) -> Self::Recv<'_>;
 }

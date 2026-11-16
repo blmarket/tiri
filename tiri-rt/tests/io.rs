@@ -1,4 +1,4 @@
-//! FD passing is part of ordinary I/O, including one-way adapters.
+//! FD passing is part of ordinary byte-stream I/O.
 use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
@@ -6,10 +6,9 @@ use std::os::unix::net::UnixStream;
 use std::pin::{Pin, pin};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
-use tiri_rt::stream::{Reader, Writer};
-use tiri_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
+use tiri_rt::{Handle, Io, Received, Runtime, Sleep};
 
-fn tick(runtime: &mut mio::Runtime) {
+fn tick(runtime: &mut Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap();
 }
 
@@ -17,8 +16,8 @@ fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
     future.poll(&mut Context::from_waker(Waker::noop()))
 }
 
-fn ready<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T {
-    let timeout = mio::Sleep::new(Instant::now() + Duration::from_secs(5));
+fn ready<T>(runtime: &mut Runtime, future: impl Future<Output = T>) -> T {
+    let timeout = Sleep::new(Instant::now() + Duration::from_secs(5));
     runtime
         .block_on(async {
             let mut future = pin!(future);
@@ -45,20 +44,18 @@ fn pair() -> (UnixStream, UnixStream) {
     (left, right)
 }
 
-fn streams() -> (mio::Io, mio::Io) {
+fn streams() -> (Io, Io) {
     let (left, right) = pair();
     (
-        mio::Io::new(left.into()).unwrap(),
-        mio::Io::new(right.into()).unwrap(),
+        Io::new(left.into()).unwrap(),
+        Io::new(right.into()).unwrap(),
     )
 }
 
 #[test]
 fn vectored_transfer_returns_an_owned_fd_and_eof() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (sender, receiver) = streams();
-    let sender = Writer::from_io(sender);
-    let receiver = Reader::from_io(receiver);
     let (fd, mut peer) = pair();
     let buffers = [IoSlice::new(b"header"), IoSlice::new(b"payload")];
     assert_eq!(
@@ -89,11 +86,11 @@ fn vectored_transfer_returns_an_owned_fd_and_eof() {
 }
 
 #[test]
-fn cancelled_read_preserves_fd_and_chunk_reader_returns_it() {
-    let mut runtime = mio::Runtime::new().unwrap();
+fn cancelled_read_preserves_fd() {
+    let mut runtime = Runtime::new().unwrap();
     let (sender, receiver) = streams();
-    let mut receiver = Reader::from_io(receiver);
-    let mut pending = Box::pin(receiver.read_chunk(8));
+    let mut pending_buf = [0; 8];
+    let mut pending = Box::pin(receiver.read(&mut pending_buf));
     assert!(poll(pending.as_mut()).is_pending());
     let (fd, mut peer) = pair();
     ready(
@@ -104,19 +101,16 @@ fn cancelled_read_preserves_fd_and_chunk_reader_returns_it() {
     drop(fd);
     tick(&mut runtime);
     drop(pending);
-    let (bytes, fd) = ready(&mut runtime, receiver.read_chunk(8))
-        .unwrap()
-        .unwrap();
-    assert_eq!(bytes, b"input");
-    assert!(fd.is_some());
-    drop(fd);
+    let mut bytes = [0; 8];
+    let received = ready(&mut runtime, receiver.read(&mut bytes)).unwrap();
+    assert_eq!(&bytes[..received.bytes], b"input");
+    assert!(received.fd.is_some());
+    drop(received);
     assert_eq!(peer.read(&mut [0]).unwrap(), 0);
     drop(sender);
-    assert!(
-        ready(&mut runtime, receiver.read_chunk(8))
-            .unwrap()
-            .is_none()
-    );
+    let eof = ready(&mut runtime, receiver.read(&mut bytes)).unwrap();
+    assert_eq!(eof.bytes, 0);
+    assert!(eof.fd.is_none());
 }
 
 #[test]
@@ -129,10 +123,10 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
         bytes: [u8; CONTROL_SIZE],
     }
 
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     for count in [2, 3] {
         let (sender, receiver) = pair();
-        let receiver = mio::Io::new(receiver.into()).unwrap();
+        let receiver = Io::new(receiver.into()).unwrap();
         let (fd, mut peer) = pair();
         let mut control = Control {
             bytes: [0; CONTROL_SIZE],
@@ -168,7 +162,7 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
 
 #[test]
 fn consecutive_single_fd_writes_remain_readable() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (sender, receiver) = streams();
     let (first, mut first_peer) = pair();
     let (second, mut second_peer) = pair();
@@ -199,7 +193,7 @@ fn consecutive_single_fd_writes_remain_readable() {
 
 #[test]
 fn invalid_writes_and_empty_reads_do_not_consume_data_or_fds() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (sender, receiver) = streams();
     let (fd, mut peer) = pair();
     for buffers in [&[][..], &[IoSlice::new(b"")][..]] {
@@ -228,7 +222,7 @@ fn invalid_writes_and_empty_reads_do_not_consume_data_or_fds() {
 
 #[test]
 fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
     let (sender, receiver) = streams();
     drop(receiver);
     let (fd, mut peer) = pair();
@@ -281,12 +275,12 @@ fn pty() -> (OwnedFd, OwnedFd) {
 }
 
 #[test]
-fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
-    let mut runtime = mio::Runtime::new().unwrap();
+fn pipes_and_ptys_reject_fds_before_writing() {
+    let mut runtime = Runtime::new().unwrap();
     let fd = std::fs::File::open("/dev/null").unwrap();
     for (writer, reader) in [pipe(), pty()] {
-        let writer = Writer::new(writer).unwrap();
-        let reader = Reader::new(reader).unwrap();
+        let writer = Io::new(writer).unwrap();
+        let reader = Io::new(reader).unwrap();
         for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {
             assert!(
                 matches!(poll(pin!(writer.write(buffers, Some(fd.as_fd())))),
@@ -311,17 +305,46 @@ fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
 }
 
 #[test]
+fn direct_io_reads_and_writes_can_wait_independently() {
+    let mut runtime = Runtime::new().unwrap();
+    let (mut peer, socket) = pair();
+    let source = Io::new(socket.into()).unwrap();
+    let mut bytes = [0; 8];
+    let mut read = Box::pin(source.read(&mut bytes));
+    assert!(poll(read.as_mut()).is_pending());
+    tick(&mut runtime);
+    assert!(matches!(
+        poll(Box::pin(source.write(&[IoSlice::new(b"out")], None)).as_mut()),
+        Poll::Ready(Ok(3))
+    ));
+    let mut output = [0; 3];
+    peer.read_exact(&mut output).unwrap();
+    assert_eq!(&output, b"out");
+    peer.write_all(b"in").unwrap();
+    tick(&mut runtime);
+    assert!(
+        matches!(poll(read.as_mut()), Poll::Ready(Ok(Received { bytes: 2, fd })) if fd.is_none())
+    );
+    drop(read);
+    assert_eq!(&bytes[..2], b"in");
+    assert!(matches!(
+        poll(Box::pin(source.write(&[IoSlice::new(&[])], None)).as_mut()),
+        Poll::Ready(Ok(0))
+    ));
+}
+
+#[test]
 fn borrowed_driver_waits_for_io_and_timers_without_retaining_its_future() {
-    let mut runtime = mio::Runtime::new().unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let handle = Handle::current();
     let (reader, writer) = tiri_sys::socket_pair().unwrap();
     tiri_sys::set_nonblocking(reader.as_fd(), true).unwrap();
     tiri_sys::set_nonblocking(writer.as_fd(), true).unwrap();
-    let reader = mio::Io::new(reader).unwrap();
-    let writer = mio::Io::new(writer).unwrap();
-    let _task = runtime
-        .handle()
+    let reader = Io::new(reader).unwrap();
+    let writer = Io::new(writer).unwrap();
+    let _task = handle
         .spawn(async move {
-            mio::Sleep::new(Instant::now() + Duration::from_millis(5))
+            Sleep::new(Instant::now() + Duration::from_millis(5))
                 .await
                 .unwrap();
             writer
@@ -356,8 +379,8 @@ fn shutdown_write_preserves_incoming_data() {
     let (socket, peer) = tiri_sys::socket_pair().unwrap();
     assert!(!tiri_sys::set_nonblocking(socket.as_fd(), true).unwrap());
     let mut peer = UnixStream::from(peer);
-    let mut runtime = mio::Runtime::new().unwrap();
-    let source = mio::Io::new(socket.as_fd().try_clone_to_owned().unwrap()).unwrap();
+    let mut runtime = Runtime::new().unwrap();
+    let source = Io::new(socket.as_fd().try_clone_to_owned().unwrap()).unwrap();
     runtime
         .block_on(source.write(&[IoSlice::new(b"input")], None))
         .unwrap()

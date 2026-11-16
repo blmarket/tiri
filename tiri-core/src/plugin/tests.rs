@@ -201,7 +201,6 @@ fn failed_registration_drops_plugin_outside_registry_borrows() {
 fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
     use std::cell::Cell;
     use std::rc::Rc;
-    use tiri_rt::Runtime as _;
 
     struct Refresh {
         calls: Rc<Cell<usize>>,
@@ -243,7 +242,7 @@ fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
         }
     }
     shutdown();
-    let runtime = tiri_rt::mio::Runtime::new().unwrap();
+    let runtime = tiri_rt::Runtime::new().unwrap();
     let calls = Rc::new(Cell::new(0));
     let dropped = Rc::new(Cell::new(false));
     register(Box::new(Refresh {
