@@ -16,12 +16,10 @@ pub mod alerts;
 pub mod arguments;
 pub mod bracketed_paste;
 pub mod cfg;
-pub mod client;
 pub mod ffi;
 #[allow(unused_imports)]
 pub mod compat {
     pub mod fdforkpty;
-    pub mod getopt;
     pub mod getprogname;
     pub mod imsg;
     pub mod setproctitle;

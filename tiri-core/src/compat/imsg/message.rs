@@ -57,11 +57,11 @@ pub struct imsg_hdr {
     pub pid: uint32_t,
 }
 
-pub(crate) const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
+pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
 
-pub(crate) const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
+pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 
-pub(crate) const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
+pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
 pub struct imsg {
     pub hdr: imsg_hdr,
@@ -89,7 +89,7 @@ pub(crate) struct imsgbuf {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub(crate) struct msg_command {
+pub struct msg_command {
     pub argc: ::core::ffi::c_int,
 }
 

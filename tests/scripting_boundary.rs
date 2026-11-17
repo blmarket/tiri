@@ -75,3 +75,20 @@ fn core_has_no_dependency_on_the_interpreter_or_its_grammar() {
         );
     }
 }
+
+#[test]
+fn client_and_cli_live_above_cmds_and_core() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(!root.join("tiri-core/src/client.rs").exists());
+    assert!(!root.join("tiri-core/src/compat/getopt.rs").exists());
+    assert!(root.join("src/client.rs").exists());
+    assert!(root.join("src/cli.rs").exists());
+
+    let cmds_manifest = include_str!("../tiri-cmds/Cargo.toml");
+    assert!(
+        !cmds_manifest
+            .lines()
+            .any(|line| line.trim_start().starts_with("tiri =")),
+        "tiri-cmds depends on tiri",
+    );
+}

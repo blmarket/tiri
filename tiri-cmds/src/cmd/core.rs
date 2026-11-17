@@ -240,6 +240,10 @@ fn list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     0 as ::core::ffi::c_int
 }
 
+pub(crate) fn cmd_list_starts_server(cmdlist: &cmd_list) -> bool {
+    list_any_have(cmdlist) != 0
+}
+
 impl tiri_core::actions::Program for cmd_list {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -258,9 +262,6 @@ impl tiri_core::actions::Program for cmd_list {
     }
     fn read_only(&self) -> bool {
         list_all_have(self) != 0
-    }
-    fn starts_server(&self) -> bool {
-        list_any_have(self) != 0
     }
 }
 pub(crate) fn cmd_list_print_cstring(

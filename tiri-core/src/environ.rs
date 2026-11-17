@@ -142,7 +142,7 @@ pub fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
 /// The process's `environ` strings as they are, read once. `std::env::vars_os`
 /// is no substitute: it skips entries without `=` and reparses names that
 /// begin with `=`, while tmux passes every raw string on.
-pub(crate) fn process_environment() -> Vec<CString> {
+pub fn process_environment() -> Vec<CString> {
     std::env::vars_os()
         .map(|(name, value)| {
             let mut entry = name.into_vec();

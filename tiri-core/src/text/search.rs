@@ -3,7 +3,7 @@
 /// Whether `needle` occurs in `haystack`. An empty needle always matches.
 /// `icase` folds ASCII letters only, as strcasestr(3) does in the UTF-8 locale
 /// tiri requires.
-pub(crate) fn contains(haystack: &[u8], needle: &[u8], icase: bool) -> bool {
+pub fn contains(haystack: &[u8], needle: &[u8], icase: bool) -> bool {
     if needle.is_empty() {
         return true;
     }

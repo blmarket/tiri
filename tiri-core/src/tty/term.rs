@@ -1449,7 +1449,7 @@ impl Drop for tty_term {
     }
 }
 
-pub(crate) fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
+pub fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
     let read = with_terminfo(name, STDIN_FILENO, || {
         let mut caps = Vec::new();
         for ent in tty_term_codes.iter().take(tty_term_ncodes() as usize) {

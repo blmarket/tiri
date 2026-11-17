@@ -1,65 +1,63 @@
-use crate::actions::pack_argv;
-use crate::actions::sources::compile_argv;
-use crate::compat::imsg::imsg;
-use crate::compat::imsg::msg_command;
-use crate::compat::imsg::{
-    MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING,
-    MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON,
-    MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT,
-    MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READY,
-    MSG_READ_CANCEL, MSG_READ_OPEN, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_STDERR, MSG_STDIN,
-    MSG_STDOUT, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE,
-    MSG_WRITE_OPEN, msgtype,
-};
-use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
-#[cfg(target_os = "linux")]
-use crate::compat::systemd::systemd_activated;
-use crate::control::control_wait_exit;
-use crate::environ::process_environment;
-use crate::file::{
-    file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
-    file_write_open,
-};
-use crate::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
-use crate::proc::{
-    bytes_of, imsg_string, proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send,
-    proc_set_signals, proc_start, read_plain,
-};
-use crate::server::server_start;
-use crate::shared::abi::{cc_t, pid_t, size_t, tcflag_t, uint64_t};
-use crate::shared::abi::{ssize_t, uint32_t};
-pub use crate::shared::client::client_files;
-use crate::shared::client::{
-    CLIENT_EXIT_DETACHED, CLIENT_EXIT_DETACHED_HUP, CLIENT_EXIT_EXITED, CLIENT_EXIT_LOST_SERVER,
-    CLIENT_EXIT_LOST_TTY, CLIENT_EXIT_MESSAGE_PROVIDED, CLIENT_EXIT_NONE,
-    CLIENT_EXIT_SERVER_EXITED, CLIENT_EXIT_TERMINATED, client_exit_reason,
-};
-use crate::shared::client::{
-    CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
-    CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
-};
-use crate::shared::errno::ErrorText;
-use crate::shared::posix_io::{STDERR_FILENO, WAIT_ANY, WNOHANG};
-use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
-use crate::shared::process::{tmuxpeer, tmuxproc};
-pub use crate::shared::signal::{ProcessSignal, SA_RESTART, SIGHUP, SIGTSTP, SIG_DFL, SIG_IGN};
-use crate::tmux::{
-    env_cstring, find_cwd, find_home_cstr, setblocking, shell_argv0_cstring, shell_command,
-    socket_path_cstr,
-};
-use crate::tty::tty_term_read_list;
-use libc::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
+use crate::cli::find_cwd;
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use tiri_sys::{
-    copy_speeds, exec, make_raw, send_signal, set_signal_disposition, signal_description, system,
-    wait_child, Program, SignalDisposition,
+use tiri_cmds::argv_starts_server;
+use tiri_core::actions::pack_argv;
+use tiri_core::compat::imsg::{
+    IMSG_HEADER_SIZE, MAX_IMSGSIZE, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT,
+    MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD,
+    MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_LONGFLAGS,
+    MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
+    MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_READY, MSG_READ_CANCEL, MSG_READ_OPEN, MSG_RESIZE,
+    MSG_SHELL, MSG_SHUTDOWN, MSG_STDERR, MSG_STDIN, MSG_STDOUT, MSG_SUSPEND, MSG_UNLOCK,
+    MSG_VERSION, MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_OPEN, PROTOCOL_VERSION, imsg,
+    msg_command, msgtype,
 };
-
-pub use ::libc::{CREAD, CS8, ECONNREFUSED, HUPCL, IXANY, LOCK_EX, LOCK_NB, TCSAFLUSH};
+#[cfg(target_os = "linux")]
+use tiri_core::compat::systemd::systemd_activated;
+use tiri_core::control::control_wait_exit;
+use tiri_core::environ::process_environment;
+use tiri_core::file::{
+    file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
+    file_write_open,
+};
+use tiri_core::libc::{
+    self, CREAD, CS8, EAGAIN, ECHILD, ECONNREFUSED, ENAMETOOLONG, ENOENT, HUPCL, IXANY, LOCK_EX,
+    LOCK_NB, TCSAFLUSH,
+};
+use tiri_core::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
+use tiri_core::proc::{
+    bytes_of, imsg_string, proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send,
+    proc_set_signals, proc_start, read_plain,
+};
+use tiri_core::refbox;
+use tiri_core::server::server_start;
+use tiri_core::shared::abi::{cc_t, pid_t, size_t, ssize_t, tcflag_t, uint32_t, uint64_t};
+use tiri_core::shared::client::{
+    CLIENT_CONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_CONTROLCONTROL, CLIENT_EXIT_DETACHED,
+    CLIENT_EXIT_DETACHED_HUP, CLIENT_EXIT_EXITED, CLIENT_EXIT_LOST_SERVER, CLIENT_EXIT_LOST_TTY,
+    CLIENT_EXIT_MESSAGE_PROVIDED, CLIENT_EXIT_NONE, CLIENT_EXIT_SERVER_EXITED,
+    CLIENT_EXIT_TERMINATED, CLIENT_LOGIN, CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER,
+    CLIENT_WRITE_ACK, client_exit_reason,
+};
+use tiri_core::shared::errno::ErrorText;
+use tiri_core::shared::posix_io::{STDERR_FILENO, WAIT_ANY, WNOHANG};
+use tiri_core::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
+use tiri_core::shared::process::{PeerMessage, tmuxpeer, tmuxproc};
+use tiri_core::shared::signal::{ProcessSignal, SIGHUP, SIGTSTP};
+use tiri_core::tiri_rt;
+use tiri_core::tiri_sys::{
+    self, Program, SignalDisposition, copy_speeds, exec, make_raw, send_signal,
+    set_signal_disposition, set_terminal_attributes, signal_description, system,
+    terminal_attributes, wait_child,
+};
+use tiri_core::tmux::{
+    env_cstring, find_home_cstr, setblocking, shell_argv0_cstring, socket_path_cstr,
+};
+use tiri_core::tty::tty_term_read_list;
 
 thread_local! {
     static CLIENT_PROC: RefCell<refbox::Weak<tmuxproc>> = const { RefCell::new(refbox::Weak::new()) };
@@ -73,37 +71,18 @@ thread_local! {
     static CLIENT_EXITSESSION: RefCell<Option<CString>> = const { RefCell::new(None) };
     static CLIENT_EXITMESSAGE: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
     static CLIENT_EXEC_PAYLOAD: RefCell<Option<(CString, CString)>> = const { RefCell::new(None) };
+    static CLIENT_SHELL_COMMAND: RefCell<Option<CString>> = const { RefCell::new(None) };
     static CLIENT_ATTACHED: Cell<::core::ffi::c_int> = const { Cell::new(0) };
-    static CLIENT_FILES: RefCell<client_files> = const { RefCell::new(client_files::new()) };
 }
+
 fn client_proc() -> refbox::Weak<tmuxproc> {
     CLIENT_PROC.with_borrow(Clone::clone)
 }
+
 fn client_peer() -> refbox::Weak<tmuxpeer> {
     CLIENT_PEER.with_borrow(Clone::clone)
 }
 
-pub(crate) fn client_find_file(
-    stream: i32,
-) -> Option<std::rc::Rc<std::cell::RefCell<crate::file::client_file>>> {
-    CLIENT_FILES.with_borrow(|files| crate::file::client_files_find_stream(files, stream))
-}
-
-pub(crate) fn client_register_file(
-    file: &std::rc::Rc<std::cell::RefCell<crate::file::client_file>>,
-) {
-    CLIENT_FILES.with_borrow_mut(|files| crate::file::client_files_insert(files, file.clone()));
-}
-
-pub(crate) fn client_remove_file(
-    stream: i32,
-    identity: &std::rc::Rc<std::cell::RefCell<crate::file::client_file>>,
-) {
-    let removed = CLIENT_FILES.with_borrow_mut(|files| {
-        crate::file::client_files_remove_identity(files, stream, identity)
-    });
-    drop(removed);
-}
 enum ClientLock {
     Acquired(OwnedFd),
     Retry,
@@ -190,6 +169,7 @@ fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
         }
     }
 }
+
 fn client_exit_message() -> CString {
     let detached = |prefix: &[u8], plain: &CStr| {
         CLIENT_EXITSESSION.with_borrow(|session| match session {
@@ -219,39 +199,36 @@ fn client_exit_message() -> CString {
         _ => c"unknown reason".to_owned(),
     }
 }
+
 fn client_exit() {
-    if CLIENT_FILES.with_borrow(file_write_left) == 0 {
+    if file_write_left() == 0 {
         proc_exit(&client_proc());
     }
 }
-pub fn client_main(
+
+pub(crate) fn client_main(
     argv: &[CString],
+    shell_command: Option<CString>,
     mut flags: uint64_t,
-    mut feat: ::core::ffi::c_int,
+    feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut i: ::core::ffi::c_int = 0;
-    let mut ppid: pid_t = 0;
-    let mut msg: msgtype = 0 as msgtype;
     let mut tio = tiri_sys::empty_terminal_attributes();
     let mut saved_tio = tiri_sys::empty_terminal_attributes();
-    let mut size: size_t = 0;
     let mut caps = Vec::new();
-    if shell_command().is_some() {
-        msg = MSG_SHELL;
+    let msg: msgtype = if shell_command.is_some() {
         flags |= CLIENT_STARTSERVER as uint64_t;
+        MSG_SHELL
     } else if argv.is_empty() {
-        msg = MSG_COMMAND;
         flags |= CLIENT_STARTSERVER as uint64_t;
+        MSG_COMMAND
     } else {
-        msg = MSG_COMMAND;
-        if let Ok(commands) = compile_argv(argv) {
-            if commands.starts_server() {
-                flags |= CLIENT_STARTSERVER as uint64_t;
-            }
-            drop(commands);
+        if argv_starts_server(argv) {
+            flags |= CLIENT_STARTSERVER as uint64_t;
         }
-    }
-    let mut process_owner = proc_start(c"client");
+        MSG_COMMAND
+    };
+    CLIENT_SHELL_COMMAND.set(shell_command);
+    let process_owner = proc_start(c"client");
     CLIENT_PROC.set(process_owner.downgrade());
     let result = (|| {
         CLIENT_FLAGS.set((flags as ::core::ffi::c_ulonglong | CLIENT_WRITE_ACK) as uint64_t);
@@ -305,21 +282,21 @@ pub fn client_main(
         let ttynam = tiri_sys::terminal_name(io::stdin().as_fd()).unwrap_or_default();
         let termname = env_cstring("TERM").unwrap_or_default();
         let termname = termname.as_c_str();
-        if tiri_sys::terminal_attributes(io::stdin().as_fd()).is_ok() && !termname.is_empty() {
+        if terminal_attributes(io::stdin().as_fd()).is_ok() && !termname.is_empty() {
             match tty_term_read_list(termname) {
                 Ok(read_caps) => caps = read_caps,
                 Err(cause) => {
                     let _ = io::stderr().write_all(&[cause.as_bytes(), b"\n"].concat());
-                    return 1 as ::core::ffi::c_int;
+                    return 1;
                 }
             }
         }
         if CLIENT_FLAGS.get() & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-            saved_tio = match crate::shared::terminal::read_attributes(io::stdin().as_fd()) {
+            saved_tio = match terminal_attributes(io::stdin().as_fd()) {
                 Ok(attributes) => attributes,
                 Err(error) => {
                     eprintln!("tcgetattr failed: {}", ErrorText(&error));
-                    return 1 as ::core::ffi::c_int;
+                    return 1;
                 }
             };
             make_raw(&mut tio);
@@ -327,28 +304,26 @@ pub fn client_main(
             tio.c_oflag = (OPOST | ONLCR) as tcflag_t;
             #[cfg(target_vendor = "apple")]
             {
-                tio.c_lflag = ::libc::NOKERNINFO;
+                tio.c_lflag = libc::NOKERNINFO;
             }
             tio.c_cflag = (CREAD | CS8 | HUPCL) as tcflag_t;
             tio.c_cc[VMIN] = 1 as cc_t;
             tio.c_cc[VTIME] = 0 as cc_t;
             let _ = copy_speeds(&saved_tio, &mut tio);
-            let _ = crate::shared::terminal::set_attributes(io::stdin().as_fd(), TCSANOW, &tio);
+            let _ = set_terminal_attributes(io::stdin().as_fd(), TCSANOW, &tio);
         }
         client_send_identify(&ttynam, termname, &caps, &cwd, feat);
-        if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
-            size = 0 as size_t;
-            i = 0 as ::core::ffi::c_int;
-            while (i as usize) < argv.len() {
-                size = size.wrapping_add(argv[i as usize].as_bytes_with_nul().len() as size_t);
-                i += 1;
-            }
+        if msg == MSG_COMMAND {
+            let size: size_t = argv
+                .iter()
+                .map(|arg| arg.as_bytes_with_nul().len())
+                .sum();
             if size
                 > (MAX_IMSGSIZE as usize)
                     .wrapping_sub(::core::mem::size_of::<msg_command>() as usize)
             {
                 eprintln!("command too long");
-                return 1 as ::core::ffi::c_int;
+                return 1;
             }
             const _: () = assert!(
                 ::core::mem::size_of::<msg_command>()
@@ -358,29 +333,21 @@ pub fn client_main(
             let mut data = vec![0u8; header_size + size];
             let argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
             data[..header_size].copy_from_slice(&argc.to_ne_bytes());
-            if pack_argv(argv, &mut data[header_size..]) != 0 as ::core::ffi::c_int {
+            if pack_argv(argv, &mut data[header_size..]) != 0 {
                 eprintln!("command too long");
-                return 1 as ::core::ffi::c_int;
+                return 1;
             }
-            if proc_send(&client_peer(), msg, None, &data) != 0 as ::core::ffi::c_int {
+            if proc_send(&client_peer(), msg, None, &data) != 0 {
                 eprintln!("failed to send command");
-                return 1 as ::core::ffi::c_int;
+                return 1;
             }
-        } else if msg as ::core::ffi::c_uint
-            == MSG_SHELL as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        } else if msg == MSG_SHELL {
             proc_send(&client_peer(), msg, None, &[]);
         }
         proc_loop(&client_proc(), runtime, None);
-        if CLIENT_EXITTYPE.get() as ::core::ffi::c_uint
-            == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        if CLIENT_EXITTYPE.get() == MSG_EXEC {
             if CLIENT_FLAGS.get() & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                let _ = crate::shared::terminal::set_attributes(
-                    io::stdout().as_fd(),
-                    TCSAFLUSH,
-                    &saved_tio,
-                );
+                let _ = set_terminal_attributes(io::stdout().as_fd(), TCSAFLUSH, &saved_tio);
             }
             let (shell, command) = CLIENT_EXEC_PAYLOAD
                 .take()
@@ -388,23 +355,16 @@ pub fn client_main(
             client_exec(&shell, &command);
         }
         if CLIENT_ATTACHED.get() != 0 {
-            if CLIENT_EXITREASON.get() as ::core::ffi::c_uint
-                != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
+            if CLIENT_EXITREASON.get() != CLIENT_EXIT_NONE {
                 let _ = io::stdout()
                     .write_all(&[b"[", client_exit_message().as_bytes(), b"]\n"].concat());
             }
-            ppid = std::os::unix::process::parent_id() as pid_t;
-            if CLIENT_EXITTYPE.get() as ::core::ffi::c_uint
-                == MSG_DETACHKILL as ::core::ffi::c_int as ::core::ffi::c_uint
-                && ppid > 1 as ::core::ffi::c_int
-            {
+            let ppid = std::os::unix::process::parent_id() as pid_t;
+            if CLIENT_EXITTYPE.get() == MSG_DETACHKILL && ppid > 1 {
                 let _ = send_signal(ppid, SIGHUP);
             }
         } else if CLIENT_FLAGS.get() & CLIENT_CONTROL as uint64_t != 0 {
-            if CLIENT_EXITREASON.get() as ::core::ffi::c_uint
-                != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
+            if CLIENT_EXITREASON.get() != CLIENT_EXIT_NONE {
                 let _ = io::stdout()
                     .write_all(&[b"%exit ", client_exit_message().as_bytes(), b"\n"].concat());
             } else {
@@ -417,22 +377,17 @@ pub fn client_main(
             if CLIENT_FLAGS.get() & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 let _ = io::stdout().write_all(b"\x1b\\");
                 let _ = io::stdout().flush();
-                let _ = crate::shared::terminal::set_attributes(
-                    io::stdout().as_fd(),
-                    TCSAFLUSH,
-                    &saved_tio,
-                );
+                let _ = set_terminal_attributes(io::stdout().as_fd(), TCSAFLUSH, &saved_tio);
             }
-        } else if CLIENT_EXITREASON.get() as ::core::ffi::c_uint
-            != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        } else if CLIENT_EXITREASON.get() != CLIENT_EXIT_NONE {
             let _ = io::stderr().write_all(&[client_exit_message().as_bytes(), b"\n"].concat());
         }
-        setblocking(io::stdin().as_fd(), 1 as ::core::ffi::c_int);
-        setblocking(io::stdout().as_fd(), 1 as ::core::ffi::c_int);
-        setblocking(io::stderr().as_fd(), 1 as ::core::ffi::c_int);
+        setblocking(io::stdin().as_fd(), 1);
+        setblocking(io::stdout().as_fd(), 1);
+        setblocking(io::stderr().as_fd(), 1);
         CLIENT_EXITMESSAGE.take();
         CLIENT_EXITSESSION.take();
+        CLIENT_SHELL_COMMAND.take();
         CLIENT_EXITVAL.get()
     })();
     drop(process_owner);
@@ -440,15 +395,15 @@ pub fn client_main(
     CLIENT_PROC.set(refbox::Weak::new());
     result
 }
+
 fn client_send_identify(
     ttynam: &CStr,
     termname: &CStr,
     caps: &[CString],
     cwd: &CStr,
-    mut feat: ::core::ffi::c_int,
+    feat: ::core::ffi::c_int,
 ) {
-    let mut flags: uint64_t = CLIENT_FLAGS.get();
-    let mut pid: pid_t = 0;
+    let flags: uint64_t = CLIENT_FLAGS.get();
     proc_send(
         &client_peer(),
         MSG_IDENTIFY_LONGFLAGS,
@@ -503,7 +458,7 @@ fn client_send_identify(
         .try_clone_to_owned()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
     proc_send(&client_peer(), MSG_IDENTIFY_STDOUT, Some(fd), &[]);
-    pid = std::process::id() as pid_t;
+    let pid = std::process::id() as pid_t;
     proc_send(
         &client_peer(),
         MSG_IDENTIFY_CLIENTPID,
@@ -518,6 +473,7 @@ fn client_send_identify(
     }
     proc_send(&client_peer(), MSG_IDENTIFY_DONE, None, &[]);
 }
+
 fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
     log_debug(format_args!(
         "shell {}, command {}",
@@ -526,14 +482,15 @@ fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
     ));
     let argv0 = shell_argv0_cstring(shell, CLIENT_FLAGS.get() & CLIENT_LOGIN as uint64_t != 0);
     std::env::set_var("SHELL", OsStr::from_bytes(shell.to_bytes()));
-    proc_clear_signals(&client_proc(), 1 as ::core::ffi::c_int);
-    setblocking(io::stdin().as_fd(), 1 as ::core::ffi::c_int);
-    setblocking(io::stdout().as_fd(), 1 as ::core::ffi::c_int);
-    setblocking(io::stderr().as_fd(), 1 as ::core::ffi::c_int);
-    tiri_sys::close_on_exec_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+    proc_clear_signals(&client_proc(), 1);
+    setblocking(io::stdin().as_fd(), 1);
+    setblocking(io::stdout().as_fd(), 1);
+    setblocking(io::stderr().as_fd(), 1);
+    tiri_sys::close_on_exec_from(STDERR_FILENO + 1);
     let error = exec(Program::Path(shell, &[&argv0, c"-c", shellcmd]));
     fatal(&error, |out| out.write_all(b"execl failed"));
 }
+
 fn client_signal(sig: ProcessSignal) {
     log_debug(format_args!(
         "{}: {}",
@@ -557,14 +514,14 @@ fn client_signal(sig: ProcessSignal) {
         match sig {
             ProcessSignal::Hangup => {
                 CLIENT_EXITREASON.set(CLIENT_EXIT_LOST_TTY);
-                CLIENT_EXITVAL.set(1 as ::core::ffi::c_int);
+                CLIENT_EXITVAL.set(1);
                 proc_send(&client_peer(), MSG_EXITING, None, &[]);
             }
             ProcessSignal::Terminate => {
                 if CLIENT_SUSPENDED.get() == 0 {
                     CLIENT_EXITREASON.set(CLIENT_EXIT_TERMINATED);
                 }
-                CLIENT_EXITVAL.set(1 as ::core::ffi::c_int);
+                CLIENT_EXITVAL.set(1);
                 proc_send(&client_peer(), MSG_EXITING, None, &[]);
             }
             ProcessSignal::WindowChange => {
@@ -575,35 +532,38 @@ fn client_signal(sig: ProcessSignal) {
                     fatal(&error, |out| out.write_all(b"sigaction failed"));
                 }
                 proc_send(&client_peer(), MSG_WAKEUP, None, &[]);
-                CLIENT_SUSPENDED.set(0 as ::core::ffi::c_int);
+                CLIENT_SUSPENDED.set(0);
             }
             _ => {}
         }
-    };
+    }
 }
+
 fn client_file_check_cb() {
     if CLIENT_EXITFLAG.get() != 0 {
         client_exit();
     }
 }
-fn client_dispatch(message: crate::shared::process::PeerMessage<'_>) {
+
+fn client_dispatch(message: PeerMessage<'_>) {
     let imsg = match message {
-        crate::shared::process::PeerMessage::Disconnected => {
+        PeerMessage::Disconnected => {
             if CLIENT_EXITFLAG.get() == 0 {
                 CLIENT_EXITREASON.set(CLIENT_EXIT_LOST_SERVER);
-                CLIENT_EXITVAL.set(1 as ::core::ffi::c_int);
+                CLIENT_EXITVAL.set(1);
             }
             proc_exit(&client_proc());
             return;
         }
-        crate::shared::process::PeerMessage::Message(imsg) => imsg,
+        PeerMessage::Message(imsg) => imsg,
     };
     if CLIENT_ATTACHED.get() != 0 {
         client_dispatch_attached(imsg);
     } else {
         client_dispatch_wait(imsg);
-    };
+    }
 }
+
 fn client_dispatch_exit_message(data: &[u8]) {
     let header = ::core::mem::size_of::<::core::ffi::c_int>();
     if data.len() < header && !data.is_empty() {
@@ -619,23 +579,24 @@ fn client_dispatch_exit_message(data: &[u8]) {
         CLIENT_EXITREASON.set(CLIENT_EXIT_MESSAGE_PROVIDED);
     }
 }
+
 fn client_dispatch_wait(imsg: &mut imsg) {
     let datalen = imsg.data.len() as ssize_t;
     match imsg.hdr.type_0 {
         MSG_EXIT | MSG_SHUTDOWN => {
             client_dispatch_exit_message(&imsg.data);
-            CLIENT_EXITFLAG.set(1 as ::core::ffi::c_int);
+            CLIENT_EXITFLAG.set(1);
             client_exit();
         }
         MSG_READY => {
-            if datalen != 0 as ssize_t {
+            if datalen != 0 {
                 fatalx(|out| out.write_all(b"bad MSG_READY size"));
             }
-            CLIENT_ATTACHED.set(1 as ::core::ffi::c_int);
+            CLIENT_ATTACHED.set(1);
             proc_send(&client_peer(), MSG_RESIZE, None, &[]);
         }
         MSG_VERSION => {
-            if datalen != 0 as ssize_t {
+            if datalen != 0 {
                 fatalx(|out| out.write_all(b"bad MSG_VERSION size"));
             }
             eprintln!(
@@ -643,11 +604,11 @@ fn client_dispatch_wait(imsg: &mut imsg) {
                 PROTOCOL_VERSION,
                 imsg.hdr.peerid & 0xff as uint32_t,
             );
-            CLIENT_EXITVAL.set(1 as ::core::ffi::c_int);
+            CLIENT_EXITVAL.set(1);
             proc_exit(&client_proc());
         }
         MSG_FLAGS => {
-            if datalen as usize != ::core::mem::size_of::<uint64_t>() as usize {
+            if datalen as usize != ::core::mem::size_of::<uint64_t>() {
                 fatalx(|out| out.write_all(b"bad MSG_FLAGS string"));
             }
             CLIENT_FLAGS.set(read_plain(&imsg.data).expect("checked MSG_FLAGS size"));
@@ -660,7 +621,7 @@ fn client_dispatch_wait(imsg: &mut imsg) {
             let Some(shell) = imsg_string(imsg) else {
                 fatalx(|out| out.write_all(b"bad MSG_SHELL string"));
             };
-            let Some(command) = shell_command() else {
+            let Some(command) = CLIENT_SHELL_COMMAND.take() else {
                 fatalx(|out| out.write_all(b"unexpected MSG_SHELL"));
             };
             client_exec(shell, &command);
@@ -703,13 +664,14 @@ fn client_dispatch_wait(imsg: &mut imsg) {
         _ => {
             log_debug(format_args!("unknown message type {}", { imsg.hdr.type_0 }));
         }
-    };
+    }
 }
+
 fn client_dispatch_attached(imsg: &mut imsg) {
     let datalen = imsg.data.len() as ssize_t;
     match imsg.hdr.type_0 {
         MSG_FLAGS => {
-            if datalen as usize != ::core::mem::size_of::<uint64_t>() as usize {
+            if datalen as usize != ::core::mem::size_of::<uint64_t>() {
                 fatalx(|out| out.write_all(b"bad MSG_FLAGS string"));
             }
             CLIENT_FLAGS.set(read_plain(&imsg.data).expect("checked MSG_FLAGS size"));
@@ -745,35 +707,33 @@ fn client_dispatch_attached(imsg: &mut imsg) {
         }
         MSG_EXIT => {
             client_dispatch_exit_message(&imsg.data);
-            if CLIENT_EXITREASON.get() as ::core::ffi::c_uint
-                == CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
+            if CLIENT_EXITREASON.get() == CLIENT_EXIT_NONE {
                 CLIENT_EXITREASON.set(CLIENT_EXIT_EXITED);
             }
             proc_send(&client_peer(), MSG_EXITING, None, &[]);
         }
         MSG_EXITED => {
-            if datalen != 0 as ssize_t {
+            if datalen != 0 {
                 fatalx(|out| out.write_all(b"bad MSG_EXITED size"));
             }
             proc_exit(&client_proc());
         }
         MSG_SHUTDOWN => {
-            if datalen != 0 as ssize_t {
+            if datalen != 0 {
                 fatalx(|out| out.write_all(b"bad MSG_SHUTDOWN size"));
             }
             proc_send(&client_peer(), MSG_EXITING, None, &[]);
             CLIENT_EXITREASON.set(CLIENT_EXIT_SERVER_EXITED);
-            CLIENT_EXITVAL.set(1 as ::core::ffi::c_int);
+            CLIENT_EXITVAL.set(1);
         }
         MSG_SUSPEND => {
-            if datalen != 0 as ssize_t {
+            if datalen != 0 {
                 fatalx(|out| out.write_all(b"bad MSG_SUSPEND size"));
             }
             if let Err(error) = set_signal_disposition(SIGTSTP, SignalDisposition::Default) {
                 fatal(&error, |out| out.write_all(b"sigaction failed"));
             }
-            CLIENT_SUSPENDED.set(1 as ::core::ffi::c_int);
+            CLIENT_SUSPENDED.set(1);
             let _ = send_signal(std::process::id() as pid_t, SIGTSTP);
         }
         MSG_LOCK => {
@@ -786,5 +746,5 @@ fn client_dispatch_attached(imsg: &mut imsg) {
         _ => {
             log_debug(format_args!("unknown message type {}", { imsg.hdr.type_0 }));
         }
-    };
+    }
 }

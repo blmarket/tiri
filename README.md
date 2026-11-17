@@ -2,14 +2,16 @@
 
 c2rust translation of tmux
 
-The `tiri` application wires together `tiri-core` and `tiri-cmds`. Core owns
-sessions, windows, panes, terminal state, and the operations on them. Cmds owns
-command objects, parsing, execution queues, hooks, configuration loading, and
-command bindings. Core retains actions through implementation-independent
-interfaces; it does not define command ASTs, parse the command language, or execute commands.
-The application installs the scripting runtime through `tiri::initialize()`.
-`tiri-cmds` depends on core and the existing `tiri-cmdparse` grammar support crate;
-core depends on neither of them.
+The `tiri` application layers the CLI bootstrap, IPC client, and default key
+bindings on top of `tiri-cmds` and `tiri-core` (`tiri-core <- tiri-cmds <- tiri`).
+Core owns sessions, windows, panes, attached viewer (`server_client`) state,
+terminal state, hooks, configuration loading, and key-binding tables. Cmds owns
+command objects, parsing, target resolution, and command execution. Core retains
+actions through implementation-independent interfaces; it does not define command
+ASTs, parse the command language, execute commands, or host the outer client
+process. The application installs the scripting engine through
+`tiri::initialize()`. `tiri-cmds` depends on core and the `tiri-cmdparse`
+grammar support crate; core depends on neither `tiri-cmds` nor `tiri`.
 
 Pane status comes directly from OSC 7501 reports. `#{pane_agent}` exposes the
 reported application, `#{pane_agent_state}` exposes `idle`, `working`, `done`,

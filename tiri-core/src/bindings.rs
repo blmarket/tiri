@@ -314,9 +314,6 @@ mod ownership_tests {
         fn read_only(&self) -> bool {
             true
         }
-        fn starts_server(&self) -> bool {
-            false
-        }
     }
 
     fn binding(key: key_code) -> Box<key_binding> {

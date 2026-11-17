@@ -1,4 +1,7 @@
+mod cli;
+mod client;
 mod default_keys;
+mod getopt;
 
 pub fn initialize() {
     tiri_core::actions::install(&tiri_cmds::ENGINE);
@@ -7,5 +10,5 @@ pub fn initialize() {
 
 pub fn main() {
     initialize();
-    tiri_core::tmux::main();
+    cli::run();
 }

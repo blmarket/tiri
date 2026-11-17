@@ -279,7 +279,4 @@ impl crate::actions::Program for TestProgram {
     fn read_only(&self) -> bool {
         true
     }
-    fn starts_server(&self) -> bool {
-        false
-    }
 }

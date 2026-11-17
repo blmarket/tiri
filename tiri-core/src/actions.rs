@@ -12,7 +12,6 @@ pub trait Program: Any {
     fn text(&self, flags: i32) -> CString;
     fn substitute(&self, arguments: &Vec<CString>) -> ProgramRef;
     fn read_only(&self) -> bool;
-    fn starts_server(&self) -> bool;
 }
 pub type ProgramRef = Rc<dyn Program>;
 pub const PROGRAM_ARGUMENT: i32 = 4;
@@ -191,9 +190,6 @@ impl<T: Program + ?Sized> Program for Rc<T> {
     }
     fn read_only(&self) -> bool {
         (**self).read_only()
-    }
-    fn starts_server(&self) -> bool {
-        (**self).starts_server()
     }
 }
 

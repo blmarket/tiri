@@ -190,7 +190,7 @@ fn server_tidy_event() {
     ));
     SERVER_EV_TIDY.set(Some(Timer::new(tv, server_tidy_event).expect("arm timer")));
 }
-pub(crate) fn server_start(
+pub fn server_start(
     mut flags: uint64_t,
     lockfd: Option<OwnedFd>,
     lockfile: Option<CString>,

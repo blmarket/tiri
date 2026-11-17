@@ -217,7 +217,7 @@ fn file_create_with_peer(
         cf.cb = cb;
         cf.peer = peer.clone();
     }
-    crate::client::client_register_file(&owner);
+    peer_register_file(&owner);
     owner
 }
 fn file_create_with_client(
@@ -725,10 +725,32 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
         file_fire_done(file_owner);
     }
 }
-pub fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
+thread_local! {
+    static PEER_FILES: RefCell<client_files> = const { RefCell::new(client_files::new()) };
+}
+
+fn peer_find_file(stream: i32) -> Option<Rc<RefCell<client_file>>> {
+    PEER_FILES.with_borrow(|files| client_files_find_stream(files, stream))
+}
+
+fn peer_register_file(file: &Rc<RefCell<client_file>>) {
+    PEER_FILES.with_borrow_mut(|files| {
+        client_files_insert(files, file.clone());
+    });
+}
+
+fn peer_remove_file(stream: i32, identity: &Rc<RefCell<client_file>>) {
+    let removed =
+        PEER_FILES.with_borrow_mut(|files| client_files_remove_identity(files, stream, identity));
+    drop(removed);
+}
+
+pub fn file_write_left() -> ::core::ffi::c_int {
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    for file in client_files_iter(files).filter_map(|file| file.upgrade()) {
+    let files: Vec<_> =
+        PEER_FILES.with_borrow(|files| client_files_iter(files).filter_map(|f| f.upgrade()).collect());
+    for file in files {
         let cf = file.borrow();
         if let Some(remaining) = cf.event.with_stream(|stream| stream.output.len()) {
             left = remaining;
@@ -839,7 +861,7 @@ pub fn file_write_open(
         log_cstr(path)
     ));
     find.stream = msg.stream;
-    if crate::client::client_find_file(find.stream).is_some() {
+    if peer_find_file(find.stream).is_some() {
         error = EBADF;
     } else {
         transfer_owner = file_create_with_peer(peer, msg.stream, cb);
@@ -913,7 +935,7 @@ pub fn file_write_data(imsg: &imsg) {
     let mut find: client_file = client_file::empty();
     let size = msglen - ::core::mem::size_of::<msg_write_data>();
     find.stream = msg.stream;
-    let Some(file_owner) = crate::client::client_find_file(find.stream) else {
+    let Some(file_owner) = peer_find_file(find.stream) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
     let cf = file_owner.borrow();
@@ -935,7 +957,7 @@ pub fn file_write_close(imsg: &imsg) {
     let msg = read_plain::<msg_write_close>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = crate::client::client_find_file(find.stream) else {
+    let Some(file_owner) = peer_find_file(find.stream) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
     let remaining = {
@@ -1029,7 +1051,7 @@ pub fn file_read_open(
         log_cstr(path)
     ));
     find.stream = msg.stream;
-    if crate::client::client_find_file(find.stream).is_some() {
+    if peer_find_file(find.stream).is_some() {
         error = EBADF;
     } else {
         transfer_owner = file_create_with_peer(peer, msg.stream, cb);
@@ -1098,7 +1120,7 @@ pub fn file_read_cancel(imsg: &imsg) {
     let msg = read_plain::<msg_read_cancel>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = crate::client::client_find_file(find.stream) else {
+    let Some(file_owner) = peer_find_file(find.stream) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
     log_debug(format_args!("cancel file {}", {
@@ -1205,7 +1227,7 @@ fn client_files_key(elm: &client_file) -> i32 {
     elm.stream
 }
 /// Lookups clone the indexed Rc to keep a file alive during an operation.
-pub(crate) fn client_files_find_stream(
+fn client_files_find_stream(
     head: &client_files,
     stream: i32,
 ) -> Option<Rc<RefCell<client_file>>> {
@@ -1245,7 +1267,7 @@ fn client_files_remove(owner: &Rc<RefCell<client_file>>, elm: &mut client_file) 
             .as_ref()
             .expect("registered client file retains its client")
             .unregister_file(stream, owner),
-        FileRegistration::Peer => crate::client::client_remove_file(stream, owner),
+        FileRegistration::Peer => peer_remove_file(stream, owner),
     }
 }
 
@@ -1306,7 +1328,7 @@ pub fn client_files_iter(
                 .c
                 .as_ref()
                 .is_some_and(|client| client.find_file(file.stream).ptr_eq(entry)),
-            FileRegistration::Peer => crate::client::client_find_file(file.stream)
+            FileRegistration::Peer => peer_find_file(file.stream)
                 .is_some_and(|indexed| Rc::ptr_eq(&indexed, &owner)),
         }
     })

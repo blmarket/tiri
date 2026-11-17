@@ -19,6 +19,11 @@ mod shared;
 
 pub use engine::ENGINE;
 
+pub fn argv_starts_server(argv: &[std::ffi::CString]) -> bool {
+    cmd::parse::cmd_parse_from_argv(argv)
+        .is_ok_and(|commands| cmd::cmd_list_starts_server(&commands))
+}
+
 #[cfg(feature = "test-support")]
 pub mod test_cases {
     pub use crate::cmd::run::client_queue_tests;

@@ -10,7 +10,7 @@ pub mod run;
 
 pub(crate) use self::core::{
     cmd_find, cmd_get_alias, cmd_get_args, cmd_get_entry, cmd_get_parse_flags, cmd_get_source,
-    cmd_list_copy, cmd_list_first, cmd_list_new, cmd_parse,
+    cmd_list_copy, cmd_list_first, cmd_list_new, cmd_list_starts_server, cmd_parse,
 };
 
 pub fn cmd_table() -> &'static [&'static crate::shared::command::cmd_entry] {

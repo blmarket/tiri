@@ -25,5 +25,4 @@ pub use output::{
     tty_cursor, tty_invalidate, tty_margin_off, tty_puts, tty_region_off, tty_reset, tty_set_path,
     tty_set_progress_bar, tty_set_title, tty_sync_end, tty_sync_start, tty_update_mode,
 };
-pub use term::tty_term_descriptions;
-pub(crate) use term::tty_term_read_list;
+pub use term::{tty_term_descriptions, tty_term_read_list};
